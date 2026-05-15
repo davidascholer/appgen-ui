@@ -625,15 +625,3 @@ function App() {
 }
 
 export default App
-
-                </ScrollArea>
-              </motion.div>
-            )}
-          </div>
-        </Card>
-      </div>
-    </div>
-  )
-}
-
-export default App
