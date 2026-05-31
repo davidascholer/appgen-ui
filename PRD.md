@@ -98,11 +98,11 @@ Animations should reinforce the builder metaphor - features "appear" in the prev
   - Export dialog has copy-to-clipboard feedback
   
 - **Icon Selection**: 
-  - Hamburger menu: Three horizontal lines (List icon from Phosphor)
-  - Close: X icon (X icon from Phosphor)
-  - Add link: Plus icon (Plus icon from Phosphor)
-  - Export: DownloadSimple icon (DownloadSimple from Phosphor)
-  - Default nav link: House icon (House from Phosphor)
+  - Hamburger menu: Three horizontal lines (Lucide List)
+  - Close: X icon (Lucide X)
+  - Add link: Plus icon (Lucide Plus)
+  - Export: Download icon (Lucide Download)
+  - Default nav link: Home icon (Lucide Home)
   
 - **Spacing**: 
   - Container padding: p-6 (24px)

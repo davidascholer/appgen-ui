@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -23,19 +23,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   Plus,
-  DownloadSimple,
+  Download,
   List,
-  House,
-  Gear,
-  User,
-  Bell,
-  Star,
-  MagnifyingGlass,
-  Trash,
+  Home,
+  Trash2,
   ToggleLeft,
-} from "@phosphor-icons/react";
+} from "lucide-react";
 import * as LucideIcons from "lucide-react";
-import * as HeroIcons from "@heroicons/react/24/outline";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -46,7 +40,6 @@ interface NavPage {
   pageId: string;
   icon: {
     name: string;
-    library: IconLibrary;
   };
 }
 
@@ -54,6 +47,7 @@ interface ToggleSettingItem {
   id: string;
   label: string;
   type: "toggle";
+  componentTypeId: string;
   value: boolean;
 }
 
@@ -61,6 +55,7 @@ interface InputSettingItem {
   id: string;
   label: string;
   type: "input";
+  componentTypeId: string;
   value: string;
 }
 
@@ -68,51 +63,96 @@ interface SelectSettingItem {
   id: string;
   label: string;
   type: "select";
+  componentTypeId: string;
   value: string[];
 }
 
-type SettingsItem = ToggleSettingItem | InputSettingItem | SelectSettingItem;
-
-interface PresetSettingsPage {
+interface HeaderPrebuiltItem {
   id: string;
-  kind: "preset";
-  pageType: "settings";
+  label: string;
+  type: "header";
+  componentTypeId: string;
+  value: string;
+}
+
+type SettingsItem = ToggleSettingItem | InputSettingItem | SelectSettingItem;
+type HomeItem = HeaderPrebuiltItem;
+type SettingComponentType = "toggle" | "input" | "select" | "header";
+
+interface SettingComponentDefinition {
+  id: string;
+  type: SettingComponentType;
+  label: string;
+  kind: "prebuilt";
+}
+
+interface PrebuiltSettingsPage {
+  id: string;
+  kind: "prebuilt";
   title: string;
-  shown: boolean;
   items: SettingsItem[];
+}
+
+interface PrebuiltHomePage {
+  id: "home";
+  kind: "prebuilt";
+  title: string;
+  items: HomeItem[];
 }
 
 interface CustomPage {
   id: string;
   kind: "custom";
-  pageType: "custom";
   title: string;
-  shown: boolean;
 }
 
-interface PagesConfig {
-  preset: PresetSettingsPage;
-  custom: Record<string, never>;
-}
+type AppPage = PrebuiltSettingsPage | PrebuiltHomePage | CustomPage;
 
 interface AppConfig {
   id: string;
-  components: {
-    navigation: {
-      shown: boolean;
-      navigationHeader: string;
-      navigationStyle: NavigationStyle;
-      pages: NavPage[];
-    };
+  appName: string;
+  components: SettingComponentDefinition[];
+  navigation: {
+    shown: boolean;
+    navigationHeader: string;
+    navigationStyle: NavigationStyle;
+    navigationPages: NavPage[];
   };
-  pages: PagesConfig;
+  pages: AppPage[];
+}
+
+interface ExportedComponentDefinition {
+  id: string;
+  type: SettingComponentType;
+  label: string;
+}
+
+interface ExportedPrebuiltPage {
+  id: string;
+  title: string;
+  items: Array<SettingsItem | HomeItem>;
+}
+
+interface ExportedCustomPage {
+  id: string;
+  title: string;
+}
+
+interface ExportConfig {
+  id: string;
+  appName: string;
+  navigation: AppConfig["navigation"];
+  pages: ExportedCustomPage[];
+}
+
+interface ExportPrebuiltConfig {
+  components: ExportedComponentDefinition[];
+  pages: ExportedPrebuiltPage[];
 }
 
 type DrawerState = "closed" | "icons-only" | "open";
 type ActiveTab = "navigation" | "pages";
-type PagesTab = "preset" | "custom";
 type IconEntryMode = "default" | "manual";
-type IconLibrary = "phosphor" | "lucide" | "heroicons";
 type DrawerVariant = "short" | "long" | "all";
 type BottomVariant = "short" | "long";
 
@@ -127,8 +167,7 @@ type NavigationStyle =
     };
 
 const DEFAULT_NAV_ICON = {
-  name: "House",
-  library: "phosphor",
+  name: "Home",
 } as const;
 
 const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
@@ -136,28 +175,54 @@ const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
   variant: "all",
 };
 
-const createDefaultSettingsPage = (): PresetSettingsPage => ({
+const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = [
+  {
+    id: "component-type-toggle",
+    type: "toggle",
+    label: "Toggle",
+    kind: "prebuilt",
+  },
+  {
+    id: "component-type-input",
+    type: "input",
+    label: "Input",
+    kind: "prebuilt",
+  },
+  {
+    id: "component-type-select",
+    type: "select",
+    label: "Select",
+    kind: "prebuilt",
+  },
+  {
+    id: "component-type-header1",
+    type: "header",
+    label: "Header 1",
+    kind: "prebuilt",
+  },
+];
+
+const createDefaultSettingsPage = (): PrebuiltSettingsPage => ({
   id: "settings",
-  kind: "preset",
-  pageType: "settings",
+  kind: "prebuilt",
   title: "Settings",
-  shown: true,
   items: [],
 });
 
-const getPhosphorIconComponent = (iconName: string) => {
-  const iconMap = {
-    house: House,
-    gear: Gear,
-    user: User,
-    bell: Bell,
-    star: Star,
-    magnifyingglass: MagnifyingGlass,
-  } as const;
-
-  const normalized = iconName.trim().toLowerCase();
-  return iconMap[normalized as keyof typeof iconMap] || House;
-};
+const createDefaultHomePage = (): PrebuiltHomePage => ({
+  id: "home",
+  kind: "prebuilt",
+  title: "Home",
+  items: [
+    {
+      id: crypto.randomUUID(),
+      label: "Header 1",
+      type: "header",
+      componentTypeId: "component-type-header1",
+      value: "Home",
+    },
+  ],
+});
 
 const getNormalizedIconKey = (name: string) =>
   name
@@ -165,8 +230,21 @@ const getNormalizedIconKey = (name: string) =>
     .replace(/[-_\s]+/g, "")
     .toLowerCase();
 
-const getLucideIconComponent = (name: string) => {
+const LEGACY_ICON_NAME_MAP: Record<string, string> = {
+  house: "home",
+  gear: "settings",
+  magnifyingglass: "search",
+  downloadsimple: "download",
+  trash: "trash-2",
+};
+
+const normalizeLucideIconName = (name: string) => {
   const normalized = getNormalizedIconKey(name);
+  return LEGACY_ICON_NAME_MAP[normalized] ?? name.trim();
+};
+
+const getLucideIconComponent = (name: string) => {
+  const normalized = getNormalizedIconKey(normalizeLucideIconName(name));
   const entries = Object.entries(LucideIcons) as Array<
     [string, ComponentType<any>]
   >;
@@ -181,63 +259,30 @@ const getLucideIconComponent = (name: string) => {
   return undefined;
 };
 
-const getHeroIconComponent = (name: string) => {
-  const normalized = getNormalizedIconKey(name);
-  const entries = Object.entries(HeroIcons) as Array<
-    [string, ComponentType<SVGProps<SVGSVGElement>>]
-  >;
-
-  for (const [key, component] of entries) {
-    const baseKey = key.endsWith("Icon") ? key.slice(0, -4) : key;
-    if (getNormalizedIconKey(baseKey) === normalized) {
-      return component;
-    }
-  }
-
-  return undefined;
-};
-
 const renderNavIcon = (
-  icon: { name: string; library: IconLibrary },
+  icon: { name: string },
   className: string,
   size = 20,
 ) => {
-  if (icon.library === "phosphor") {
-    const IconComponent = getPhosphorIconComponent(icon.name);
+  const IconComponent = getLucideIconComponent(icon.name);
+  if (IconComponent) {
     return <IconComponent size={size} className={className} />;
   }
 
-  if (icon.library === "lucide") {
-    const IconComponent = getLucideIconComponent(icon.name);
-    if (IconComponent) {
-      return <IconComponent size={size} className={className} />;
-    }
-  }
-
-  if (icon.library === "heroicons") {
-    const IconComponent = getHeroIconComponent(icon.name);
-    if (IconComponent) {
-      return <IconComponent className={`${className} h-5 w-5`} />;
-    }
-  }
-
-  return <House size={size} className={className} />;
+  return <Home size={size} className={className} />;
 };
 
 const DEFAULT_CONFIG: AppConfig = {
   id: crypto.randomUUID(),
-  components: {
-    navigation: {
-      shown: true,
-      navigationHeader: "",
-      navigationStyle: DEFAULT_NAVIGATION_STYLE,
-      pages: [],
-    },
+  appName: "",
+  components: DEFAULT_SETTING_COMPONENTS,
+  navigation: {
+    shown: true,
+    navigationHeader: "",
+    navigationStyle: DEFAULT_NAVIGATION_STYLE,
+    navigationPages: [],
   },
-  pages: {
-    preset: createDefaultSettingsPage(),
-    custom: {},
-  },
+  pages: [createDefaultSettingsPage(), createDefaultHomePage()],
 };
 
 const normalizeConfig = (input: unknown): AppConfig => {
@@ -245,29 +290,149 @@ const normalizeConfig = (input: unknown): AppConfig => {
 
   const maybeConfig = input as {
     id?: string;
+    appName?: unknown;
     pages?: unknown;
-    components?: {
-      navigation?: {
-        navigationHeader?: unknown;
-        navigationStyle?: unknown;
-        pages?: unknown;
-        items?: unknown;
-      };
-      navigationDrawer?: {
-        navigationHeader?: unknown;
-        navigationStyle?: unknown;
-        pages?: unknown;
-        items?: unknown;
-      };
-      settings?: {
-        shown?: unknown;
-        items?: unknown;
-      };
+    navigation?: {
+      shown?: unknown;
+      navigationHeader?: unknown;
+      navigationStyle?: unknown;
+      navigationPages?: unknown;
+      pages?: unknown;
+      items?: unknown;
+    };
+    components?: unknown;
+  };
+
+  const componentsRaw = maybeConfig.components;
+  const legacyComponentsObject =
+    componentsRaw && typeof componentsRaw === "object" && !Array.isArray(componentsRaw)
+      ? (componentsRaw as {
+          settingComponentTypes?: unknown;
+          navigation?: {
+            shown?: unknown;
+            navigationHeader?: unknown;
+            navigationStyle?: unknown;
+            navigationPages?: unknown;
+            pages?: unknown;
+            items?: unknown;
+          };
+          navigationDrawer?: {
+            shown?: unknown;
+            navigationHeader?: unknown;
+            navigationStyle?: unknown;
+            navigationPages?: unknown;
+            pages?: unknown;
+            items?: unknown;
+          };
+          settings?: {
+            items?: unknown;
+          };
+        })
+      : undefined;
+
+  const settingComponentTypesRaw = legacyComponentsObject?.settingComponentTypes;
+
+  const defaultComponentByType = (type: SettingComponentType) =>
+    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)!;
+
+  const parseSettingComponent = (
+    raw: unknown,
+    fallbackType: SettingComponentType,
+  ): SettingComponentDefinition => {
+    const fallback = defaultComponentByType(fallbackType);
+    if (!raw || typeof raw !== "object") {
+      return fallback;
+    }
+
+    const entry = raw as {
+      id?: unknown;
+      type?: unknown;
+      label?: unknown;
+      kind?: unknown;
+    };
+
+    const type =
+      entry.type === "toggle" ||
+      entry.type === "input" ||
+      entry.type === "select" ||
+      entry.type === "header"
+        ? entry.type
+        : fallbackType;
+
+    return {
+      id:
+        typeof entry.id === "string" && entry.id.trim().length > 0
+          ? entry.id
+          : fallback.id,
+      type,
+      label:
+        typeof entry.label === "string" && entry.label.trim().length > 0
+          ? entry.label
+          : defaultComponentByType(type).label,
+      kind: "prebuilt",
     };
   };
 
+  const componentsFromArray = Array.isArray(componentsRaw)
+    ? componentsRaw
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+
+          const maybeType = (entry as { type?: unknown }).type;
+          if (
+            maybeType !== "toggle" &&
+            maybeType !== "input" &&
+            maybeType !== "select" &&
+            maybeType !== "header"
+          ) {
+            return null;
+          }
+
+          return parseSettingComponent(entry, maybeType);
+        })
+        .filter((entry): entry is SettingComponentDefinition => Boolean(entry))
+    : [];
+
+  const componentsFromLegacyMap =
+    settingComponentTypesRaw && typeof settingComponentTypesRaw === "object"
+      ? (["toggle", "input", "select", "header"] as const).map((type) =>
+          parseSettingComponent(
+            (settingComponentTypesRaw as Record<SettingComponentType, unknown>)[type],
+            type,
+          ),
+        )
+      : [];
+
+  const dedupeAndEnsureTypes = (
+    components: SettingComponentDefinition[],
+  ): SettingComponentDefinition[] => {
+    const byType = new Map<SettingComponentType, SettingComponentDefinition>();
+    for (const component of components) {
+      if (!byType.has(component.type)) {
+        byType.set(component.type, {
+          ...component,
+          kind: "prebuilt",
+        });
+      }
+    }
+
+    return (["toggle", "input", "select", "header"] as const).map(
+      (type) => byType.get(type) ?? defaultComponentByType(type),
+    );
+  };
+
+  const normalizedComponents = dedupeAndEnsureTypes(
+    componentsFromArray.length > 0 ? componentsFromArray : componentsFromLegacyMap,
+  );
+
+  const getComponentIdForType = (type: SettingComponentType) =>
+    normalizedComponents.find((component) => component.type === type)?.id ??
+    defaultComponentByType(type).id;
+
   const navRoot =
-    maybeConfig.components?.navigation ?? maybeConfig.components?.navigationDrawer;
+    maybeConfig.navigation ??
+    legacyComponentsObject?.navigation ??
+    legacyComponentsObject?.navigationDrawer;
 
   const navStyleRaw = navRoot?.navigationStyle;
   const normalizedNavStyle: NavigationStyle = (() => {
@@ -300,7 +465,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
     };
   })();
 
-  const navPagesRaw = navRoot?.pages ?? navRoot?.items;
+  const navPagesRaw = navRoot?.navigationPages ?? navRoot?.pages ?? navRoot?.items;
 
   const navPages: NavPage[] = Array.isArray(navPagesRaw)
     ? navPagesRaw.map((entry) => {
@@ -311,33 +476,22 @@ const normalizeConfig = (input: unknown): AppConfig => {
         let normalizedIcon = DEFAULT_NAV_ICON;
         if (typeof page.icon === "string") {
           normalizedIcon = {
-            name: page.icon,
-            library: "phosphor",
+            name: normalizeLucideIconName(page.icon),
           };
         } else if (
           page.icon &&
           typeof page.icon === "object" &&
-          "name" in page.icon &&
-          "library" in page.icon
+          "name" in page.icon
         ) {
           const iconObj = page.icon as {
             name?: unknown;
-            library?: unknown;
           };
-
-          const library =
-            iconObj.library === "phosphor" ||
-            iconObj.library === "lucide" ||
-            iconObj.library === "heroicons"
-              ? iconObj.library
-              : "phosphor";
 
           normalizedIcon = {
             name:
               typeof iconObj.name === "string" && iconObj.name.trim().length > 0
-                ? iconObj.name
-                : "House",
-            library,
+                ? normalizeLucideIconName(iconObj.name)
+                : DEFAULT_NAV_ICON.name,
           };
         }
 
@@ -366,6 +520,11 @@ const normalizeConfig = (input: unknown): AppConfig => {
             id: item.id || crypto.randomUUID(),
             label: typeof item.label === "string" ? item.label : "Setting",
             type: "toggle",
+            componentTypeId:
+              typeof item.componentTypeId === "string" &&
+              item.componentTypeId.trim().length > 0
+                ? item.componentTypeId
+                : getComponentIdForType("toggle"),
             value: Boolean(item.value),
           };
         }
@@ -381,6 +540,11 @@ const normalizeConfig = (input: unknown): AppConfig => {
             id: item.id || crypto.randomUUID(),
             label: typeof item.label === "string" ? item.label : "Setting",
             type: "select",
+            componentTypeId:
+              typeof item.componentTypeId === "string" &&
+              item.componentTypeId.trim().length > 0
+                ? item.componentTypeId
+                : getComponentIdForType("select"),
             value: normalizedOptions,
           };
         }
@@ -389,18 +553,23 @@ const normalizeConfig = (input: unknown): AppConfig => {
           id: item.id || crypto.randomUUID(),
           label: typeof item.label === "string" ? item.label : "Setting",
           type: "input",
+          componentTypeId:
+            typeof item.componentTypeId === "string" &&
+            item.componentTypeId.trim().length > 0
+              ? item.componentTypeId
+              : getComponentIdForType("input"),
           value: typeof item.value === "string" ? item.value : "",
         };
       })
       : [];
 
   const legacySettingsItems = parseSettingsItems(
-    maybeConfig.components?.settings?.items,
+    legacyComponentsObject?.settings?.items,
   );
 
-  const parseSettingsPresetPage = (
+  const parseSettingsPrebuiltPage = (
     value: unknown,
-  ): PresetSettingsPage | undefined => {
+  ): PrebuiltSettingsPage | undefined => {
     if (!value || typeof value !== "object") return undefined;
 
     const page = value as {
@@ -408,14 +577,14 @@ const normalizeConfig = (input: unknown): AppConfig => {
       kind?: unknown;
       pageType?: unknown;
       title?: unknown;
-      shown?: unknown;
       items?: unknown;
     };
 
+    const hasExplicitId = typeof page.id === "string" && page.id.trim().length > 0;
     const isSettingsPage =
       page.pageType === "settings" ||
       page.id === "settings" ||
-      page.kind === "preset";
+      ((page.kind === "preset" || page.kind === "prebuilt") && !hasExplicitId);
 
     if (!isSettingsPage) return undefined;
 
@@ -424,57 +593,206 @@ const normalizeConfig = (input: unknown): AppConfig => {
         typeof page.id === "string" && page.id.trim().length > 0
           ? page.id
           : "settings",
-      kind: "preset",
-      pageType: "settings",
+      kind: "prebuilt",
       title:
         typeof page.title === "string" && page.title.trim().length > 0
           ? page.title
           : "Settings",
-      shown: typeof page.shown === "boolean" ? page.shown : true,
       items: parseSettingsItems(page.items),
     };
   };
 
+  const parseHomeItems = (value: unknown, pageTitle: string): HomeItem[] => {
+    if (!Array.isArray(value)) {
+      return [
+        {
+          id: crypto.randomUUID(),
+          label: "Header 1",
+          type: "header",
+          componentTypeId: getComponentIdForType("header"),
+          value: pageTitle,
+        },
+      ];
+    }
+
+    const parsed = value.flatMap((entry) => {
+      const item = entry as Partial<HomeItem> & { value?: unknown };
+      if (item.type !== "header") return [];
+
+      return [
+        {
+          id: item.id || crypto.randomUUID(),
+          label:
+            typeof item.label === "string" && item.label.trim().length > 0
+              ? item.label
+              : "Header 1",
+          type: "header" as const,
+          componentTypeId:
+            typeof item.componentTypeId === "string" &&
+            item.componentTypeId.trim().length > 0
+              ? item.componentTypeId
+              : getComponentIdForType("header"),
+          value:
+            typeof item.value === "string" && item.value.trim().length > 0
+              ? item.value
+              : pageTitle,
+        },
+      ];
+    });
+
+    if (parsed.length > 0) return parsed;
+
+    return [
+      {
+        id: crypto.randomUUID(),
+        label: "Header 1",
+        type: "header",
+        componentTypeId: getComponentIdForType("header"),
+        value: pageTitle,
+      },
+    ];
+  };
+
+  const parseHomePrebuiltPage = (
+    value: unknown,
+  ): PrebuiltHomePage | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+
+    const page = value as {
+      id?: unknown;
+      pageType?: unknown;
+      title?: unknown;
+      items?: unknown;
+    };
+
+    const isHomePage = page.pageType === "home" || page.id === "home";
+    if (!isHomePage) return undefined;
+
+    const pageTitle =
+      typeof page.title === "string" && page.title.trim().length > 0
+        ? page.title
+        : "Home";
+
+    return {
+      id: "home",
+      kind: "prebuilt",
+      title: pageTitle,
+      items: parseHomeItems(page.items, pageTitle),
+    };
+  };
+
+  const parseCustomPage = (value: unknown): CustomPage | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+
+    const page = value as {
+      id?: unknown;
+      kind?: unknown;
+      title?: unknown;
+    };
+
+    if (page.kind !== "custom") return undefined;
+
+    return {
+      id:
+        typeof page.id === "string" && page.id.trim().length > 0
+          ? page.id
+          : crypto.randomUUID(),
+      kind: "custom",
+      title:
+        typeof page.title === "string" && page.title.trim().length > 0
+          ? page.title
+          : "Untitled",
+    };
+  };
+
   const rawPages = maybeConfig.pages;
-  const objectPreset =
+  const arrayPages = Array.isArray(rawPages)
+    ? rawPages.flatMap((entry) => {
+        const home = parseHomePrebuiltPage(entry);
+        if (home) return [home];
+
+        const prebuilt = parseSettingsPrebuiltPage(entry);
+        if (prebuilt) return [prebuilt];
+
+        const custom = parseCustomPage(entry);
+        return custom ? [custom] : [];
+      })
+    : [];
+
+  const objectPrebuilt =
     rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
-      ? parseSettingsPresetPage((rawPages as { preset?: unknown }).preset)
+      ? parseSettingsPrebuiltPage(
+          (rawPages as { prebuilt?: unknown; preset?: unknown }).prebuilt ??
+            (rawPages as { prebuilt?: unknown; preset?: unknown }).preset,
+        )
       : undefined;
 
-  const arrayPreset = Array.isArray(rawPages)
-    ? rawPages
-        .map((entry) => parseSettingsPresetPage(entry))
-        .find((page): page is PresetSettingsPage => Boolean(page))
-    : undefined;
+  const objectHomePrebuilt =
+    rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
+      ? parseHomePrebuiltPage((rawPages as { home?: unknown }).home)
+      : undefined;
 
-  const fallbackSettingsPage: PresetSettingsPage = {
+  const objectCustomPages =
+    rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
+      ? Object.entries((rawPages as { custom?: unknown }).custom || {}).map(
+          ([id, value]) => {
+            const item = value as { title?: unknown };
+            return {
+              id,
+              kind: "custom" as const,
+              title:
+                typeof item?.title === "string" && item.title.trim().length > 0
+                  ? item.title
+                  : id,
+            };
+          },
+        )
+      : [];
+
+  const fallbackSettingsPage: PrebuiltSettingsPage = {
     ...createDefaultSettingsPage(),
-    shown:
-      typeof maybeConfig.components?.settings?.shown === "boolean"
-        ? maybeConfig.components.settings.shown
-        : true,
     items: legacySettingsItems,
   };
 
-  const normalizedPages: PagesConfig = {
-    preset: objectPreset || arrayPreset || fallbackSettingsPage,
-    custom: {},
-  };
+  const fallbackHomePage: PrebuiltHomePage = createDefaultHomePage();
+
+  const hasSettings =
+    arrayPages.some(
+      (page) => page.kind === "prebuilt" && page.id === "settings",
+    ) || Boolean(objectPrebuilt);
+
+  const hasHome =
+    arrayPages.some(
+      (page) => page.kind === "prebuilt" && page.id === "home",
+    ) || Boolean(objectHomePrebuilt);
+
+  const normalizedPages: AppPage[] = [
+    ...(hasSettings ? [] : [fallbackSettingsPage]),
+    ...(hasHome ? [] : [fallbackHomePage]),
+    ...arrayPages,
+    ...(objectHomePrebuilt ? [objectHomePrebuilt] : []),
+    ...(objectPrebuilt ? [objectPrebuilt] : []),
+    ...objectCustomPages,
+  ];
 
   return {
     id: maybeConfig.id || crypto.randomUUID(),
-    components: {
-      navigation: {
-        shown: true,
-        navigationHeader:
-          typeof navRoot?.navigationHeader === "string"
-            ? navRoot.navigationHeader
-            : "",
-        navigationStyle: normalizedNavStyle,
-        pages: navPages,
-      },
+    appName:
+      typeof maybeConfig.appName === "string" ? maybeConfig.appName : "",
+    components: normalizedComponents,
+    navigation: {
+      shown: typeof navRoot?.shown === "boolean" ? navRoot.shown : true,
+      navigationHeader:
+        typeof navRoot?.navigationHeader === "string"
+          ? navRoot.navigationHeader
+          : "",
+      navigationStyle: normalizedNavStyle,
+      navigationPages: navPages,
     },
-    pages: normalizedPages,
+    pages:
+      normalizedPages.length > 0
+        ? normalizedPages
+        : [fallbackSettingsPage, fallbackHomePage],
   };
 };
 
@@ -489,24 +807,23 @@ function App() {
       return DEFAULT_CONFIG;
     }
   });
+  const [appNameDraft, setAppNameDraft] = useState<string>(() => config.appName);
   const [drawerState, setDrawerState] = useState<DrawerState>("closed");
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [newLinkPageId, setNewLinkPageId] = useState("settings");
   const [newLinkIconMode, setNewLinkIconMode] =
     useState<IconEntryMode>("default");
-  const [newLinkIconLibrary, setNewLinkIconLibrary] =
-    useState<IconLibrary>("phosphor");
   const [newLinkIconManual, setNewLinkIconManual] = useState("");
   const [newSettingLabel, setNewSettingLabel] = useState("");
   const [newSettingType, setNewSettingType] = useState<
     "toggle" | "input" | "select"
   >("toggle");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [iconHelpDialogOpen, setIconHelpDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("navigation");
-  const [pagesTab, setPagesTab] = useState<PagesTab>("preset");
-  const [selectedPresetPageId, setSelectedPresetPageId] = useState("settings");
+  const [selectedPageId, setSelectedPageId] = useState("settings");
+  const [showAddCustomPage, setShowAddCustomPage] = useState(false);
+  const [newCustomPageTitle, setNewCustomPageTitle] = useState("");
   const [previewToggleValues, setPreviewToggleValues] = useState<
     Record<string, boolean>
   >({});
@@ -514,13 +831,13 @@ function App() {
     Record<string, string>
   >({});
   const [navDraftPages, setNavDraftPages] = useState<NavPage[]>(
-    () => config.components.navigation.pages,
+    () => config.navigation.navigationPages,
   );
   const [navDraftHeader, setNavDraftHeader] = useState<string>(
-    () => config.components.navigation.navigationHeader,
+    () => config.navigation.navigationHeader,
   );
   const [navDraftStyle, setNavDraftStyle] = useState<NavigationStyle>(
-    () => config.components.navigation.navigationStyle,
+    () => config.navigation.navigationStyle,
   );
 
   useEffect(() => {
@@ -528,46 +845,84 @@ function App() {
   }, [config]);
 
   useEffect(() => {
-    setNavDraftPages(config.components.navigation.pages);
-  }, [config.components.navigation.pages]);
+    setAppNameDraft(config.appName);
+  }, [config.appName]);
 
   useEffect(() => {
-    setNavDraftHeader(config.components.navigation.navigationHeader);
-  }, [config.components.navigation.navigationHeader]);
+    const timeoutId = window.setTimeout(() => {
+      setConfig((current) => {
+        const base = current || DEFAULT_CONFIG;
+        if (base.appName === appNameDraft) return base;
+
+        return {
+          ...base,
+          appName: appNameDraft,
+        };
+      });
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [appNameDraft]);
 
   useEffect(() => {
-    setNavDraftStyle(config.components.navigation.navigationStyle);
-  }, [config.components.navigation.navigationStyle]);
+    setNavDraftPages(config.navigation.navigationPages);
+  }, [config.navigation.navigationPages]);
+
+  useEffect(() => {
+    setNavDraftHeader(config.navigation.navigationHeader);
+  }, [config.navigation.navigationHeader]);
+
+  useEffect(() => {
+    setNavDraftStyle(config.navigation.navigationStyle);
+  }, [config.navigation.navigationStyle]);
 
   const safeConfig = config || DEFAULT_CONFIG;
-  const normalizedPages =
-    safeConfig.pages &&
-    typeof safeConfig.pages === "object" &&
-    !Array.isArray(safeConfig.pages) &&
-    "preset" in safeConfig.pages
-      ? (safeConfig.pages as PagesConfig)
-      : {
-          preset: createDefaultSettingsPage(),
-          custom: {},
-        };
-  const settingsPage = normalizedPages.preset;
-  const presetPages = [normalizedPages.preset];
-  const customPages = normalizedPages.custom;
-  const pageTitleOptions = [
-    {
-      id: settingsPage.id,
-      title: settingsPage.title,
-      kind: "preset",
-    },
-    ...Object.entries(customPages).map(([id, value]) => ({
-      id,
-      title:
-        value && typeof value === "object" && "title" in value
-          ? String((value as { title?: unknown }).title || id)
-          : id,
-      kind: "custom",
+  const safePages = Array.isArray(safeConfig.pages)
+    ? safeConfig.pages
+    : [createDefaultSettingsPage(), createDefaultHomePage()];
+  const pageTitleOptions = safePages.map((page) => ({
+    id: page.id,
+    title: page.title,
+    kind: page.kind,
+  }));
+  const settingsPage =
+    safePages.find(
+      (page): page is PrebuiltSettingsPage =>
+        page.kind === "prebuilt" && page.id === "settings",
+    ) || createDefaultSettingsPage();
+  const selectedPage =
+    safePages.find((page) => page.id === selectedPageId) || settingsPage;
+  const exportPrebuiltConfig: ExportPrebuiltConfig = {
+    components: safeConfig.components.map((component) => ({
+      id: component.id,
+      type: component.type,
+      label: component.label,
     })),
-  ];
+    pages: safePages
+      .filter((page): page is PrebuiltSettingsPage | PrebuiltHomePage =>
+        page.kind === "prebuilt",
+      )
+      .map((page) => ({
+        id: page.id,
+        title: page.title,
+        items: page.items,
+      })),
+  };
+
+  const exportConfig: ExportConfig = {
+    id: safeConfig.id,
+    appName: safeConfig.appName,
+    navigation: safeConfig.navigation,
+    pages: safePages
+      .filter((page): page is CustomPage => page.kind === "custom")
+      .map((page) => ({
+        id: page.id,
+        title: page.title,
+      })),
+  };
+  const getComponentTypeId = (type: SettingComponentType) =>
+    safeConfig.components.find((component) => component.type === type)?.id ??
+    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)!.id;
 
   useEffect(() => {
     if (pageTitleOptions.length === 0) {
@@ -584,51 +939,99 @@ function App() {
     }
   }, [newLinkPageId, pageTitleOptions]);
 
+  useEffect(() => {
+    if (pageTitleOptions.length === 0) {
+      setSelectedPageId("settings");
+      return;
+    }
+
+    const hasSelected = pageTitleOptions.some(
+      (option) => option.id === selectedPageId,
+    );
+
+    if (!hasSelected) {
+      setSelectedPageId(pageTitleOptions[0].id);
+    }
+  }, [selectedPageId, pageTitleOptions]);
+
   const updateSettingsItems = (
     transform: (items: SettingsItem[]) => SettingsItem[],
   ) => {
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
-      const pages =
-        base.pages &&
-        typeof base.pages === "object" &&
-        !Array.isArray(base.pages) &&
-        "preset" in base.pages
-          ? (base.pages as PagesConfig)
-          : {
-              preset: createDefaultSettingsPage(),
-              custom: {},
-            };
+      const pages = Array.isArray(base.pages)
+        ? base.pages
+        : [createDefaultSettingsPage()];
 
-      const nextPreset = {
-        ...pages.preset,
-        items: transform(pages.preset.items),
-      };
+      let foundSettings = false;
+      const nextPages = pages.map((page) => {
+        if (page.kind === "prebuilt" && page.id === "settings") {
+          foundSettings = true;
+          return {
+            ...page,
+            items: transform(page.items),
+          };
+        }
+
+        return page;
+      });
+
+      if (!foundSettings) {
+        const fallback = createDefaultSettingsPage();
+        nextPages.push({
+          ...fallback,
+          items: transform(fallback.items),
+        });
+      }
 
       return {
         ...base,
-        pages: {
-          preset: nextPreset,
-          custom: {},
-        },
+        pages: nextPages,
       };
     });
   };
 
+  const addCustomPage = () => {
+    if (!newCustomPageTitle.trim()) {
+      toast.error("Please enter a page title");
+      return;
+    }
+
+    const newCustomPage: CustomPage = {
+      id: crypto.randomUUID(),
+      kind: "custom",
+      title: newCustomPageTitle.trim(),
+    };
+
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const pages = Array.isArray(base.pages)
+        ? base.pages
+        : [createDefaultSettingsPage()];
+
+      return {
+        ...base,
+        pages: [...pages, newCustomPage],
+      };
+    });
+
+    setSelectedPageId(newCustomPage.id);
+    setShowAddCustomPage(false);
+    setNewCustomPageTitle("");
+    toast.success("Custom page added");
+  };
+
   const navigationIsDirty =
     JSON.stringify(navDraftPages) !==
-    JSON.stringify(safeConfig.components.navigation.pages);
+    JSON.stringify(safeConfig.navigation.navigationPages);
   const navigationFormDirty =
     newLinkTitle.trim().length > 0 ||
     newLinkUrl.trim().length > 0 ||
     newLinkIconMode !== "default" ||
-    newLinkIconLibrary !== "phosphor" ||
     newLinkIconManual.trim().length > 0;
   const navigationHasUnsavedChanges = navigationIsDirty || navigationFormDirty;
   const iconFormDirty =
-    newLinkIconMode !== "default" ||
-    newLinkIconLibrary !== "phosphor" ||
-    newLinkIconManual.trim().length > 0;
+    newLinkIconMode !== "default" || newLinkIconManual.trim().length > 0;
 
   const updateNavigationHeader = (value: string) => {
     setNavDraftHeader(value);
@@ -636,12 +1039,9 @@ function App() {
       const base = current || DEFAULT_CONFIG;
       return {
         ...base,
-        components: {
-          ...base.components,
-          navigation: {
-            ...base.components.navigation,
-            navigationHeader: value,
-          },
+        navigation: {
+          ...base.navigation,
+          navigationHeader: value,
         },
       };
     });
@@ -653,12 +1053,22 @@ function App() {
       const base = current || DEFAULT_CONFIG;
       return {
         ...base,
-        components: {
-          ...base.components,
-          navigation: {
-            ...base.components.navigation,
-            navigationStyle: style,
-          },
+        navigation: {
+          ...base.navigation,
+          navigationStyle: style,
+        },
+      };
+    });
+  };
+
+  const updateNavigationShown = (shown: boolean) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      return {
+        ...base,
+        navigation: {
+          ...base.navigation,
+          shown,
         },
       };
     });
@@ -680,8 +1090,9 @@ function App() {
   const buildNavigationIconFromForm = (): NavPage["icon"] =>
     newLinkIconMode === "manual"
       ? {
-          name: newLinkIconManual.trim() || "House",
-          library: newLinkIconLibrary,
+          name:
+            normalizeLucideIconName(newLinkIconManual.trim()) ||
+            DEFAULT_NAV_ICON.name,
         }
       : DEFAULT_NAV_ICON;
 
@@ -742,12 +1153,9 @@ function App() {
       const base = current || DEFAULT_CONFIG;
       return {
         ...base,
-        components: {
-          ...base.components,
-          navigation: {
-            ...base.components.navigation,
-            pages: nextPages,
-          },
+        navigation: {
+          ...base.navigation,
+          navigationPages: nextPages,
         },
       };
     });
@@ -767,6 +1175,7 @@ function App() {
             id: crypto.randomUUID(),
             label: newSettingLabel.trim(),
             type: "toggle",
+            componentTypeId: getComponentTypeId("toggle"),
             value: false,
           }
         : newSettingType === "input"
@@ -774,12 +1183,14 @@ function App() {
               id: crypto.randomUUID(),
               label: newSettingLabel.trim(),
               type: "input",
+              componentTypeId: getComponentTypeId("input"),
               value: "",
             }
           : {
               id: crypto.randomUUID(),
               label: newSettingLabel.trim(),
               type: "select",
+              componentTypeId: getComponentTypeId("select"),
               value: [""],
             };
 
@@ -873,7 +1284,14 @@ function App() {
   };
 
   const copyJsonToClipboard = () => {
-    const json = JSON.stringify(safeConfig, null, 2);
+    const json = JSON.stringify(
+      {
+        config: exportConfig,
+        prebuilt: exportPrebuiltConfig,
+      },
+      null,
+      2,
+    );
     navigator.clipboard.writeText(json);
     toast.success("JSON copied to clipboard");
   };
@@ -897,8 +1315,12 @@ function App() {
 
           <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <DownloadSimple size={18} weight="bold" />
+              <Button
+                variant="outline"
+                className="gap-2"
+                disabled={safeConfig.appName.trim().length === 0}
+              >
+                <Download size={18} />
                 Export
               </Button>
             </DialogTrigger>
@@ -909,15 +1331,38 @@ function App() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[60vh]">
-                  {JSON.stringify(safeConfig, null, 2)}
-                </pre>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Config</p>
+                  <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[28vh]">
+                    {JSON.stringify(exportConfig, null, 2)}
+                  </pre>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Prebuilt</p>
+                  <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[28vh]">
+                    {JSON.stringify(exportPrebuiltConfig, null, 2)}
+                  </pre>
+                </div>
                 <Button onClick={copyJsonToClipboard} className="w-full">
-                  Copy to Clipboard
+                  Copy Both to Clipboard
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
+        </div>
+
+        <div className="mx-auto w-full max-w-md space-y-2 text-center">
+          <Label htmlFor="app-name" className="inline-block">
+            App Name
+          </Label>
+          <Input
+            id="app-name"
+            required
+            placeholder="Enter app name"
+            value={appNameDraft}
+            onChange={(e) => setAppNameDraft(e.target.value)}
+            className="text-center"
+          />
         </div>
 
         <div className="space-y-4">
@@ -928,7 +1373,7 @@ function App() {
               onClick={() => setActiveTab("navigation")}
               className="gap-2"
             >
-              <House size={16} weight="bold" />
+              <Home size={16} />
               Navigation
             </Button>
             <Button
@@ -944,79 +1389,84 @@ function App() {
 
           {activeTab === "pages" && (
             <div className="space-y-4">
-              <div className="grid w-full grid-cols-2 rounded-md bg-muted p-1">
-                <Button
-                  type="button"
-                  variant={pagesTab === "preset" ? "default" : "ghost"}
-                  onClick={() => setPagesTab("preset")}
-                >
-                  Preset
-                </Button>
-                <Button
-                  type="button"
-                  variant={pagesTab === "custom" ? "default" : "ghost"}
-                  onClick={() => setPagesTab("custom")}
-                >
-                  Custom
-                </Button>
-              </div>
+              <Card className="p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pages-selector">Pages</Label>
+                  <Select
+                    value={showAddCustomPage ? "__add_custom__" : selectedPageId}
+                    onValueChange={(value) => {
+                      if (value === "__add_custom__") {
+                        setShowAddCustomPage(true);
+                        return;
+                      }
 
-              {pagesTab === "preset" && (
-                <Card className="p-4">
-                  <h2 className="text-lg font-semibold mb-4 font-mono">
-                    Preset Pages
-                  </h2>
-
-                  {presetPages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No preset pages found.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {presetPages.map((page) => (
-                        <button
-                          key={page.id}
-                          type="button"
-                          className={`w-full rounded-lg p-3 text-left transition-colors ${
-                            selectedPresetPageId === page.id
-                              ? "bg-muted"
-                              : "bg-secondary hover:bg-secondary/70"
-                          }`}
-                          onClick={() => setSelectedPresetPageId(page.id)}
-                        >
-                          <p className="font-medium">{page.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {page.pageType}
-                          </p>
-                        </button>
+                      setShowAddCustomPage(false);
+                      setSelectedPageId(value);
+                    }}
+                  >
+                    <SelectTrigger id="pages-selector">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pageTitleOptions.map((page) => (
+                        <SelectItem key={page.id} value={page.id}>
+                          {page.title}
+                        </SelectItem>
                       ))}
-                    </div>
-                  )}
-                </Card>
-              )}
+                      <Separator className="my-1" />
+                      <SelectItem value="__add_custom__">Add custom page</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {pagesTab === "custom" && (
-                <Card className="p-4">
-                  <h2 className="text-lg font-semibold mb-4 font-mono">
-                    Custom Pages
-                  </h2>
-
-                  <div className="rounded-lg bg-secondary p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Custom object is currently blank.
-                    </p>
-                    <pre className="mt-2 text-xs font-mono text-muted-foreground">
-                      {JSON.stringify(customPages, null, 2)}
-                    </pre>
+                {showAddCustomPage && (
+                  <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
+                    <Label htmlFor="new-custom-page-title">Custom Page Title</Label>
+                    <Input
+                      id="new-custom-page-title"
+                      placeholder="Profile"
+                      value={newCustomPageTitle}
+                      onChange={(e) => setNewCustomPageTitle(e.target.value)}
+                    />
+                    <Button type="button" onClick={addCustomPage} className="w-full gap-2">
+                      <Plus size={16} weight="bold" />
+                      Save Custom Page
+                    </Button>
                   </div>
-                </Card>
-              )}
+                )}
+
+                {!showAddCustomPage && (
+                  <div className="mt-4 rounded-lg bg-secondary p-3">
+                    {selectedPage.kind === "custom" ? (
+                      <div className="min-h-[220px] rounded-md border border-border bg-background p-4">
+                        <p className="text-center text-sm text-muted-foreground">
+                          Empty page
+                        </p>
+                        <p className="mt-2 text-center font-medium">
+                          {selectedPage.title}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="min-h-[220px] rounded-md border border-border bg-background p-4" />
+                    )}
+                  </div>
+                )}
+              </Card>
             </div>
           )}
 
           {activeTab === "navigation" && (
             <div className="grid gap-4 lg:grid-cols-2">
               <Card className="p-4">
+                <div className="mb-4 flex items-center justify-between rounded-md border border-border bg-secondary p-3">
+                  <Label htmlFor="navigation-shown">Show Navigation</Label>
+                  <Switch
+                    id="navigation-shown"
+                    checked={safeConfig.navigation.shown}
+                    onCheckedChange={updateNavigationShown}
+                  />
+                </div>
+
                 <div className="mb-4 space-y-2">
                   <Label htmlFor="navigation-header">Navigation Header</Label>
                   <Input
@@ -1201,103 +1651,32 @@ function App() {
                     <div className="space-y-2">
                       <Label>Default Icon</Label>
                       <div className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
-                        <House size={20} className="text-muted-foreground" />
+                        <Home size={20} className="text-muted-foreground" />
                         <div>
                           <p className="text-sm font-medium">
                             {DEFAULT_NAV_ICON.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Library: {DEFAULT_NAV_ICON.library}
+                            Lucide icon
                           </p>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Label htmlFor="link-icon-manual">Manual Icon Name</Label>
+                      <Label htmlFor="link-icon-manual">Icon Name</Label>
                       <Input
                         id="link-icon-manual"
-                        placeholder="House"
+                        placeholder="Home"
                         value={newLinkIconManual}
                         onChange={(e) => setNewLinkIconManual(e.target.value)}
                         onKeyDown={(e) =>
                           e.key === "Enter" && addNavigationPage()
                         }
                       />
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <Label htmlFor="link-icon-library">
-                            Icon Library
-                          </Label>
-                          <Dialog
-                            open={iconHelpDialogOpen}
-                            onOpenChange={setIconHelpDialogOpen}
-                          >
-                            <DialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                type="button"
-                                className="h-7 w-7 rounded-full font-semibold"
-                                aria-label="Icon library help"
-                              >
-                                ?
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-md">
-                              <DialogHeader>
-                                <DialogTitle>Find Icons</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-3 text-sm">
-                                <p className="text-muted-foreground">
-                                  Browse icon libraries and copy an icon name
-                                  for manual entry.
-                                </p>
-                                <a
-                                  href="https://lucide.dev/icons/"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block text-primary underline"
-                                >
-                                  Lucide Icons
-                                </a>
-                                <a
-                                  href="https://phosphoricons.com/"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block text-primary underline"
-                                >
-                                  Phosphor Icons
-                                </a>
-                                <a
-                                  href="https://heroicons.com/"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block text-primary underline"
-                                >
-                                  Heroicons
-                                </a>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                        <Select
-                          value={newLinkIconLibrary}
-                          onValueChange={(value: IconLibrary) =>
-                            setNewLinkIconLibrary(value)
-                          }
-                        >
-                          <SelectTrigger id="link-icon-library">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="phosphor">phosphor</SelectItem>
-                            <SelectItem value="lucide">lucide</SelectItem>
-                            <SelectItem value="heroicons">heroicons</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Lucide only
+                      </p>
                     </div>
                   )}
 
@@ -1328,8 +1707,7 @@ function App() {
                                       {page.title}
                                     </p>
                                     <p className="text-sm text-muted-foreground truncate">
-                                      {page.link} • {page.icon.name} (
-                                      {page.icon.library}) • pageId: {page.pageId}
+                                      {page.link} • {page.icon.name} • pageId: {page.pageId}
                                     </p>
                                   </div>
                                 </div>
@@ -1339,7 +1717,7 @@ function App() {
                                   onClick={() => removeNavigationPage(page.id)}
                                   className="flex-shrink-0 text-destructive hover:text-destructive"
                                 >
-                                  <Trash size={18} />
+                                  <Trash2 size={18} />
                                 </Button>
                               </div>
                             );
@@ -1356,7 +1734,11 @@ function App() {
                   <h2 className="text-lg font-semibold font-mono">
                     Navigation Preview
                   </h2>
-                  {navDraftStyle.type === "drawer" ? (
+                  {!safeConfig.navigation.shown ? (
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Hidden
+                    </span>
+                  ) : navDraftStyle.type === "drawer" ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1374,7 +1756,7 @@ function App() {
                 </div>
 
                 <div className="relative border-2 border-border rounded-lg overflow-hidden bg-card min-h-[400px]">
-                  {navDraftStyle.type === "drawer" && (
+                  {safeConfig.navigation.shown && navDraftStyle.type === "drawer" && (
                     <motion.div
                       className="absolute top-0 left-0 h-full bg-secondary border-r border-border flex flex-col z-10"
                       initial={false}
@@ -1426,7 +1808,7 @@ function App() {
                     </motion.div>
                   )}
 
-                  {navDraftStyle.type === "bottom" && (
+                  {safeConfig.navigation.shown && navDraftStyle.type === "bottom" && (
                     <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-secondary z-10">
                       <div className="grid grid-flow-col auto-cols-fr gap-1 p-2">
                         {navDraftPages.map((page) => (
@@ -1455,7 +1837,9 @@ function App() {
                     className="h-full p-6"
                     initial={false}
                     animate={
-                      navDraftStyle.type === "drawer"
+                      !safeConfig.navigation.shown
+                        ? { paddingLeft: 24, paddingBottom: 24 }
+                        : navDraftStyle.type === "drawer"
                         ? { paddingLeft: drawerWidth + 24, paddingBottom: 24 }
                         : { paddingLeft: 24, paddingBottom: 92 }
                     }
@@ -1471,8 +1855,9 @@ function App() {
           )}
 
           {activeTab === "pages" &&
-            pagesTab === "preset" &&
-            selectedPresetPageId === "settings" && (
+            !showAddCustomPage &&
+            selectedPage.kind === "prebuilt" &&
+            selectedPage.id === "settings" && (
             <div className="grid gap-4 lg:grid-cols-2">
               <Card className="p-4">
                 <h2 className="text-lg font-semibold mb-4 font-mono">
@@ -1546,7 +1931,7 @@ function App() {
                                 onClick={() => removeSettingItem(item.id)}
                                 className="flex-shrink-0 text-destructive hover:text-destructive"
                               >
-                                <Trash size={18} />
+                                <Trash2 size={18} />
                               </Button>
                             </div>
 
@@ -1583,7 +1968,7 @@ function App() {
                                         className="text-destructive hover:text-destructive"
                                         aria-label="Delete option"
                                       >
-                                        <Trash size={18} />
+                                        <Trash2 size={18} />
                                       </Button>
                                     </div>
                                   ))}
