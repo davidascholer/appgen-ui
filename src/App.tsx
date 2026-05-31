@@ -93,11 +93,17 @@ type ActiveTab = "navigation" | "settings";
 type IconEntryMode = "default" | "manual";
 type IconLibrary = "phosphor" | "lucide" | "heroicons";
 type DrawerVariant = "short" | "long" | "all";
+type BottomVariant = "short" | "long";
 
-interface NavigationStyle {
-  type: "drawer";
-  variant: DrawerVariant;
-}
+type NavigationStyle =
+  | {
+      type: "drawer";
+      variant: DrawerVariant;
+    }
+  | {
+      type: "bottom";
+      variant: BottomVariant;
+    };
 
 const DEFAULT_NAV_ICON = {
   name: "House",
@@ -223,23 +229,35 @@ const normalizeConfig = (input: unknown): AppConfig => {
   };
 
   const navStyleRaw = maybeConfig.components?.navigationDrawer?.navigationStyle;
-  const normalizedNavStyle: NavigationStyle =
-    navStyleRaw && typeof navStyleRaw === "object"
-      ? {
-          type:
-            "type" in navStyleRaw &&
-            (navStyleRaw as { type?: unknown }).type === "drawer"
-              ? "drawer"
-              : "drawer",
-          variant:
-            "variant" in navStyleRaw &&
-            ((navStyleRaw as { variant?: unknown }).variant === "short" ||
-              (navStyleRaw as { variant?: unknown }).variant === "long" ||
-              (navStyleRaw as { variant?: unknown }).variant === "all")
-              ? (navStyleRaw as { variant: DrawerVariant }).variant
-              : "all",
-        }
-      : DEFAULT_NAVIGATION_STYLE;
+  const normalizedNavStyle: NavigationStyle = (() => {
+    if (!navStyleRaw || typeof navStyleRaw !== "object") {
+      return DEFAULT_NAVIGATION_STYLE;
+    }
+
+    const typeValue =
+      "type" in navStyleRaw ? (navStyleRaw as { type?: unknown }).type : null;
+    const variantValue =
+      "variant" in navStyleRaw
+        ? (navStyleRaw as { variant?: unknown }).variant
+        : null;
+
+    if (typeValue === "bottom") {
+      return {
+        type: "bottom",
+        variant: variantValue === "long" ? "long" : "short",
+      };
+    }
+
+    return {
+      type: "drawer",
+      variant:
+        variantValue === "short" ||
+        variantValue === "long" ||
+        variantValue === "all"
+          ? variantValue
+          : "all",
+    };
+  })();
 
   const navPagesRaw =
     maybeConfig.components?.navigationDrawer?.pages ??
@@ -735,7 +753,13 @@ function App() {
   };
 
   const drawerWidth =
-    drawerState === "open" ? 240 : drawerState === "icons-only" ? 60 : 0;
+    navDraftStyle.type === "drawer"
+      ? drawerState === "open"
+        ? 240
+        : drawerState === "icons-only"
+          ? 60
+          : 0
+      : 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
@@ -799,7 +823,7 @@ function App() {
                   <Label htmlFor="navigation-header">Navigation Header</Label>
                   <Input
                     id="navigation-header"
-                    placeholder=""
+                    placeholder="none"
                     value={navDraftHeader}
                     onChange={(e) => updateNavigationHeader(e.target.value)}
                   />
@@ -809,18 +833,33 @@ function App() {
                   <Label htmlFor="navigation-style">Navigation Style</Label>
                   <Select
                     value={navDraftStyle.type}
-                    onValueChange={() =>
+                    onValueChange={(value: NavigationStyle["type"]) => {
+                      if (value === "drawer") {
+                        updateNavigationStyle({
+                          type: "drawer",
+                          variant:
+                            navDraftStyle.type === "drawer"
+                              ? navDraftStyle.variant
+                              : "all",
+                        });
+                        return;
+                      }
+
                       updateNavigationStyle({
-                        ...navDraftStyle,
-                        type: "drawer",
-                      })
-                    }
+                        type: "bottom",
+                        variant:
+                          navDraftStyle.type === "bottom"
+                            ? navDraftStyle.variant
+                            : "short",
+                      });
+                    }}
                   >
                     <SelectTrigger id="navigation-style">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="drawer">drawer</SelectItem>
+                      <SelectItem value="bottom">bottom</SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -845,6 +884,31 @@ function App() {
                           <SelectItem value="short">short</SelectItem>
                           <SelectItem value="long">long</SelectItem>
                           <SelectItem value="all">all</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {navDraftStyle.type === "bottom" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="navigation-style-variant">
+                        Bottom Options
+                      </Label>
+                      <Select
+                        value={navDraftStyle.variant}
+                        onValueChange={(value: BottomVariant) =>
+                          updateNavigationStyle({
+                            type: "bottom",
+                            variant: value,
+                          })
+                        }
+                      >
+                        <SelectTrigger id="navigation-style-variant">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="short">short</SelectItem>
+                          <SelectItem value="long">long</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1075,76 +1139,113 @@ function App() {
                   <h2 className="text-lg font-semibold font-mono">
                     Navigation Preview
                   </h2>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={cycleDrawerState}
-                    className="gap-2"
-                  >
-                    <List size={16} weight="bold" />
-                    Cycle Drawer
-                  </Button>
+                  {navDraftStyle.type === "drawer" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={cycleDrawerState}
+                      className="gap-2"
+                    >
+                      <List size={16} weight="bold" />
+                      Cycle Drawer
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Always visible
+                    </span>
+                  )}
                 </div>
 
                 <div className="relative border-2 border-border rounded-lg overflow-hidden bg-card min-h-[400px]">
-                  <motion.div
-                    className="absolute top-0 left-0 h-full bg-secondary border-r border-border flex flex-col z-10"
-                    initial={false}
-                    animate={{ width: drawerWidth }}
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
-                  >
-                    {drawerState !== "closed" && (
-                      <div className="flex flex-col h-full overflow-hidden">
-                        <div className="p-4 flex-shrink-0">
-                          {drawerState === "open" &&
-                            navDraftHeader.trim().length > 0 && (
-                              <h3 className="font-semibold text-sm truncate">
-                                {navDraftHeader}
-                              </h3>
-                            )}
-                        </div>
-
-                        <ScrollArea className="flex-1">
-                          <div className="space-y-1 px-2 pb-4">
-                            {navDraftPages.length === 0 ? (
-                              <div className="text-center py-8 px-4"></div>
-                            ) : (
-                              navDraftPages.map((page) =>
-                                (() => {
-                                  return (
-                                    <div
-                                      key={page.id}
-                                      className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
-                                    >
-                                      {renderNavIcon(
-                                        page.icon,
-                                        "flex-shrink-0",
-                                        20,
-                                      )}
-                                      {drawerState === "open" && (
-                                        <span className="text-sm truncate">
-                                          {page.title}
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                })(),
-                              )
-                            )}
+                  {navDraftStyle.type === "drawer" && (
+                    <motion.div
+                      className="absolute top-0 left-0 h-full bg-secondary border-r border-border flex flex-col z-10"
+                      initial={false}
+                      animate={{ width: drawerWidth }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                    >
+                      {drawerState !== "closed" && (
+                        <div className="flex flex-col h-full overflow-hidden">
+                          <div className="p-4 flex-shrink-0">
+                            {drawerState === "open" &&
+                              navDraftHeader.trim().length > 0 && (
+                                <h3 className="font-semibold text-sm truncate">
+                                  {navDraftHeader}
+                                </h3>
+                              )}
                           </div>
-                        </ScrollArea>
+
+                          <ScrollArea className="flex-1">
+                            <div className="space-y-1 px-2 pb-4">
+                              {navDraftPages.length === 0 ? (
+                                <div className="text-center py-8 px-4"></div>
+                              ) : (
+                                navDraftPages.map((page) =>
+                                  (() => {
+                                    return (
+                                      <div
+                                        key={page.id}
+                                        className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                                      >
+                                        {renderNavIcon(
+                                          page.icon,
+                                          "flex-shrink-0",
+                                          20,
+                                        )}
+                                        {drawerState === "open" && (
+                                          <span className="text-sm truncate">
+                                            {page.title}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })(),
+                                )
+                              )}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {navDraftStyle.type === "bottom" && (
+                    <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-secondary z-10">
+                      <div className="grid grid-flow-col auto-cols-fr gap-1 p-2">
+                        {navDraftPages.map((page) => (
+                          <button
+                            key={page.id}
+                            type="button"
+                            className="flex items-center justify-center rounded px-2 py-1 text-muted-foreground hover:bg-muted/50 transition-colors"
+                          >
+                            {navDraftStyle.variant === "short" ? (
+                              renderNavIcon(page.icon, "", 20)
+                            ) : (
+                              <span className="flex flex-col items-center gap-1">
+                                {renderNavIcon(page.icon, "", 20)}
+                                <span className="text-[10px] leading-none truncate max-w-[64px]">
+                                  {page.title}
+                                </span>
+                              </span>
+                            )}
+                          </button>
+                        ))}
                       </div>
-                    )}
-                  </motion.div>
+                    </div>
+                  )}
 
                   <motion.div
                     className="h-full p-6"
                     initial={false}
-                    animate={{ paddingLeft: drawerWidth + 24 }}
+                    animate={
+                      navDraftStyle.type === "drawer"
+                        ? { paddingLeft: drawerWidth + 24, paddingBottom: 24 }
+                        : { paddingLeft: 24, paddingBottom: 92 }
+                    }
                     transition={{ duration: 0.25, ease: "easeInOut" }}
                   >
                     <p className="text-sm text-muted-foreground">
-                      This preview shows only the navigation drawer component.
+                      This preview shows only the selected navigation component.
                     </p>
                   </motion.div>
                 </div>
