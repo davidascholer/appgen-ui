@@ -43,6 +43,7 @@ interface NavPage {
   id: string;
   title: string;
   link: string;
+  pageId: string;
   icon: {
     name: string;
     library: IconLibrary;
@@ -72,24 +73,44 @@ interface SelectSettingItem {
 
 type SettingsItem = ToggleSettingItem | InputSettingItem | SelectSettingItem;
 
+interface PresetSettingsPage {
+  id: string;
+  kind: "preset";
+  pageType: "settings";
+  title: string;
+  shown: boolean;
+  items: SettingsItem[];
+}
+
+interface CustomPage {
+  id: string;
+  kind: "custom";
+  pageType: "custom";
+  title: string;
+  shown: boolean;
+}
+
+interface PagesConfig {
+  preset: PresetSettingsPage;
+  custom: Record<string, never>;
+}
+
 interface AppConfig {
   id: string;
   components: {
-    navigationDrawer: {
+    navigation: {
       shown: boolean;
       navigationHeader: string;
       navigationStyle: NavigationStyle;
       pages: NavPage[];
     };
-    settings: {
-      shown: boolean;
-      items: SettingsItem[];
-    };
   };
+  pages: PagesConfig;
 }
 
 type DrawerState = "closed" | "icons-only" | "open";
-type ActiveTab = "navigation" | "settings";
+type ActiveTab = "navigation" | "pages";
+type PagesTab = "preset" | "custom";
 type IconEntryMode = "default" | "manual";
 type IconLibrary = "phosphor" | "lucide" | "heroicons";
 type DrawerVariant = "short" | "long" | "all";
@@ -114,6 +135,15 @@ const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
   type: "drawer",
   variant: "all",
 };
+
+const createDefaultSettingsPage = (): PresetSettingsPage => ({
+  id: "settings",
+  kind: "preset",
+  pageType: "settings",
+  title: "Settings",
+  shown: true,
+  items: [],
+});
 
 const getPhosphorIconComponent = (iconName: string) => {
   const iconMap = {
@@ -197,16 +227,16 @@ const renderNavIcon = (
 const DEFAULT_CONFIG: AppConfig = {
   id: crypto.randomUUID(),
   components: {
-    navigationDrawer: {
+    navigation: {
       shown: true,
       navigationHeader: "",
       navigationStyle: DEFAULT_NAVIGATION_STYLE,
       pages: [],
     },
-    settings: {
-      shown: true,
-      items: [],
-    },
+  },
+  pages: {
+    preset: createDefaultSettingsPage(),
+    custom: {},
   },
 };
 
@@ -215,7 +245,14 @@ const normalizeConfig = (input: unknown): AppConfig => {
 
   const maybeConfig = input as {
     id?: string;
+    pages?: unknown;
     components?: {
+      navigation?: {
+        navigationHeader?: unknown;
+        navigationStyle?: unknown;
+        pages?: unknown;
+        items?: unknown;
+      };
       navigationDrawer?: {
         navigationHeader?: unknown;
         navigationStyle?: unknown;
@@ -223,12 +260,16 @@ const normalizeConfig = (input: unknown): AppConfig => {
         items?: unknown;
       };
       settings?: {
+        shown?: unknown;
         items?: unknown;
       };
     };
   };
 
-  const navStyleRaw = maybeConfig.components?.navigationDrawer?.navigationStyle;
+  const navRoot =
+    maybeConfig.components?.navigation ?? maybeConfig.components?.navigationDrawer;
+
+  const navStyleRaw = navRoot?.navigationStyle;
   const normalizedNavStyle: NavigationStyle = (() => {
     if (!navStyleRaw || typeof navStyleRaw !== "object") {
       return DEFAULT_NAVIGATION_STYLE;
@@ -259,9 +300,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
     };
   })();
 
-  const navPagesRaw =
-    maybeConfig.components?.navigationDrawer?.pages ??
-    maybeConfig.components?.navigationDrawer?.items;
+  const navPagesRaw = navRoot?.pages ?? navRoot?.items;
 
   const navPages: NavPage[] = Array.isArray(navPagesRaw)
     ? navPagesRaw.map((entry) => {
@@ -306,14 +345,18 @@ const normalizeConfig = (input: unknown): AppConfig => {
           id: page.id || crypto.randomUUID(),
           title: typeof page.title === "string" ? page.title : "Untitled",
           link: typeof page.link === "string" ? page.link : "#",
+          pageId:
+            typeof page.pageId === "string" && page.pageId.trim().length > 0
+              ? page.pageId
+              : "settings",
           icon: normalizedIcon,
         };
       })
     : [];
 
-  const settingsItemsRaw = maybeConfig.components?.settings?.items;
-  const settingsItems: SettingsItem[] = Array.isArray(settingsItemsRaw)
-    ? settingsItemsRaw.map((entry) => {
+  const parseSettingsItems = (value: unknown): SettingsItem[] =>
+    Array.isArray(value)
+      ? value.map((entry) => {
         const item = entry as Partial<SettingsItem> & {
           value?: unknown;
         };
@@ -349,26 +392,89 @@ const normalizeConfig = (input: unknown): AppConfig => {
           value: typeof item.value === "string" ? item.value : "",
         };
       })
-    : [];
+      : [];
+
+  const legacySettingsItems = parseSettingsItems(
+    maybeConfig.components?.settings?.items,
+  );
+
+  const parseSettingsPresetPage = (
+    value: unknown,
+  ): PresetSettingsPage | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+
+    const page = value as {
+      id?: unknown;
+      kind?: unknown;
+      pageType?: unknown;
+      title?: unknown;
+      shown?: unknown;
+      items?: unknown;
+    };
+
+    const isSettingsPage =
+      page.pageType === "settings" ||
+      page.id === "settings" ||
+      page.kind === "preset";
+
+    if (!isSettingsPage) return undefined;
+
+    return {
+      id:
+        typeof page.id === "string" && page.id.trim().length > 0
+          ? page.id
+          : "settings",
+      kind: "preset",
+      pageType: "settings",
+      title:
+        typeof page.title === "string" && page.title.trim().length > 0
+          ? page.title
+          : "Settings",
+      shown: typeof page.shown === "boolean" ? page.shown : true,
+      items: parseSettingsItems(page.items),
+    };
+  };
+
+  const rawPages = maybeConfig.pages;
+  const objectPreset =
+    rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
+      ? parseSettingsPresetPage((rawPages as { preset?: unknown }).preset)
+      : undefined;
+
+  const arrayPreset = Array.isArray(rawPages)
+    ? rawPages
+        .map((entry) => parseSettingsPresetPage(entry))
+        .find((page): page is PresetSettingsPage => Boolean(page))
+    : undefined;
+
+  const fallbackSettingsPage: PresetSettingsPage = {
+    ...createDefaultSettingsPage(),
+    shown:
+      typeof maybeConfig.components?.settings?.shown === "boolean"
+        ? maybeConfig.components.settings.shown
+        : true,
+    items: legacySettingsItems,
+  };
+
+  const normalizedPages: PagesConfig = {
+    preset: objectPreset || arrayPreset || fallbackSettingsPage,
+    custom: {},
+  };
 
   return {
     id: maybeConfig.id || crypto.randomUUID(),
     components: {
-      navigationDrawer: {
+      navigation: {
         shown: true,
         navigationHeader:
-          typeof maybeConfig.components?.navigationDrawer?.navigationHeader ===
-          "string"
-            ? maybeConfig.components.navigationDrawer.navigationHeader
+          typeof navRoot?.navigationHeader === "string"
+            ? navRoot.navigationHeader
             : "",
         navigationStyle: normalizedNavStyle,
         pages: navPages,
       },
-      settings: {
-        shown: true,
-        items: settingsItems,
-      },
     },
+    pages: normalizedPages,
   };
 };
 
@@ -386,6 +492,7 @@ function App() {
   const [drawerState, setDrawerState] = useState<DrawerState>("closed");
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
+  const [newLinkPageId, setNewLinkPageId] = useState("settings");
   const [newLinkIconMode, setNewLinkIconMode] =
     useState<IconEntryMode>("default");
   const [newLinkIconLibrary, setNewLinkIconLibrary] =
@@ -398,6 +505,8 @@ function App() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [iconHelpDialogOpen, setIconHelpDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("navigation");
+  const [pagesTab, setPagesTab] = useState<PagesTab>("preset");
+  const [selectedPresetPageId, setSelectedPresetPageId] = useState("settings");
   const [previewToggleValues, setPreviewToggleValues] = useState<
     Record<string, boolean>
   >({});
@@ -405,13 +514,13 @@ function App() {
     Record<string, string>
   >({});
   const [navDraftPages, setNavDraftPages] = useState<NavPage[]>(
-    () => config.components.navigationDrawer.pages,
+    () => config.components.navigation.pages,
   );
   const [navDraftHeader, setNavDraftHeader] = useState<string>(
-    () => config.components.navigationDrawer.navigationHeader,
+    () => config.components.navigation.navigationHeader,
   );
   const [navDraftStyle, setNavDraftStyle] = useState<NavigationStyle>(
-    () => config.components.navigationDrawer.navigationStyle,
+    () => config.components.navigation.navigationStyle,
   );
 
   useEffect(() => {
@@ -419,21 +528,96 @@ function App() {
   }, [config]);
 
   useEffect(() => {
-    setNavDraftPages(config.components.navigationDrawer.pages);
-  }, [config.components.navigationDrawer.pages]);
+    setNavDraftPages(config.components.navigation.pages);
+  }, [config.components.navigation.pages]);
 
   useEffect(() => {
-    setNavDraftHeader(config.components.navigationDrawer.navigationHeader);
-  }, [config.components.navigationDrawer.navigationHeader]);
+    setNavDraftHeader(config.components.navigation.navigationHeader);
+  }, [config.components.navigation.navigationHeader]);
 
   useEffect(() => {
-    setNavDraftStyle(config.components.navigationDrawer.navigationStyle);
-  }, [config.components.navigationDrawer.navigationStyle]);
+    setNavDraftStyle(config.components.navigation.navigationStyle);
+  }, [config.components.navigation.navigationStyle]);
 
   const safeConfig = config || DEFAULT_CONFIG;
+  const normalizedPages =
+    safeConfig.pages &&
+    typeof safeConfig.pages === "object" &&
+    !Array.isArray(safeConfig.pages) &&
+    "preset" in safeConfig.pages
+      ? (safeConfig.pages as PagesConfig)
+      : {
+          preset: createDefaultSettingsPage(),
+          custom: {},
+        };
+  const settingsPage = normalizedPages.preset;
+  const presetPages = [normalizedPages.preset];
+  const customPages = normalizedPages.custom;
+  const pageTitleOptions = [
+    {
+      id: settingsPage.id,
+      title: settingsPage.title,
+      kind: "preset",
+    },
+    ...Object.entries(customPages).map(([id, value]) => ({
+      id,
+      title:
+        value && typeof value === "object" && "title" in value
+          ? String((value as { title?: unknown }).title || id)
+          : id,
+      kind: "custom",
+    })),
+  ];
+
+  useEffect(() => {
+    if (pageTitleOptions.length === 0) {
+      setNewLinkPageId("settings");
+      return;
+    }
+
+    const hasSelected = pageTitleOptions.some(
+      (option) => option.id === newLinkPageId,
+    );
+
+    if (!hasSelected) {
+      setNewLinkPageId(pageTitleOptions[0].id);
+    }
+  }, [newLinkPageId, pageTitleOptions]);
+
+  const updateSettingsItems = (
+    transform: (items: SettingsItem[]) => SettingsItem[],
+  ) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const pages =
+        base.pages &&
+        typeof base.pages === "object" &&
+        !Array.isArray(base.pages) &&
+        "preset" in base.pages
+          ? (base.pages as PagesConfig)
+          : {
+              preset: createDefaultSettingsPage(),
+              custom: {},
+            };
+
+      const nextPreset = {
+        ...pages.preset,
+        items: transform(pages.preset.items),
+      };
+
+      return {
+        ...base,
+        pages: {
+          preset: nextPreset,
+          custom: {},
+        },
+      };
+    });
+  };
+
   const navigationIsDirty =
     JSON.stringify(navDraftPages) !==
-    JSON.stringify(safeConfig.components.navigationDrawer.pages);
+    JSON.stringify(safeConfig.components.navigation.pages);
   const navigationFormDirty =
     newLinkTitle.trim().length > 0 ||
     newLinkUrl.trim().length > 0 ||
@@ -454,8 +638,8 @@ function App() {
         ...base,
         components: {
           ...base.components,
-          navigationDrawer: {
-            ...base.components.navigationDrawer,
+          navigation: {
+            ...base.components.navigation,
             navigationHeader: value,
           },
         },
@@ -471,8 +655,8 @@ function App() {
         ...base,
         components: {
           ...base.components,
-          navigationDrawer: {
-            ...base.components.navigationDrawer,
+          navigation: {
+            ...base.components.navigation,
             navigationStyle: style,
           },
         },
@@ -505,6 +689,7 @@ function App() {
     id: crypto.randomUUID(),
     title: newLinkTitle.trim(),
     link: newLinkUrl.trim() || "#",
+    pageId: newLinkPageId,
     icon: buildNavigationIconFromForm(),
   });
 
@@ -559,8 +744,8 @@ function App() {
         ...base,
         components: {
           ...base.components,
-          navigationDrawer: {
-            ...base.components.navigationDrawer,
+          navigation: {
+            ...base.components.navigation,
             pages: nextPages,
           },
         },
@@ -598,19 +783,7 @@ function App() {
               value: [""],
             };
 
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-      return {
-        ...base,
-        components: {
-          ...base.components,
-          settings: {
-            ...base.components.settings,
-            items: [...base.components.settings.items, newSetting],
-          },
-        },
-      };
-    });
+    updateSettingsItems((items) => [...items, newSetting]);
 
     setNewSettingLabel("");
     setNewSettingType("toggle");
@@ -618,26 +791,15 @@ function App() {
   };
 
   const addSelectSettingOption = (id: string) => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-
-      return {
-        ...base,
-        components: {
-          ...base.components,
-          settings: {
-            ...base.components.settings,
-            items: base.components.settings.items.map((item) => {
-              if (item.id !== id || item.type !== "select") return item;
-              return {
-                ...item,
-                value: [...item.value, ""],
-              };
-            }),
-          },
-        },
-      };
-    });
+    updateSettingsItems((items) =>
+      items.map((item) => {
+        if (item.id !== id || item.type !== "select") return item;
+        return {
+          ...item,
+          value: [...item.value, ""],
+        };
+      }),
+    );
   };
 
   const updateSelectSettingOption = (
@@ -645,77 +807,41 @@ function App() {
     optionIndex: number,
     nextValue: string,
   ) => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-
-      return {
-        ...base,
-        components: {
-          ...base.components,
-          settings: {
-            ...base.components.settings,
-            items: base.components.settings.items.map((item) => {
-              if (item.id !== id || item.type !== "select") return item;
-              return {
-                ...item,
-                value: item.value.map((option, index) =>
-                  index === optionIndex ? nextValue : option,
-                ),
-              };
-            }),
-          },
-        },
-      };
-    });
+    updateSettingsItems((items) =>
+      items.map((item) => {
+        if (item.id !== id || item.type !== "select") return item;
+        return {
+          ...item,
+          value: item.value.map((option, index) =>
+            index === optionIndex ? nextValue : option,
+          ),
+        };
+      }),
+    );
   };
 
   const removeSelectSettingOption = (id: string, optionIndex: number) => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
+    updateSettingsItems((items) =>
+      items.map((item) => {
+        if (item.id !== id || item.type !== "select") return item;
 
-      return {
-        ...base,
-        components: {
-          ...base.components,
-          settings: {
-            ...base.components.settings,
-            items: base.components.settings.items.map((item) => {
-              if (item.id !== id || item.type !== "select") return item;
+        if (item.value.length <= 1) {
+          return {
+            ...item,
+            value: [""],
+          };
+        }
 
-              if (item.value.length <= 1) {
-                return {
-                  ...item,
-                  value: [""],
-                };
-              }
-
-              return {
-                ...item,
-                value: item.value.filter((_, index) => index !== optionIndex),
-              };
-            }),
-          },
-        },
-      };
-    });
+        return {
+          ...item,
+          value: item.value.filter((_, index) => index !== optionIndex),
+        };
+      }),
+    );
   };
 
   const removeSettingItem = (id: string) => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-      return {
-        ...base,
-        components: {
-          ...base.components,
-          settings: {
-            ...base.components.settings,
-            items: base.components.settings.items.filter(
-              (item) => item.id !== id,
-            ),
-          },
-        },
-      };
-    });
+    updateSettingsItems((items) => items.filter((item) => item.id !== id));
     toast.success("Setting removed");
   };
 
@@ -807,14 +933,86 @@ function App() {
             </Button>
             <Button
               type="button"
-              variant={activeTab === "settings" ? "default" : "ghost"}
-              onClick={() => setActiveTab("settings")}
+              variant={activeTab === "pages" ? "default" : "ghost"}
+              onClick={() => setActiveTab("pages")}
               className="gap-2"
             >
-              <ToggleLeft size={16} weight="bold" />
-              Settings
+              <List size={16} weight="bold" />
+              Pages
             </Button>
           </div>
+
+          {activeTab === "pages" && (
+            <div className="space-y-4">
+              <div className="grid w-full grid-cols-2 rounded-md bg-muted p-1">
+                <Button
+                  type="button"
+                  variant={pagesTab === "preset" ? "default" : "ghost"}
+                  onClick={() => setPagesTab("preset")}
+                >
+                  Preset
+                </Button>
+                <Button
+                  type="button"
+                  variant={pagesTab === "custom" ? "default" : "ghost"}
+                  onClick={() => setPagesTab("custom")}
+                >
+                  Custom
+                </Button>
+              </div>
+
+              {pagesTab === "preset" && (
+                <Card className="p-4">
+                  <h2 className="text-lg font-semibold mb-4 font-mono">
+                    Preset Pages
+                  </h2>
+
+                  {presetPages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No preset pages found.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {presetPages.map((page) => (
+                        <button
+                          key={page.id}
+                          type="button"
+                          className={`w-full rounded-lg p-3 text-left transition-colors ${
+                            selectedPresetPageId === page.id
+                              ? "bg-muted"
+                              : "bg-secondary hover:bg-secondary/70"
+                          }`}
+                          onClick={() => setSelectedPresetPageId(page.id)}
+                        >
+                          <p className="font-medium">{page.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {page.pageType}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {pagesTab === "custom" && (
+                <Card className="p-4">
+                  <h2 className="text-lg font-semibold mb-4 font-mono">
+                    Custom Pages
+                  </h2>
+
+                  <div className="rounded-lg bg-secondary p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Custom object is currently blank.
+                    </p>
+                    <pre className="mt-2 text-xs font-mono text-muted-foreground">
+                      {JSON.stringify(customPages, null, 2)}
+                    </pre>
+                  </div>
+                </Card>
+              )}
+            </div>
+          )}
 
           {activeTab === "navigation" && (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -954,6 +1152,25 @@ function App() {
                           e.key === "Enter" && addNavigationPage()
                         }
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="link-page-id">Page</Label>
+                      <Select
+                        value={newLinkPageId}
+                        onValueChange={setNewLinkPageId}
+                      >
+                        <SelectTrigger id="link-page-id">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pageTitleOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -1112,7 +1329,7 @@ function App() {
                                     </p>
                                     <p className="text-sm text-muted-foreground truncate">
                                       {page.link} • {page.icon.name} (
-                                      {page.icon.library})
+                                      {page.icon.library}) • pageId: {page.pageId}
                                     </p>
                                   </div>
                                 </div>
@@ -1253,7 +1470,9 @@ function App() {
             </div>
           )}
 
-          {activeTab === "settings" && (
+          {activeTab === "pages" &&
+            pagesTab === "preset" &&
+            selectedPresetPageId === "settings" && (
             <div className="grid gap-4 lg:grid-cols-2">
               <Card className="p-4">
                 <h2 className="text-lg font-semibold mb-4 font-mono">
@@ -1297,11 +1516,11 @@ function App() {
                     Add Setting
                   </Button>
 
-                  {safeConfig.components.settings.items.length > 0 && (
+                  {settingsPage.items.length > 0 && (
                     <>
                       <Separator />
                       <div className="space-y-2">
-                        {safeConfig.components.settings.items.map((item) => (
+                        {settingsPage.items.map((item) => (
                           <div
                             key={item.id}
                             className="p-3 bg-secondary rounded-lg space-y-3"
@@ -1403,12 +1622,12 @@ function App() {
 
                   <ScrollArea className="h-[340px]">
                     <div className="p-6 space-y-4">
-                      {safeConfig.components.settings.items.length === 0 ? (
+                      {settingsPage.items.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
                           <p>No settings added yet</p>
                         </div>
                       ) : (
-                        safeConfig.components.settings.items.map((item) => (
+                        settingsPage.items.map((item) => (
                           <div
                             key={item.id}
                             className="flex items-center justify-between p-4 bg-secondary rounded-lg"
