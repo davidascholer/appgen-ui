@@ -169,7 +169,8 @@ type ElementTypeId =
   | "element-select"
   | "element-text-input"
   | "element-icon"
-  | "element-image";
+  | "element-image"
+  | "element-vertical-container";
 
 interface BaseComponentElement {
   instanceId: string;
@@ -180,6 +181,11 @@ interface TextElementStyles {
   size: number;
   isBold: boolean;
   isItalic: boolean;
+  isLabel: boolean;
+}
+
+interface ToggleElementStyles {
+  position: "left" | "center" | "right";
 }
 
 interface IconElementStyles {
@@ -206,6 +212,11 @@ interface ImageElementStyles {
   height: ElementDimension;
 }
 
+interface ContainerElementStyles {
+  alignment: "start" | "center" | "end";
+  gap: number;
+}
+
 interface TextComponentElement extends BaseComponentElement {
   elementTypeId: "element-text";
   value: string;
@@ -215,6 +226,7 @@ interface TextComponentElement extends BaseComponentElement {
 interface ToggleComponentElement extends BaseComponentElement {
   elementTypeId: "element-toggle";
   defaultValue: boolean;
+  styles: ToggleElementStyles;
 }
 
 interface ButtonComponentElement extends BaseComponentElement {
@@ -249,6 +261,12 @@ interface ImageComponentElement extends BaseComponentElement {
   src: string;
 }
 
+interface ContainerComponentElement extends BaseComponentElement {
+  elementTypeId: "element-vertical-container";
+  elements: ComponentElement[];
+  styles: ContainerElementStyles;
+}
+
 type ComponentElement =
   | TextComponentElement
   | ToggleComponentElement
@@ -256,11 +274,16 @@ type ComponentElement =
   | SelectComponentElement
   | TextInputComponentElement
   | IconComponentElement
-  | ImageComponentElement;
+  | ImageComponentElement
+  | ContainerComponentElement;
 
 interface ComponentStyles {
   verticalAlignment: "beginning" | "center" | "end";
   horizontalAlignment: "end-to-end" | "center" | "evenly-spaced";
+  paddingX: number;
+  paddingY: number;
+  marginX: number;
+  marginY: number;
 }
 
 interface AppComponent {
@@ -277,12 +300,15 @@ interface PrebuiltElementDef {
   values?: string[];
   styles?: {
     alignment?: "left" | "center" | "right";
+    position?: "left" | "center" | "right";
     size?: number;
     isBold?: boolean;
     isItalic?: boolean;
+    isLabel?: boolean;
     sizing?: "fit" | "contain";
     width?: ElementDimension;
     height?: ElementDimension;
+    gap?: number;
   };
   textHint?: string;
   sizing?: "fit" | "contain";
@@ -376,9 +402,15 @@ const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
       size: 3,
       isBold: false,
       isItalic: false,
+      isLabel: false,
     },
   },
-  { id: "element-toggle", label: "Toggle Button", value: false },
+  {
+    id: "element-toggle",
+    label: "Toggle Button",
+    value: false,
+    styles: { position: "center" },
+  },
   {
     id: "element-button",
     label: "Button",
@@ -406,11 +438,22 @@ const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
     styles: { sizing: "fit", width: "full", height: "auto" },
     src: "https://placehold.co/600x400",
   },
+  {
+    id: "element-vertical-container",
+    label: "Vertical Container",
+    styles: { alignment: "start", gap: 8 },
+  },
 ];
 
 const ELEMENT_TYPE_IDS = new Set<string>(PREBUILT_ELEMENTS.map((e) => e.id));
 
 const DEFAULT_IMAGE_SRC = "https://placehold.co/600x400";
+
+const clampComponentSpacing = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(200, Math.round(parsed)));
+};
 
 const clampTextSize = (size: unknown): number => {
   const parsed = typeof size === "number" ? size : Number(size);
@@ -435,6 +478,7 @@ const getDefaultTextStyles = (): TextElementStyles => {
     size: clampTextSize(styles?.size),
     isBold: Boolean(styles?.isBold),
     isItalic: Boolean(styles?.isItalic),
+    isLabel: Boolean(styles?.isLabel),
   };
 };
 
@@ -442,6 +486,22 @@ const getDefaultToggleValue = (): boolean =>
   typeof getPrebuiltElementDef("element-toggle")?.value === "boolean"
     ? (getPrebuiltElementDef("element-toggle")?.value as boolean)
     : false;
+
+const getDefaultToggleStyles = (): ToggleElementStyles => {
+  const styles = getPrebuiltElementDef("element-toggle")?.styles;
+  return {
+    position:
+      styles?.position === "left" ||
+      styles?.position === "center" ||
+      styles?.position === "right"
+        ? styles.position
+        : styles?.alignment === "left" ||
+            styles?.alignment === "center" ||
+            styles?.alignment === "right"
+          ? styles.alignment
+          : "center",
+  };
+};
 
 const getDefaultButtonLabel = (): string => {
   const label = getPrebuiltElementDef("element-button")?.buttonLabel;
@@ -595,6 +655,25 @@ const getDefaultImageStyles = (): ImageElementStyles => {
   };
 };
 
+const clampFlexGap = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.max(1, Math.min(50, Math.round(parsed)));
+};
+
+const getDefaultContainerStyles = (): ContainerElementStyles => {
+  const styles = getPrebuiltElementDef("element-vertical-container")?.styles;
+  return {
+    alignment:
+      styles?.alignment === "start" ||
+      styles?.alignment === "center" ||
+      styles?.alignment === "end"
+        ? styles.alignment
+        : "start",
+    gap: clampFlexGap(styles?.gap),
+  };
+};
+
 const getDefaultImageSrc = (): string => {
   const src = getPrebuiltElementDef("element-image")?.src;
   return typeof src === "string" && src.trim().length > 0
@@ -619,7 +698,10 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
   if (!raw || typeof raw !== "object") return null;
 
   const entry = raw as Record<string, unknown>;
-  const elementTypeId = entry.elementTypeId;
+  const elementTypeId =
+    entry.elementTypeId === "element-container"
+      ? "element-vertical-container"
+      : entry.elementTypeId;
   if (
     typeof elementTypeId !== "string" ||
     !ELEMENT_TYPE_IDS.has(elementTypeId)
@@ -664,10 +746,19 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
           isItalic: Boolean(
             rawStyles.isItalic ?? entry.isItalic ?? defaultStyles.isItalic,
           ),
+          isLabel: Boolean(
+            rawStyles.isLabel ?? entry.isLabel ?? defaultStyles.isLabel,
+          ),
         },
       };
     }
-    case "element-toggle":
+    case "element-toggle": {
+      const rawStyles =
+        entry.styles && typeof entry.styles === "object"
+          ? (entry.styles as Record<string, unknown>)
+          : {};
+      const defaultStyles = getDefaultToggleStyles();
+
       return {
         instanceId,
         elementTypeId: "element-toggle",
@@ -677,7 +768,28 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
             : typeof entry.value === "boolean"
               ? entry.value
               : getDefaultToggleValue(),
+        styles: {
+          position:
+            rawStyles.position === "left" ||
+            rawStyles.position === "center" ||
+            rawStyles.position === "right"
+              ? rawStyles.position
+              : rawStyles.alignment === "left" ||
+                  rawStyles.alignment === "center" ||
+                  rawStyles.alignment === "right"
+                ? (rawStyles.alignment as "left" | "center" | "right")
+                : entry.position === "left" ||
+                    entry.position === "center" ||
+                    entry.position === "right"
+                  ? (entry.position as "left" | "center" | "right")
+                  : entry.alignment === "left" ||
+                      entry.alignment === "center" ||
+                      entry.alignment === "right"
+                    ? (entry.alignment as "left" | "center" | "right")
+                    : defaultStyles.position,
+        },
       };
+    }
     case "element-button": {
       const rawStyles =
         entry.styles && typeof entry.styles === "object"
@@ -807,6 +919,36 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
             : getDefaultImageSrc(),
       };
     }
+    case "element-vertical-container": {
+      const rawStyles =
+        entry.styles && typeof entry.styles === "object"
+          ? (entry.styles as Record<string, unknown>)
+          : {};
+      const defaultStyles = getDefaultContainerStyles();
+
+      return {
+        instanceId,
+        elementTypeId: "element-vertical-container",
+        elements: Array.isArray(entry.elements)
+          ? entry.elements
+              .map((child) => normalizeElementFromRaw(child))
+              .filter((child): child is ComponentElement => Boolean(child))
+          : [],
+        styles: {
+          alignment:
+            rawStyles.alignment === "start" ||
+            rawStyles.alignment === "center" ||
+            rawStyles.alignment === "end"
+              ? rawStyles.alignment
+              : entry.alignment === "start" ||
+                  entry.alignment === "center" ||
+                  entry.alignment === "end"
+                ? (entry.alignment as "start" | "center" | "end")
+                : defaultStyles.alignment,
+          gap: clampFlexGap(rawStyles.gap ?? entry.gap ?? defaultStyles.gap),
+        },
+      };
+    }
   }
 };
 
@@ -827,6 +969,7 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-toggle",
         defaultValue: getDefaultToggleValue(),
+        styles: getDefaultToggleStyles(),
       };
     case "element-button":
       return {
@@ -865,6 +1008,13 @@ const createDefaultComponentElement = (
         styles: getDefaultImageStyles(),
         src: getDefaultImageSrc(),
       };
+    case "element-vertical-container":
+      return {
+        instanceId,
+        elementTypeId: "element-vertical-container",
+        elements: [],
+        styles: getDefaultContainerStyles(),
+      };
   }
 };
 
@@ -882,6 +1032,10 @@ const createDefaultComponent = (label: string): AppComponent => ({
   styles: {
     verticalAlignment: "beginning",
     horizontalAlignment: "end-to-end",
+    paddingX: 0,
+    paddingY: 0,
+    marginX: 0,
+    marginY: 0,
   },
 });
 
@@ -951,6 +1105,115 @@ const getHorizontalAlignmentClass = (
   if (value === "evenly-spaced") return "justify-evenly";
   return "justify-between";
 };
+
+const getContainerAlignmentClass = (
+  value: ContainerElementStyles["alignment"],
+): string => {
+  if (value === "center") return "items-center";
+  if (value === "end") return "items-end";
+  return "items-start";
+};
+
+const isContainerElement = (
+  element: ComponentElement,
+): element is ContainerComponentElement =>
+  element.elementTypeId === "element-vertical-container";
+
+const updateElementTree = (
+  elements: ComponentElement[],
+  instanceId: string,
+  transform: (element: ComponentElement) => ComponentElement,
+): ComponentElement[] =>
+  elements.map((element) => {
+    if (element.instanceId === instanceId) {
+      return transform(element);
+    }
+
+    if (isContainerElement(element)) {
+      return {
+        ...element,
+        elements: updateElementTree(element.elements, instanceId, transform),
+      };
+    }
+
+    return element;
+  });
+
+const removeElementFromTree = (
+  elements: ComponentElement[],
+  instanceId: string,
+): ComponentElement[] =>
+  elements
+    .filter((element) => element.instanceId !== instanceId)
+    .map((element) =>
+      isContainerElement(element)
+        ? {
+            ...element,
+            elements: removeElementFromTree(element.elements, instanceId),
+          }
+        : element,
+    );
+
+const addChildElementToTree = (
+  elements: ComponentElement[],
+  parentId: string,
+  child: ComponentElement,
+): ComponentElement[] =>
+  elements.map((element) => {
+    if (element.instanceId === parentId && isContainerElement(element)) {
+      return {
+        ...element,
+        elements: [...element.elements, child],
+      };
+    }
+
+    if (isContainerElement(element)) {
+      return {
+        ...element,
+        elements: addChildElementToTree(element.elements, parentId, child),
+      };
+    }
+
+    return element;
+  });
+
+const reorderElementInTree = (
+  elements: ComponentElement[],
+  instanceId: string,
+  direction: "up" | "down",
+): ComponentElement[] => {
+  const localIndex = elements.findIndex((element) => element.instanceId === instanceId);
+  if (localIndex !== -1) {
+    const targetIndex = direction === "up" ? localIndex - 1 : localIndex + 1;
+    if (targetIndex < 0 || targetIndex >= elements.length) {
+      return elements;
+    }
+
+    const next = [...elements];
+    [next[localIndex], next[targetIndex]] = [next[targetIndex], next[localIndex]];
+    return next;
+  }
+
+  return elements.map((element) =>
+    isContainerElement(element)
+      ? {
+          ...element,
+          elements: reorderElementInTree(element.elements, instanceId, direction),
+        }
+      : element,
+  );
+};
+
+const elementTreeHasInstanceId = (
+  elements: ComponentElement[],
+  instanceId: string,
+): boolean =>
+  elements.some(
+    (element) =>
+      element.instanceId === instanceId ||
+      (isContainerElement(element) &&
+        elementTreeHasInstanceId(element.elements, instanceId)),
+  );
 
 const DEFAULT_CONFIG: AppConfig = {
   id: crypto.randomUUID(),
@@ -1498,6 +1761,10 @@ const normalizeConfig = (input: unknown): AppConfig => {
             ).includes(rawStyles.horizontalAlignment as string)
               ? (rawStyles.horizontalAlignment as ComponentStyles["horizontalAlignment"])
               : "end-to-end",
+            paddingX: clampComponentSpacing(rawStyles.paddingX),
+            paddingY: clampComponentSpacing(rawStyles.paddingY),
+            marginX: clampComponentSpacing(rawStyles.marginX),
+            marginY: clampComponentSpacing(rawStyles.marginY),
           },
         },
       ];
@@ -1578,6 +1845,11 @@ function App() {
   const [showImportPrebuilt, setShowImportPrebuilt] = useState(false);
   const [newComponentElementTypeId, setNewComponentElementTypeId] =
     useState<ElementTypeId>("element-text");
+  const [containerElementTypeDrafts, setContainerElementTypeDrafts] = useState<
+    Record<string, ElementTypeId>
+  >({});
+  const [activeNestedElementEditorIds, setActiveNestedElementEditorIds] =
+    useState<Record<string, string>>({});
   const [activeElementEditorId, setActiveElementEditorId] =
     useState<string>("");
 
@@ -1751,13 +2023,22 @@ function App() {
     toast.success(`${prebuilt.label} component imported`);
   };
 
-  const addComponentElement = (componentId: string, typeId: ElementTypeId) => {
+  const addComponentElement = (
+    componentId: string,
+    typeId: ElementTypeId,
+    parentInstanceId?: string,
+  ) => {
     const newElement = createDefaultComponentElement(typeId);
     updateCustomComponents((components) =>
       components.map((comp) =>
         comp.id !== componentId
           ? comp
-          : { ...comp, elements: [...comp.elements, newElement] },
+          : {
+              ...comp,
+              elements: parentInstanceId
+                ? addChildElementToTree(comp.elements, parentInstanceId, newElement)
+                : [...comp.elements, newElement],
+            },
       ),
     );
   };
@@ -1769,9 +2050,7 @@ function App() {
           ? comp
           : {
               ...comp,
-              elements: comp.elements.filter(
-                (el) => el.instanceId !== instanceId,
-              ),
+              elements: removeElementFromTree(comp.elements, instanceId),
             },
       ),
     );
@@ -1792,10 +2071,8 @@ function App() {
           ? comp
           : {
               ...comp,
-              elements: comp.elements.map((el) =>
-                el.instanceId !== instanceId
-                  ? el
-                  : (normalizeElementFromRaw({ ...el, ...update }) ?? el),
+              elements: updateElementTree(comp.elements, instanceId, (element) =>
+                normalizeElementFromRaw({ ...element, ...update }) ?? element,
               ),
             },
       ),
@@ -1810,15 +2087,10 @@ function App() {
     updateCustomComponents((components) =>
       components.map((comp) => {
         if (comp.id !== componentId) return comp;
-        const idx = comp.elements.findIndex(
-          (el) => el.instanceId === instanceId,
-        );
-        if (idx === -1) return comp;
-        const target = direction === "up" ? idx - 1 : idx + 1;
-        if (target < 0 || target >= comp.elements.length) return comp;
-        const elements = [...comp.elements];
-        [elements[idx], elements[target]] = [elements[target], elements[idx]];
-        return { ...comp, elements };
+        return {
+          ...comp,
+          elements: reorderElementInTree(comp.elements, instanceId, direction),
+        };
       }),
     );
   };
@@ -2190,11 +2462,13 @@ function App() {
   useEffect(() => {
     if (!selectedComponent) {
       setActiveElementEditorId("");
+      setActiveNestedElementEditorIds({});
       return;
     }
 
-    const stillExists = selectedComponent.elements.some(
-      (element) => element.instanceId === activeElementEditorId,
+    const stillExists = elementTreeHasInstanceId(
+      selectedComponent.elements,
+      activeElementEditorId,
     );
 
     if (!stillExists) {
@@ -2214,7 +2488,7 @@ function App() {
 
       return (
         <p
-          className={`${alignClass} w-full`}
+          className={`${alignClass} w-full ${element.styles.isLabel ? "text-muted-foreground" : "text-foreground"}`}
           style={{
             fontSize,
             fontWeight: element.styles.isBold ? 700 : 400,
@@ -2227,7 +2501,18 @@ function App() {
     }
 
     if (element.elementTypeId === "element-toggle") {
-      return <Switch checked={element.defaultValue} disabled />;
+      const positionClass =
+        element.styles.position === "left"
+          ? "justify-start"
+          : element.styles.position === "right"
+            ? "justify-end"
+            : "justify-center";
+
+      return (
+        <div className={`flex w-full ${positionClass}`}>
+          <Switch checked={element.defaultValue} disabled />
+        </div>
+      );
     }
 
     if (element.elementTypeId === "element-button") {
@@ -2317,6 +2602,27 @@ function App() {
       return <IconComponent size={size} className="text-foreground" />;
     }
 
+    if (element.elementTypeId === "element-vertical-container") {
+      return (
+        <div
+          className={`flex w-full flex-col rounded-lg p-4 ${getContainerAlignmentClass(element.styles.alignment)}`}
+          style={{ gap: `${element.styles.gap}px` }}
+        >
+          {element.elements.length > 0 ? (
+            element.elements.map((child) => (
+              <div key={child.instanceId} className="flex w-full flex-1">
+                {renderComponentElementPreview(child)}
+              </div>
+            ))
+          ) : (
+            <div className="w-full text-sm text-muted-foreground">
+              Empty container
+            </div>
+          )}
+        </div>
+      );
+    }
+
     const objectFit = element.styles.sizing === "contain" ? "contain" : "cover";
 
     return (
@@ -2332,6 +2638,802 @@ function App() {
       />
     );
   };
+
+  const getComponentElementLabel = (typeId: ElementTypeId) =>
+    PREBUILT_ELEMENTS.find((element) => element.id === typeId)?.label ?? typeId;
+
+  const renderComponentElementFields = (
+    componentId: string,
+    element: ComponentElement,
+  ) => {
+    if (element.elementTypeId === "element-text") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Value</Label>
+            <Input
+              value={element.value}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  value: e.target.value,
+                })
+              }
+              placeholder="Text content"
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Alignment</Label>
+              <Select
+                value={element.styles.alignment}
+                onValueChange={(value: "left" | "center" | "right") =>
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      alignment: value,
+                    },
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Size (1-10)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={element.styles.size}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  const clamped = isNaN(parsed)
+                    ? 3
+                    : Math.min(10, Math.max(1, parsed));
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      size: clamped,
+                    },
+                  });
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Bold</Label>
+            <Switch
+              checked={element.styles.isBold}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    isBold: checked,
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Italic</Label>
+            <Switch
+              checked={element.styles.isItalic}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    isItalic: checked,
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Label Style</Label>
+            <Switch
+              checked={element.styles.isLabel}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    isLabel: checked,
+                  },
+                })
+              }
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-toggle") {
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Default Value</Label>
+            <Switch
+              checked={element.defaultValue}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  defaultValue: checked,
+                })
+              }
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="space-y-2">
+            <Label>Position</Label>
+            <Select
+              value={element.styles.position}
+              onValueChange={(value: "left" | "center" | "right") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    position: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-button") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Label</Label>
+            <Input
+              value={element.label}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  label: e.target.value,
+                })
+              }
+              placeholder="Button"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Highlight on Hover</Label>
+            <Switch
+              checked={element.highlightOnHover}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  highlightOnHover: checked,
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Ghost Style</Label>
+            <Switch
+              checked={element.isGhost}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  isGhost: checked,
+                })
+              }
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="space-y-2">
+            <Label>Width</Label>
+            <Select
+              value={element.styles.width === "full" ? "full" : "pixels"}
+              onValueChange={(mode: "full" | "pixels") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    width:
+                      mode === "full"
+                        ? "full"
+                        : typeof element.styles.width === "number"
+                          ? element.styles.width
+                          : 240,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">Full Width</SelectItem>
+                <SelectItem value="pixels">Pixels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Alignment</Label>
+            <Select
+              value={element.styles.alignment}
+              onValueChange={(value: ButtonAlignment) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    alignment: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {element.styles.width !== "full" && (
+            <div className="space-y-2">
+              <Label>Width (px)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={element.styles.width}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      width: nextWidth,
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-select") {
+      return (
+        <div className="space-y-2">
+          <Label>Options</Label>
+          <div className="space-y-2">
+            {element.values.map((val, valIndex) => (
+              <div
+                key={`${element.instanceId}-val-${valIndex}`}
+                className="flex items-center gap-2"
+              >
+                <Input
+                  placeholder={`Option ${valIndex + 1}`}
+                  value={val}
+                  onChange={(e) => {
+                    const updated = [...element.values];
+                    updated[valIndex] = e.target.value;
+                    updateComponentElementField(componentId, element.instanceId, {
+                      values: updated,
+                    });
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const updated =
+                      element.values.length <= 1
+                        ? [""]
+                        : element.values.filter((_, i) => i !== valIndex);
+                    updateComponentElementField(componentId, element.instanceId, {
+                      values: updated,
+                    });
+                  }}
+                  className="text-destructive hover:text-destructive"
+                  aria-label="Remove option"
+                >
+                  <Trash2 size={18} />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() =>
+              updateComponentElementField(componentId, element.instanceId, {
+                values: [...element.values, ""],
+              })
+            }
+          >
+            <Plus size={16} />
+            Add Option
+          </Button>
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-text-input") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Text Hint</Label>
+            <Input
+              value={element.textHint}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  textHint: e.target.value,
+                })
+              }
+              placeholder="Enter text..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>value</Label>
+            <Input
+              value={element.value}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  value: e.target.value,
+                })
+              }
+              placeholder="value"
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="space-y-2">
+            <Label>Width</Label>
+            <Select
+              value={element.styles.width === "full" ? "full" : "pixels"}
+              onValueChange={(mode: "full" | "pixels") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    width:
+                      mode === "full"
+                        ? "full"
+                        : typeof element.styles.width === "number"
+                          ? element.styles.width
+                          : 240,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">Full Width</SelectItem>
+                <SelectItem value="pixels">Pixels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {element.styles.width !== "full" && (
+            <div className="space-y-2">
+              <Label>Width (px)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={element.styles.width}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      width: nextWidth,
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Alignment</Label>
+            <Select
+              value={element.styles.alignment}
+              onValueChange={(value: "left" | "center" | "right") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    alignment: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-icon") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Lucide Icon Name</Label>
+            <Input
+              value={element.value}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  value: e.target.value,
+                })
+              }
+              placeholder="Home"
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="space-y-2">
+            <Label>Size (1-10)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={element.styles.size}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                const clamped = isNaN(parsed)
+                  ? 3
+                  : Math.min(10, Math.max(1, parsed));
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    size: clamped,
+                  },
+                });
+              }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (element.elementTypeId === "element-image") {
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Source URL</Label>
+            <Input
+              value={element.src}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  src: e.target.value,
+                })
+              }
+              placeholder="https://..."
+            />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          <div className="space-y-2">
+            <Label>Sizing</Label>
+            <Select
+              value={element.styles.sizing}
+              onValueChange={(value: "fit" | "contain") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    sizing: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fit">Fit</SelectItem>
+                <SelectItem value="contain">Contain</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Width</Label>
+            <Select
+              value={element.styles.width === "full" ? "full" : "pixels"}
+              onValueChange={(mode: "full" | "pixels") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    width:
+                      mode === "full"
+                        ? "full"
+                        : typeof element.styles.width === "number"
+                          ? element.styles.width
+                          : 320,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">Full Width</SelectItem>
+                <SelectItem value="pixels">Pixels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {element.styles.width !== "full" && (
+            <div className="space-y-2">
+              <Label>Width (px)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={element.styles.width}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  const nextWidth = isNaN(parsed) ? 320 : Math.max(1, parsed);
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      width: nextWidth,
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Height</Label>
+            <Input
+              value={String(element.styles.height)}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    height: e.target.value,
+                  },
+                })
+              }
+              placeholder="auto or 240"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const nestedElementOptions = PREBUILT_ELEMENTS.filter(
+      (prebuiltElement) => prebuiltElement.id !== "element-vertical-container",
+    );
+    const nestedDraftType = nestedElementOptions.some(
+      (prebuiltElement) =>
+        prebuiltElement.id === containerElementTypeDrafts[element.instanceId],
+    )
+      ? (containerElementTypeDrafts[element.instanceId] as ElementTypeId)
+      : "element-text";
+
+    return (
+      <div className="space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          styles
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Alignment</Label>
+            <Select
+              value={element.styles.alignment}
+              onValueChange={(value: "start" | "center" | "end") =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    alignment: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="start">Start</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="end">End</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Flex Gap (1-50 px)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              value={element.styles.gap}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    gap: clampFlexGap(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-3">
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div className="space-y-2">
+              <Label>Nested Element Type</Label>
+              <Select
+                value={nestedDraftType}
+                onValueChange={(value: ElementTypeId) =>
+                  setContainerElementTypeDrafts((current) => ({
+                    ...current,
+                    [element.instanceId]: value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {nestedElementOptions.map((prebuiltElement) => (
+                    <SelectItem key={prebuiltElement.id} value={prebuiltElement.id}>
+                      {prebuiltElement.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              className="gap-2 sm:w-auto"
+              onClick={() =>
+                addComponentElement(componentId, nestedDraftType, element.instanceId)
+              }
+            >
+              <Plus size={16} />
+              Add Nested Element
+            </Button>
+          </div>
+
+          {element.elements.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                nested elements
+              </p>
+              {renderComponentElementEditors(
+                componentId,
+                element.elements,
+                true,
+                element.instanceId,
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+              No nested elements yet.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderComponentElementEditors = (
+    componentId: string,
+    elements: ComponentElement[],
+    nested = false,
+    parentInstanceId?: string,
+  ) => (
+    <Accordion
+      type="single"
+      collapsible
+      value={
+        nested && parentInstanceId
+          ? activeNestedElementEditorIds[parentInstanceId] ?? ""
+          : activeElementEditorId
+      }
+      onValueChange={(value) => {
+        if (nested && parentInstanceId) {
+          setActiveNestedElementEditorIds((current) => ({
+            ...current,
+            [parentInstanceId]: value,
+          }));
+          return;
+        }
+
+        setActiveElementEditorId(value);
+      }}
+      className={`rounded-lg border px-3 ${nested ? "border-border/70 bg-background/50" : "border-border bg-secondary"}`}
+    >
+      {elements.map((element, elementIndex) => (
+        <AccordionItem
+          key={element.instanceId}
+          value={element.instanceId}
+          className="border-border"
+        >
+          <AccordionTrigger className="hover:no-underline">
+            <div className="min-w-0 flex-1 pr-2 text-left">
+              <p className="truncate font-medium">
+                {getComponentElementLabel(element.elementTypeId)}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {element.elementTypeId}
+              </p>
+            </div>
+          </AccordionTrigger>
+
+          <AccordionContent>
+            <div className="space-y-3">
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    reorderComponentElement(componentId, element.instanceId, "up")
+                  }
+                  disabled={elementIndex === 0}
+                  aria-label="Move up"
+                >
+                  <ArrowUp size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    reorderComponentElement(componentId, element.instanceId, "down")
+                  }
+                  disabled={elementIndex === elements.length - 1}
+                  aria-label="Move down"
+                >
+                  <ArrowDown size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    removeComponentElement(componentId, element.instanceId)
+                  }
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 size={18} />
+                </Button>
+              </div>
+
+              {renderComponentElementFields(componentId, element)}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
@@ -3308,854 +4410,10 @@ function App() {
                         {selectedComponent.elements.length > 0 && (
                           <>
                             <Separator />
-                            <Accordion
-                              type="single"
-                              collapsible
-                              value={activeElementEditorId}
-                              onValueChange={setActiveElementEditorId}
-                              className="rounded-lg border border-border bg-secondary px-3"
-                            >
-                              {selectedComponent.elements.map(
-                                (element, elementIndex) => (
-                                  <AccordionItem
-                                    key={element.instanceId}
-                                    value={element.instanceId}
-                                    className="border-border"
-                                  >
-                                    <AccordionTrigger className="hover:no-underline">
-                                      <div className="min-w-0 flex-1 pr-2">
-                                        <p className="font-medium truncate">
-                                          {PREBUILT_ELEMENTS.find(
-                                            (e) =>
-                                              e.id === element.elementTypeId,
-                                          )?.label ?? element.elementTypeId}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground truncate">
-                                          {element.elementTypeId}
-                                        </p>
-                                      </div>
-                                    </AccordionTrigger>
-
-                                    <AccordionContent>
-                                      <div className="space-y-3">
-                                        <div className="flex items-center gap-1 flex-shrink-0">
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() =>
-                                              reorderComponentElement(
-                                                selectedComponent.id,
-                                                element.instanceId,
-                                                "up",
-                                              )
-                                            }
-                                            disabled={elementIndex === 0}
-                                            aria-label="Move up"
-                                          >
-                                            <ArrowUp size={16} />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() =>
-                                              reorderComponentElement(
-                                                selectedComponent.id,
-                                                element.instanceId,
-                                                "down",
-                                              )
-                                            }
-                                            disabled={
-                                              elementIndex ===
-                                              selectedComponent.elements
-                                                .length -
-                                                1
-                                            }
-                                            aria-label="Move down"
-                                          >
-                                            <ArrowDown size={16} />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() =>
-                                              removeComponentElement(
-                                                selectedComponent.id,
-                                                element.instanceId,
-                                              )
-                                            }
-                                            className="text-destructive hover:text-destructive"
-                                          >
-                                            <Trash2 size={18} />
-                                          </Button>
-                                        </div>
-
-                                        {element.elementTypeId ===
-                                          "element-text" && (
-                                          <div className="space-y-3">
-                                            <div className="space-y-2">
-                                              <Label>Value</Label>
-                                              <Input
-                                                value={element.value}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { value: e.target.value },
-                                                  )
-                                                }
-                                                placeholder="Text content"
-                                              />
-                                            </div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                              styles
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-3">
-                                              <div className="space-y-2">
-                                                <Label>Alignment</Label>
-                                                <Select
-                                                  value={
-                                                    element.styles.alignment
-                                                  }
-                                                  onValueChange={(
-                                                    value:
-                                                      | "left"
-                                                      | "center"
-                                                      | "right",
-                                                  ) =>
-                                                    updateComponentElementField(
-                                                      selectedComponent.id,
-                                                      element.instanceId,
-                                                      {
-                                                        styles: {
-                                                          ...element.styles,
-                                                          alignment: value,
-                                                        },
-                                                      },
-                                                    )
-                                                  }
-                                                >
-                                                  <SelectTrigger>
-                                                    <SelectValue />
-                                                  </SelectTrigger>
-                                                  <SelectContent>
-                                                    <SelectItem value="left">
-                                                      Left
-                                                    </SelectItem>
-                                                    <SelectItem value="center">
-                                                      Center
-                                                    </SelectItem>
-                                                    <SelectItem value="right">
-                                                      Right
-                                                    </SelectItem>
-                                                  </SelectContent>
-                                                </Select>
-                                              </div>
-                                              <div className="space-y-2">
-                                                <Label>Size (1–10)</Label>
-                                                <Input
-                                                  type="number"
-                                                  min={1}
-                                                  max={10}
-                                                  value={element.styles.size}
-                                                  onChange={(e) => {
-                                                    const parsed = parseInt(
-                                                      e.target.value,
-                                                      10,
-                                                    );
-                                                    const clamped = isNaN(
-                                                      parsed,
-                                                    )
-                                                      ? 3
-                                                      : Math.min(
-                                                          10,
-                                                          Math.max(1, parsed),
-                                                        );
-                                                    updateComponentElementField(
-                                                      selectedComponent.id,
-                                                      element.instanceId,
-                                                      {
-                                                        styles: {
-                                                          ...element.styles,
-                                                          size: clamped,
-                                                        },
-                                                      },
-                                                    );
-                                                  }}
-                                                />
-                                              </div>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                              <Label>Bold</Label>
-                                              <Switch
-                                                checked={element.styles.isBold}
-                                                onCheckedChange={(checked) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        isBold: checked,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                              <Label>Italic</Label>
-                                              <Switch
-                                                checked={
-                                                  element.styles.isItalic
-                                                }
-                                                onCheckedChange={(checked) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        isItalic: checked,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-toggle" && (
-                                          <div className="flex items-center justify-between">
-                                            <Label>Default Value</Label>
-                                            <Switch
-                                              checked={element.defaultValue}
-                                              onCheckedChange={(checked) =>
-                                                updateComponentElementField(
-                                                  selectedComponent.id,
-                                                  element.instanceId,
-                                                  { defaultValue: checked },
-                                                )
-                                              }
-                                            />
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-button" && (
-                                          <div className="space-y-3">
-                                            <div className="space-y-2">
-                                              <Label>Label</Label>
-                                              <Input
-                                                value={element.label}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { label: e.target.value },
-                                                  )
-                                                }
-                                                placeholder="Button"
-                                              />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                              <Label>Highlight on Hover</Label>
-                                              <Switch
-                                                checked={
-                                                  element.highlightOnHover
-                                                }
-                                                onCheckedChange={(checked) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      highlightOnHover: checked,
-                                                    },
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                              <Label>Ghost Style</Label>
-                                              <Switch
-                                                checked={element.isGhost}
-                                                onCheckedChange={(checked) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { isGhost: checked },
-                                                  )
-                                                }
-                                              />
-                                            </div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                              styles
-                                            </p>
-                                            <div className="space-y-2">
-                                              <Label>Width</Label>
-                                              <Select
-                                                value={
-                                                  element.styles.width ===
-                                                  "full"
-                                                    ? "full"
-                                                    : "pixels"
-                                                }
-                                                onValueChange={(
-                                                  mode: "full" | "pixels",
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        width:
-                                                          mode === "full"
-                                                            ? "full"
-                                                            : typeof element
-                                                                  .styles
-                                                                  .width ===
-                                                                "number"
-                                                              ? element.styles
-                                                                  .width
-                                                              : 240,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="full">
-                                                    Full Width
-                                                  </SelectItem>
-                                                  <SelectItem value="pixels">
-                                                    Pixels
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            <div className="space-y-2">
-                                              <Label>Alignment</Label>
-                                              <Select
-                                                value={element.styles.alignment}
-                                                onValueChange={(
-                                                  value: ButtonAlignment,
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        alignment: value,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="left">
-                                                    Left
-                                                  </SelectItem>
-                                                  <SelectItem value="center">
-                                                    Center
-                                                  </SelectItem>
-                                                  <SelectItem value="right">
-                                                    Right
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            {element.styles.width !==
-                                              "full" && (
-                                              <div className="space-y-2">
-                                                <Label>Width (px)</Label>
-                                                <Input
-                                                  type="number"
-                                                  min={1}
-                                                  value={element.styles.width}
-                                                  onChange={(e) => {
-                                                    const parsed = parseInt(
-                                                      e.target.value,
-                                                      10,
-                                                    );
-                                                    const nextWidth = isNaN(
-                                                      parsed,
-                                                    )
-                                                      ? 240
-                                                      : Math.max(1, parsed);
-                                                    updateComponentElementField(
-                                                      selectedComponent.id,
-                                                      element.instanceId,
-                                                      {
-                                                        styles: {
-                                                          ...element.styles,
-                                                          width: nextWidth,
-                                                        },
-                                                      },
-                                                    );
-                                                  }}
-                                                />
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-select" && (
-                                          <div className="space-y-2">
-                                            <Label>Options</Label>
-                                            <div className="space-y-2">
-                                              {element.values.map(
-                                                (val, valIndex) => (
-                                                  <div
-                                                    key={`${element.instanceId}-val-${valIndex}`}
-                                                    className="flex items-center gap-2"
-                                                  >
-                                                    <Input
-                                                      placeholder={`Option ${valIndex + 1}`}
-                                                      value={val}
-                                                      onChange={(e) => {
-                                                        const updated = [
-                                                          ...element.values,
-                                                        ];
-                                                        updated[valIndex] =
-                                                          e.target.value;
-                                                        updateComponentElementField(
-                                                          selectedComponent.id,
-                                                          element.instanceId,
-                                                          { values: updated },
-                                                        );
-                                                      }}
-                                                    />
-                                                    <Button
-                                                      type="button"
-                                                      variant="ghost"
-                                                      size="icon"
-                                                      onClick={() => {
-                                                        const updated =
-                                                          element.values
-                                                            .length <= 1
-                                                            ? [""]
-                                                            : element.values.filter(
-                                                                (_, i) =>
-                                                                  i !==
-                                                                  valIndex,
-                                                              );
-                                                        updateComponentElementField(
-                                                          selectedComponent.id,
-                                                          element.instanceId,
-                                                          { values: updated },
-                                                        );
-                                                      }}
-                                                      className="text-destructive hover:text-destructive"
-                                                      aria-label="Remove option"
-                                                    >
-                                                      <Trash2 size={18} />
-                                                    </Button>
-                                                  </div>
-                                                ),
-                                              )}
-                                            </div>
-                                            <Button
-                                              type="button"
-                                              variant="outline"
-                                              size="sm"
-                                              className="gap-2"
-                                              onClick={() =>
-                                                updateComponentElementField(
-                                                  selectedComponent.id,
-                                                  element.instanceId,
-                                                  {
-                                                    values: [
-                                                      ...element.values,
-                                                      "",
-                                                    ],
-                                                  },
-                                                )
-                                              }
-                                            >
-                                              <Plus size={16} />
-                                              Add Option
-                                            </Button>
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-text-input" && (
-                                          <div className="space-y-3">
-                                            <div className="space-y-2">
-                                              <Label>Text Hint</Label>
-                                              <Input
-                                                value={element.textHint}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      textHint: e.target.value,
-                                                    },
-                                                  )
-                                                }
-                                                placeholder="Enter text..."
-                                              />
-                                            </div>
-                                            <div className="space-y-2">
-                                              <Label>value</Label>
-                                              <Input
-                                                value={element.value}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { value: e.target.value },
-                                                  )
-                                                }
-                                                placeholder="value"
-                                              />
-                                            </div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                              styles
-                                            </p>
-                                            <div className="space-y-2">
-                                              <Label>Width</Label>
-                                              <Select
-                                                value={
-                                                  element.styles.width ===
-                                                  "full"
-                                                    ? "full"
-                                                    : "pixels"
-                                                }
-                                                onValueChange={(
-                                                  mode: "full" | "pixels",
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        width:
-                                                          mode === "full"
-                                                            ? "full"
-                                                            : typeof element
-                                                                  .styles
-                                                                  .width ===
-                                                                "number"
-                                                              ? element.styles
-                                                                  .width
-                                                              : 240,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="full">
-                                                    Full Width
-                                                  </SelectItem>
-                                                  <SelectItem value="pixels">
-                                                    Pixels
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            {element.styles.width !==
-                                              "full" && (
-                                              <div className="space-y-2">
-                                                <Label>Width (px)</Label>
-                                                <Input
-                                                  type="number"
-                                                  min={1}
-                                                  value={element.styles.width}
-                                                  onChange={(e) => {
-                                                    const parsed = parseInt(
-                                                      e.target.value,
-                                                      10,
-                                                    );
-                                                    const nextWidth = isNaN(
-                                                      parsed,
-                                                    )
-                                                      ? 240
-                                                      : Math.max(1, parsed);
-                                                    updateComponentElementField(
-                                                      selectedComponent.id,
-                                                      element.instanceId,
-                                                      {
-                                                        styles: {
-                                                          ...element.styles,
-                                                          width: nextWidth,
-                                                        },
-                                                      },
-                                                    );
-                                                  }}
-                                                />
-                                              </div>
-                                            )}
-                                            <div className="space-y-2">
-                                              <Label>Alignment</Label>
-                                              <Select
-                                                value={element.styles.alignment}
-                                                onValueChange={(
-                                                  value:
-                                                    | "left"
-                                                    | "center"
-                                                    | "right",
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        alignment: value,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="left">
-                                                    Left
-                                                  </SelectItem>
-                                                  <SelectItem value="center">
-                                                    Center
-                                                  </SelectItem>
-                                                  <SelectItem value="right">
-                                                    Right
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-icon" && (
-                                          <div className="space-y-3">
-                                            <div className="space-y-2">
-                                              <Label>Lucide Icon Name</Label>
-                                              <Input
-                                                value={element.value}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { value: e.target.value },
-                                                  )
-                                                }
-                                                placeholder="Home"
-                                              />
-                                            </div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                              styles
-                                            </p>
-                                            <div className="space-y-2">
-                                              <Label>Size (1-10)</Label>
-                                              <Input
-                                                type="number"
-                                                min={1}
-                                                max={10}
-                                                value={element.styles.size}
-                                                onChange={(e) => {
-                                                  const parsed = parseInt(
-                                                    e.target.value,
-                                                    10,
-                                                  );
-                                                  const clamped = isNaN(parsed)
-                                                    ? 3
-                                                    : Math.min(
-                                                        10,
-                                                        Math.max(1, parsed),
-                                                      );
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        size: clamped,
-                                                      },
-                                                    },
-                                                  );
-                                                }}
-                                              />
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {element.elementTypeId ===
-                                          "element-image" && (
-                                          <div className="space-y-3">
-                                            <div className="space-y-2">
-                                              <Label>Source URL</Label>
-                                              <Input
-                                                value={element.src}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    { src: e.target.value },
-                                                  )
-                                                }
-                                                placeholder="https://..."
-                                              />
-                                            </div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                              styles
-                                            </p>
-                                            <div className="space-y-2">
-                                              <Label>Sizing</Label>
-                                              <Select
-                                                value={element.styles.sizing}
-                                                onValueChange={(
-                                                  value: "fit" | "contain",
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        sizing: value,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="fit">
-                                                    Fit
-                                                  </SelectItem>
-                                                  <SelectItem value="contain">
-                                                    Contain
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            <div className="space-y-2">
-                                              <Label>Width</Label>
-                                              <Select
-                                                value={
-                                                  element.styles.width ===
-                                                  "full"
-                                                    ? "full"
-                                                    : "pixels"
-                                                }
-                                                onValueChange={(
-                                                  mode: "full" | "pixels",
-                                                ) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        width:
-                                                          mode === "full"
-                                                            ? "full"
-                                                            : typeof element
-                                                                  .styles
-                                                                  .width ===
-                                                                "number"
-                                                              ? element.styles
-                                                                  .width
-                                                              : 320,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <SelectTrigger>
-                                                  <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  <SelectItem value="full">
-                                                    Full Width
-                                                  </SelectItem>
-                                                  <SelectItem value="pixels">
-                                                    Pixels
-                                                  </SelectItem>
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                            {element.styles.width !==
-                                              "full" && (
-                                              <div className="space-y-2">
-                                                <Label>Width (px)</Label>
-                                                <Input
-                                                  type="number"
-                                                  min={1}
-                                                  value={element.styles.width}
-                                                  onChange={(e) => {
-                                                    const parsed = parseInt(
-                                                      e.target.value,
-                                                      10,
-                                                    );
-                                                    const nextWidth = isNaN(
-                                                      parsed,
-                                                    )
-                                                      ? 320
-                                                      : Math.max(1, parsed);
-                                                    updateComponentElementField(
-                                                      selectedComponent.id,
-                                                      element.instanceId,
-                                                      {
-                                                        styles: {
-                                                          ...element.styles,
-                                                          width: nextWidth,
-                                                        },
-                                                      },
-                                                    );
-                                                  }}
-                                                />
-                                              </div>
-                                            )}
-                                            <div className="space-y-2">
-                                              <Label>Height</Label>
-                                              <Input
-                                                value={String(
-                                                  element.styles.height,
-                                                )}
-                                                onChange={(e) =>
-                                                  updateComponentElementField(
-                                                    selectedComponent.id,
-                                                    element.instanceId,
-                                                    {
-                                                      styles: {
-                                                        ...element.styles,
-                                                        height: e.target.value,
-                                                      },
-                                                    },
-                                                  )
-                                                }
-                                                placeholder="auto or 240"
-                                              />
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </AccordionContent>
-                                  </AccordionItem>
-                                ),
-                              )}
-                            </Accordion>
+                            {renderComponentElementEditors(
+                              selectedComponent.id,
+                              selectedComponent.elements,
+                            )}
                           </>
                         )}
                       </div>
@@ -4220,6 +4478,74 @@ function App() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-padding-x">
+                            Horizontal Padding (px)
+                          </Label>
+                          <Input
+                            id="comp-padding-x"
+                            type="number"
+                            min={0}
+                            max={200}
+                            value={selectedComponent.styles.paddingX}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                paddingX: clampComponentSpacing(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-padding-y">
+                            Vertical Padding (px)
+                          </Label>
+                          <Input
+                            id="comp-padding-y"
+                            type="number"
+                            min={0}
+                            max={200}
+                            value={selectedComponent.styles.paddingY}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                paddingY: clampComponentSpacing(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-margin-x">
+                            Horizontal Margin (px)
+                          </Label>
+                          <Input
+                            id="comp-margin-x"
+                            type="number"
+                            min={0}
+                            max={200}
+                            value={selectedComponent.styles.marginX}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                marginX: clampComponentSpacing(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-margin-y">
+                            Vertical Margin (px)
+                          </Label>
+                          <Input
+                            id="comp-margin-y"
+                            type="number"
+                            min={0}
+                            max={200}
+                            value={selectedComponent.styles.marginY}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                marginY: clampComponentSpacing(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
                       </div>
                     </Card>
 
@@ -4239,6 +4565,16 @@ function App() {
                             </p>
                             <div
                               className={`flex w-full gap-3 rounded-md border border-border bg-background p-3 ${getVerticalAlignmentClass(selectedComponent.styles.verticalAlignment)} ${getHorizontalAlignmentClass(selectedComponent.styles.horizontalAlignment)}`}
+                              style={{
+                                paddingLeft: `${selectedComponent.styles.paddingX}px`,
+                                paddingRight: `${selectedComponent.styles.paddingX}px`,
+                                paddingTop: `${selectedComponent.styles.paddingY}px`,
+                                paddingBottom: `${selectedComponent.styles.paddingY}px`,
+                                marginLeft: `${selectedComponent.styles.marginX}px`,
+                                marginRight: `${selectedComponent.styles.marginX}px`,
+                                marginTop: `${selectedComponent.styles.marginY}px`,
+                                marginBottom: `${selectedComponent.styles.marginY}px`,
+                              }}
                             >
                               {selectedComponent.elements.map((element) => (
                                 <div
