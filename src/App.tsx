@@ -11,6 +11,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -193,12 +194,10 @@ interface IconElementStyles {
 }
 
 type ElementDimension = number | string;
-type ButtonWidth = number | "full";
-type ButtonAlignment = "left" | "center" | "right";
+type ButtonWidth = number | "full" | "auto";
 
 interface ButtonElementStyles {
   width: ButtonWidth;
-  alignment: ButtonAlignment;
 }
 
 interface TextInputElementStyles {
@@ -212,9 +211,24 @@ interface ImageElementStyles {
   height: ElementDimension;
 }
 
+type FlexJustifyContent =
+  | "start"
+  | "center"
+  | "end"
+  | "space-between"
+  | "space-around"
+  | "space-evenly";
+
+type FlexAlignItems = "start" | "center" | "end" | "stretch";
+
 interface ContainerElementStyles {
-  alignment: "start" | "center" | "end";
+  justifyContent: FlexJustifyContent;
+  alignItems: FlexAlignItems;
   gap: number;
+  backgroundColor: string;
+  borderColor: string;
+  borderRadius: number;
+  borderWidth: number;
 }
 
 interface TextComponentElement extends BaseComponentElement {
@@ -278,12 +292,17 @@ type ComponentElement =
   | ContainerComponentElement;
 
 interface ComponentStyles {
-  verticalAlignment: "beginning" | "center" | "end";
-  horizontalAlignment: "end-to-end" | "center" | "evenly-spaced";
+  justifyContent: FlexJustifyContent;
+  alignItems: FlexAlignItems;
+  gap: number;
   paddingX: number;
   paddingY: number;
   marginX: number;
   marginY: number;
+  backgroundColor: string;
+  borderColor: string;
+  borderRadius: number;
+  borderWidth: number;
 }
 
 interface AppComponent {
@@ -293,6 +312,23 @@ interface AppComponent {
   styles: ComponentStyles;
 }
 
+type ContainerColorField = "backgroundColor" | "borderColor";
+
+type ColorEditTarget =
+  | {
+      scope: "component";
+      componentId: string;
+      field: ContainerColorField;
+      styles: ComponentStyles;
+    }
+  | {
+      scope: "vertical-container";
+      componentId: string;
+      elementId: string;
+      field: ContainerColorField;
+      styles: ContainerElementStyles;
+    };
+
 interface PrebuiltElementDef {
   id: ElementTypeId;
   label: string;
@@ -301,6 +337,12 @@ interface PrebuiltElementDef {
   styles?: {
     alignment?: "left" | "center" | "right";
     position?: "left" | "center" | "right";
+    justifyContent?: FlexJustifyContent;
+    alignItems?: FlexAlignItems;
+    backgroundColor?: string;
+    borderColor?: string;
+    borderRadius?: number;
+    borderWidth?: number;
     size?: number;
     isBold?: boolean;
     isItalic?: boolean;
@@ -441,7 +483,15 @@ const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
   {
     id: "element-vertical-container",
     label: "Vertical Container",
-    styles: { alignment: "start", gap: 8 },
+    styles: {
+      justifyContent: "start",
+      alignItems: "start",
+      gap: 8,
+      backgroundColor: "#ffffff00",
+      borderColor: "#d4d4d8",
+      borderRadius: 8,
+      borderWidth: 0,
+    },
   },
 ];
 
@@ -521,6 +571,7 @@ const getDefaultButtonIsGhost = (): boolean => {
 };
 
 const normalizeButtonWidth = (value: unknown): ButtonWidth => {
+  if (value === "auto") return "auto";
   if (value === "full") return "full";
 
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -529,6 +580,7 @@ const normalizeButtonWidth = (value: unknown): ButtonWidth => {
 
   if (typeof value === "string") {
     const trimmed = value.trim();
+    if (trimmed === "auto") return "auto";
     if (trimmed === "full") return "full";
     if (/^\d+$/.test(trimmed)) {
       const parsed = Number(trimmed);
@@ -536,7 +588,7 @@ const normalizeButtonWidth = (value: unknown): ButtonWidth => {
     }
   }
 
-  return "full";
+  return "auto";
 };
 
 const normalizeImageWidth = (value: unknown): ButtonWidth => {
@@ -564,17 +616,8 @@ const normalizeImageWidth = (value: unknown): ButtonWidth => {
 
 const getDefaultButtonStyles = (): ButtonElementStyles => {
   const styles = getPrebuiltElementDef("element-button")?.styles;
-
-  const alignment: ButtonAlignment =
-    styles?.alignment === "left" ||
-    styles?.alignment === "center" ||
-    styles?.alignment === "right"
-      ? styles.alignment
-      : "center";
-
   return {
     width: normalizeButtonWidth(styles?.width),
-    alignment,
   };
 };
 
@@ -657,20 +700,158 @@ const getDefaultImageStyles = (): ImageElementStyles => {
 
 const clampFlexGap = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return 8;
-  return Math.max(1, Math.min(50, Math.round(parsed)));
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(50, Math.round(parsed)));
 };
+
+const clampContainerBorderRadius = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.max(0, Math.min(64, Math.round(parsed)));
+};
+
+const clampContainerBorderWidth = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(16, Math.round(parsed)));
+};
+
+const normalizeHexColor = (value: unknown, fallback: string): string => {
+  if (typeof value !== "string") return fallback;
+
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === "transparent") {
+    return "#ffffff00";
+  }
+
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed)
+    ? trimmed
+    : fallback;
+};
+
+const clampRgbChannel = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(255, Math.round(parsed)));
+};
+
+const hexToRgba = (
+  value: string,
+): { r: number; g: number; b: number; a: number } | null => {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("#")) return null;
+
+  const hexBody = trimmed.slice(1);
+  if (hexBody.length === 3) {
+    const r = Number.parseInt(`${hexBody[0]}${hexBody[0]}`, 16);
+    const g = Number.parseInt(`${hexBody[1]}${hexBody[1]}`, 16);
+    const b = Number.parseInt(`${hexBody[2]}${hexBody[2]}`, 16);
+    if ([r, g, b].some((channel) => Number.isNaN(channel))) return null;
+    return { r, g, b, a: 255 };
+  }
+
+  if (hexBody.length === 6) {
+    const r = Number.parseInt(hexBody.slice(0, 2), 16);
+    const g = Number.parseInt(hexBody.slice(2, 4), 16);
+    const b = Number.parseInt(hexBody.slice(4, 6), 16);
+    if ([r, g, b].some((channel) => Number.isNaN(channel))) return null;
+    return { r, g, b, a: 255 };
+  }
+
+  if (hexBody.length === 8) {
+    const r = Number.parseInt(hexBody.slice(0, 2), 16);
+    const g = Number.parseInt(hexBody.slice(2, 4), 16);
+    const b = Number.parseInt(hexBody.slice(4, 6), 16);
+    const a = Number.parseInt(hexBody.slice(6, 8), 16);
+    if ([r, g, b, a].some((channel) => Number.isNaN(channel))) return null;
+    return { r, g, b, a };
+  }
+
+  return null;
+};
+
+const rgbaToHex = (
+  r: number,
+  g: number,
+  b: number,
+  a = 255,
+  includeAlpha = false,
+): string => {
+  const toHex = (value: number) => clampRgbChannel(value).toString(16).padStart(2, "0");
+  const alphaHex = clampRgbChannel(a).toString(16).padStart(2, "0");
+  return includeAlpha
+    ? `#${toHex(r)}${toHex(g)}${toHex(b)}${alphaHex}`
+    : `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+};
+
+const normalizeFlexJustifyContent = (
+  value: unknown,
+  fallback: FlexJustifyContent,
+): FlexJustifyContent => {
+  if (
+    value === "start" ||
+    value === "center" ||
+    value === "end" ||
+    value === "space-between" ||
+    value === "space-around" ||
+    value === "space-evenly"
+  ) {
+    return value;
+  }
+
+  return fallback;
+};
+
+const normalizeFlexAlignItems = (
+  value: unknown,
+  fallback: FlexAlignItems,
+): FlexAlignItems => {
+  if (
+    value === "start" ||
+    value === "center" ||
+    value === "end" ||
+    value === "stretch"
+  ) {
+    return value;
+  }
+
+  return fallback;
+};
+
+const getDefaultComponentStyles = (): ComponentStyles => ({
+  justifyContent: "space-between",
+  alignItems: "start",
+  gap: 0,
+  paddingX: 0,
+  paddingY: 0,
+  marginX: 0,
+  marginY: 0,
+  backgroundColor: "#ffffff00",
+  borderColor: "#d4d4d8",
+  borderRadius: 8,
+  borderWidth: 0,
+});
 
 const getDefaultContainerStyles = (): ContainerElementStyles => {
   const styles = getPrebuiltElementDef("element-vertical-container")?.styles;
   return {
-    alignment:
+    justifyContent: normalizeFlexJustifyContent(
+      styles?.justifyContent,
+      "start",
+    ),
+    alignItems: normalizeFlexAlignItems(
+      styles?.alignItems,
       styles?.alignment === "start" ||
-      styles?.alignment === "center" ||
-      styles?.alignment === "end"
+        styles?.alignment === "center" ||
+        styles?.alignment === "end"
         ? styles.alignment
         : "start",
+    ),
     gap: clampFlexGap(styles?.gap),
+    backgroundColor: normalizeHexColor(styles?.backgroundColor, "#ffffff00"),
+    borderColor: normalizeHexColor(styles?.borderColor, "#d4d4d8"),
+    borderRadius: clampContainerBorderRadius(styles?.borderRadius),
+    borderWidth: clampContainerBorderWidth(styles?.borderWidth),
   };
 };
 
@@ -796,17 +977,6 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
           ? (entry.styles as Record<string, unknown>)
           : {};
 
-      const resolvedAlignment: ButtonAlignment =
-        rawStyles.alignment === "left" ||
-        rawStyles.alignment === "center" ||
-        rawStyles.alignment === "right"
-          ? rawStyles.alignment
-          : entry.alignment === "left" ||
-              entry.alignment === "center" ||
-              entry.alignment === "right"
-            ? (entry.alignment as ButtonAlignment)
-            : getDefaultButtonStyles().alignment;
-
       return {
         instanceId,
         elementTypeId: "element-button",
@@ -826,7 +996,6 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
           width: normalizeButtonWidth(
             rawStyles.width ?? entry.width ?? getDefaultButtonStyles().width,
           ),
-          alignment: resolvedAlignment,
         },
       };
     }
@@ -935,17 +1104,32 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
               .filter((child): child is ComponentElement => Boolean(child))
           : [],
         styles: {
-          alignment:
-            rawStyles.alignment === "start" ||
-            rawStyles.alignment === "center" ||
-            rawStyles.alignment === "end"
-              ? rawStyles.alignment
-              : entry.alignment === "start" ||
-                  entry.alignment === "center" ||
-                  entry.alignment === "end"
-                ? (entry.alignment as "start" | "center" | "end")
-                : defaultStyles.alignment,
+          justifyContent: normalizeFlexJustifyContent(
+            rawStyles.justifyContent ?? entry.justifyContent,
+            defaultStyles.justifyContent,
+          ),
+          alignItems: normalizeFlexAlignItems(
+            rawStyles.alignItems ??
+              entry.alignItems ??
+              rawStyles.alignment ??
+              entry.alignment,
+            defaultStyles.alignItems,
+          ),
           gap: clampFlexGap(rawStyles.gap ?? entry.gap ?? defaultStyles.gap),
+          backgroundColor: normalizeHexColor(
+            rawStyles.backgroundColor ?? entry.backgroundColor,
+            defaultStyles.backgroundColor,
+          ),
+          borderColor: normalizeHexColor(
+            rawStyles.borderColor ?? entry.borderColor,
+            defaultStyles.borderColor,
+          ),
+          borderRadius: clampContainerBorderRadius(
+            rawStyles.borderRadius ?? entry.borderRadius ?? defaultStyles.borderRadius,
+          ),
+          borderWidth: clampContainerBorderWidth(
+            rawStyles.borderWidth ?? entry.borderWidth ?? defaultStyles.borderWidth,
+          ),
         },
       };
     }
@@ -1029,14 +1213,7 @@ const createDefaultComponent = (label: string): AppComponent => ({
       styles: getDefaultTextStyles(),
     },
   ],
-  styles: {
-    verticalAlignment: "beginning",
-    horizontalAlignment: "end-to-end",
-    paddingX: 0,
-    paddingY: 0,
-    marginX: 0,
-    marginY: 0,
-  },
+  styles: getDefaultComponentStyles(),
 });
 
 const getNormalizedIconKey = (name: string) =>
@@ -1090,29 +1267,46 @@ const renderNavIcon = (
 const toCssDimension = (value: number | string): string =>
   typeof value === "number" ? `${value}px` : value === "full" ? "100%" : value;
 
-const getVerticalAlignmentClass = (
-  value: ComponentStyles["verticalAlignment"],
-): string => {
-  if (value === "center") return "items-center";
-  if (value === "end") return "items-end";
-  return "items-start";
-};
-
-const getHorizontalAlignmentClass = (
-  value: ComponentStyles["horizontalAlignment"],
-): string => {
+const getFlexJustifyClass = (value: FlexJustifyContent): string => {
   if (value === "center") return "justify-center";
-  if (value === "evenly-spaced") return "justify-evenly";
-  return "justify-between";
+  if (value === "end") return "justify-end";
+  if (value === "space-around") return "justify-around";
+  if (value === "space-evenly") return "justify-evenly";
+  if (value === "space-between") return "justify-between";
+  return "justify-start";
 };
 
-const getContainerAlignmentClass = (
-  value: ContainerElementStyles["alignment"],
-): string => {
+const getFlexAlignItemsClass = (value: FlexAlignItems): string => {
   if (value === "center") return "items-center";
   if (value === "end") return "items-end";
+  if (value === "stretch") return "items-stretch";
   return "items-start";
 };
+
+const toPascalCase = (value: string): string =>
+  value
+    .trim()
+    .replace(/(^\w|[-_\s]+\w)/g, (match) =>
+      match.replace(/[-_\s]+/, "").toUpperCase(),
+    );
+
+const formatJsxStyleValue = (value: string | number): string =>
+  typeof value === "number" ? String(value) : JSON.stringify(value);
+
+const formatJsxStyleBlock = (
+  entries: Array<[string, string | number | undefined]>,
+  indent: string,
+): string => {
+  const definedEntries = entries.filter((entry) => entry[1] !== undefined);
+  if (definedEntries.length === 0) return "";
+
+  return `\n${indent}  style={{\n${definedEntries
+    .map(([key, value]) => `${indent}    ${key}: ${formatJsxStyleValue(value as string | number)},`)
+    .join("\n")}\n${indent}  }}`;
+};
+
+const isTransparentHex = (value: string): boolean =>
+  /^#(?:0000|ffffff00)$/i.test(value);
 
 const isContainerElement = (
   element: ComponentElement,
@@ -1738,6 +1932,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
         comp.styles && typeof comp.styles === "object"
           ? (comp.styles as Record<string, unknown>)
           : {};
+      const defaultStyles = getDefaultComponentStyles();
       return [
         {
           id:
@@ -1751,20 +1946,42 @@ const normalizeConfig = (input: unknown): AppConfig => {
                 .filter((el): el is ComponentElement => Boolean(el))
             : [],
           styles: {
-            verticalAlignment: (
-              ["beginning", "center", "end"] as string[]
-            ).includes(rawStyles.verticalAlignment as string)
-              ? (rawStyles.verticalAlignment as ComponentStyles["verticalAlignment"])
-              : "beginning",
-            horizontalAlignment: (
-              ["end-to-end", "center", "evenly-spaced"] as string[]
-            ).includes(rawStyles.horizontalAlignment as string)
-              ? (rawStyles.horizontalAlignment as ComponentStyles["horizontalAlignment"])
-              : "end-to-end",
+            justifyContent: normalizeFlexJustifyContent(
+              rawStyles.justifyContent ??
+                (rawStyles.horizontalAlignment === "end-to-end"
+                  ? "space-between"
+                  : rawStyles.horizontalAlignment === "evenly-spaced"
+                    ? "space-evenly"
+                    : rawStyles.horizontalAlignment),
+              defaultStyles.justifyContent,
+            ),
+            alignItems: normalizeFlexAlignItems(
+              rawStyles.alignItems ??
+                (rawStyles.verticalAlignment === "beginning"
+                  ? "start"
+                  : rawStyles.verticalAlignment),
+              defaultStyles.alignItems,
+            ),
+            gap: clampFlexGap(rawStyles.gap ?? defaultStyles.gap),
             paddingX: clampComponentSpacing(rawStyles.paddingX),
             paddingY: clampComponentSpacing(rawStyles.paddingY),
             marginX: clampComponentSpacing(rawStyles.marginX),
             marginY: clampComponentSpacing(rawStyles.marginY),
+            backgroundColor: normalizeHexColor(
+              rawStyles.backgroundColor,
+              defaultStyles.backgroundColor,
+            ),
+            borderColor: normalizeHexColor(
+              rawStyles.borderColor,
+              defaultStyles.borderColor,
+            ),
+            borderRadius: clampContainerBorderRadius(
+              rawStyles.borderRadius ?? defaultStyles.borderRadius,
+            ),
+            gap: clampFlexGap(rawStyles.gap ?? defaultStyles.gap),
+            borderWidth: clampContainerBorderWidth(
+              rawStyles.borderWidth ?? defaultStyles.borderWidth,
+            ),
           },
         },
       ];
@@ -1818,6 +2035,15 @@ function App() {
     "toggle" | "input" | "select"
   >("toggle");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [componentCodeDialogOpen, setComponentCodeDialogOpen] = useState(false);
+  const [componentJsonDialogOpen, setComponentJsonDialogOpen] = useState(false);
+  const [colorPickerDialogOpen, setColorPickerDialogOpen] = useState(false);
+  const [colorEditTarget, setColorEditTarget] = useState<ColorEditTarget | null>(null);
+  const [colorDraftHex, setColorDraftHex] = useState("#000000");
+  const [colorDraftRed, setColorDraftRed] = useState(0);
+  const [colorDraftGreen, setColorDraftGreen] = useState(0);
+  const [colorDraftBlue, setColorDraftBlue] = useState(0);
+  const [colorDraftAlpha, setColorDraftAlpha] = useState(255);
   const [activeTab, setActiveTab] = useState<ActiveTab>("navigation");
   const [selectedPageId, setSelectedPageId] = useState("settings");
   const [showAddCustomPage, setShowAddCustomPage] = useState(false);
@@ -2106,6 +2332,107 @@ function App() {
           : { ...comp, styles: { ...comp.styles, ...styles } },
       ),
     );
+  };
+
+  const openColorPicker = (target: ColorEditTarget, currentColor: string) => {
+    const normalized = normalizeHexColor(currentColor, "#000000");
+    const rgba = hexToRgba(normalized) ?? { r: 0, g: 0, b: 0, a: 255 };
+    const includeAlpha = normalized.trim().length === 9 || rgba.a < 255;
+    const hex = rgbaToHex(rgba.r, rgba.g, rgba.b, rgba.a, includeAlpha);
+
+    setColorEditTarget(target);
+    setColorDraftHex(hex);
+    setColorDraftRed(rgba.r);
+    setColorDraftGreen(rgba.g);
+    setColorDraftBlue(rgba.b);
+    setColorDraftAlpha(rgba.a);
+    setColorPickerDialogOpen(true);
+  };
+
+  const syncColorFromHex = (nextHex: string) => {
+    setColorDraftHex(nextHex);
+    const rgba = hexToRgba(nextHex);
+    if (rgba) {
+      setColorDraftRed(rgba.r);
+      setColorDraftGreen(rgba.g);
+      setColorDraftBlue(rgba.b);
+      setColorDraftAlpha(rgba.a);
+    }
+  };
+
+  const syncColorFromRgb = (
+    channel: "r" | "g" | "b",
+    value: string,
+  ) => {
+    const parsed = clampRgbChannel(value);
+    const next = {
+      r: channel === "r" ? parsed : colorDraftRed,
+      g: channel === "g" ? parsed : colorDraftGreen,
+      b: channel === "b" ? parsed : colorDraftBlue,
+    };
+
+    setColorDraftRed(next.r);
+    setColorDraftGreen(next.g);
+    setColorDraftBlue(next.b);
+    setColorDraftHex(
+      rgbaToHex(next.r, next.g, next.b, colorDraftAlpha, colorDraftAlpha < 255),
+    );
+  };
+
+  const syncColorFromAlpha = (value: string) => {
+    const parsed = clampRgbChannel(value);
+    setColorDraftAlpha(parsed);
+    setColorDraftHex(
+      rgbaToHex(
+        colorDraftRed,
+        colorDraftGreen,
+        colorDraftBlue,
+        parsed,
+        parsed < 255,
+      ),
+    );
+  };
+
+  const saveColorFromPicker = () => {
+    if (!colorEditTarget) return;
+
+    const fallbackHex = rgbaToHex(
+      colorDraftRed,
+      colorDraftGreen,
+      colorDraftBlue,
+      colorDraftAlpha,
+      colorDraftAlpha < 255,
+    );
+    const normalized = normalizeHexColor(colorDraftHex, fallbackHex);
+    const parsed = hexToRgba(normalized) ?? {
+      r: colorDraftRed,
+      g: colorDraftGreen,
+      b: colorDraftBlue,
+      a: colorDraftAlpha,
+    };
+    const useHex8 = normalized.trim().length === 9 || parsed.a < 255;
+    const finalColor = rgbaToHex(parsed.r, parsed.g, parsed.b, parsed.a, useHex8);
+
+    if (colorEditTarget.scope === "component") {
+      updateComponentStyles(colorEditTarget.componentId, {
+        ...colorEditTarget.styles,
+        [colorEditTarget.field]: finalColor,
+      });
+    } else {
+      updateComponentElementField(
+        colorEditTarget.componentId,
+        colorEditTarget.elementId,
+        {
+          styles: {
+            ...colorEditTarget.styles,
+            [colorEditTarget.field]: finalColor,
+          },
+        },
+      );
+    }
+
+    setColorPickerDialogOpen(false);
+    setColorEditTarget(null);
   };
 
   const updateSettingsItems = (
@@ -2476,6 +2803,165 @@ function App() {
     }
   }, [selectedComponent, activeElementEditorId]);
 
+  const renderComponentElementCode = (
+    element: ComponentElement,
+    indent = "  ",
+  ): string => {
+    if (element.elementTypeId === "element-text") {
+      const classes = [
+        element.styles.alignment === "left"
+          ? "text-left"
+          : element.styles.alignment === "right"
+            ? "text-right"
+            : "text-center",
+        "w-full",
+        element.styles.isLabel ? "text-muted-foreground" : "text-foreground",
+      ].join(" ");
+      const styleBlock = formatJsxStyleBlock(
+        [
+          ["fontSize", `${0.5 + element.styles.size * 0.125}rem`],
+          ["fontWeight", element.styles.isBold ? 700 : 400],
+          ["fontStyle", element.styles.isItalic ? "italic" : "normal"],
+        ],
+        indent,
+      );
+
+      return `${indent}<p\n${indent}  className=${JSON.stringify(classes)}${styleBlock}\n${indent}>${element.value || "Text"}</p>`;
+    }
+
+    if (element.elementTypeId === "element-toggle") {
+      const positionClass =
+        element.styles.position === "left"
+          ? "justify-start"
+          : element.styles.position === "right"
+            ? "justify-end"
+            : "justify-center";
+
+      return `${indent}<div className=${JSON.stringify(`flex w-full ${positionClass}`)}>\n${indent}  <Switch defaultChecked={${element.defaultValue}} />\n${indent}</div>`;
+    }
+
+    if (element.elementTypeId === "element-button") {
+      const buttonStyleBlock =
+        element.styles.width === "auto"
+          ? ""
+          : formatJsxStyleBlock(
+              [["width", element.styles.width === "full" ? "100%" : `${element.styles.width}px`]],
+              `${indent}`,
+            );
+      const buttonClassName =
+        element.styles.width === "full" ? ' className="w-full"' : ' className="w-auto"';
+      const variantProp = element.isGhost ? ' variant="ghost"' : "";
+
+      return `${indent}<Button${variantProp}${buttonClassName}${buttonStyleBlock}>${element.label}</Button>`;
+    }
+
+    if (element.elementTypeId === "element-select") {
+      const options = element.values.filter((option) => option.trim().length > 0);
+      const renderedOptions = (options.length > 0 ? options : ["No values"]).map(
+        (option, index) =>
+          `${indent}      <SelectItem value=${JSON.stringify(String(index))}${options.length === 0 ? " disabled" : ""}>${option}</SelectItem>`,
+      );
+
+      return `${indent}<Select defaultValue=${JSON.stringify(options.length > 0 ? "0" : "")}>\n${indent}  <SelectTrigger className="w-44">\n${indent}    <SelectValue placeholder="Select..." />\n${indent}  </SelectTrigger>\n${indent}  <SelectContent>\n${renderedOptions.join("\n")}\n${indent}  </SelectContent>\n${indent}</Select>`;
+    }
+
+    if (element.elementTypeId === "element-text-input") {
+      const alignmentClass =
+        element.styles.alignment === "left"
+          ? "justify-start"
+          : element.styles.alignment === "right"
+            ? "justify-end"
+            : "justify-center";
+      const inputStyleBlock = formatJsxStyleBlock(
+        [["width", element.styles.width === "full" ? "100%" : `${element.styles.width}px`]],
+        `${indent}  `,
+      );
+      const inputClassName =
+        element.styles.width === "full" ? ' className="w-full"' : "";
+
+      return `${indent}<div className=${JSON.stringify(`flex w-full ${alignmentClass}`)}>\n${indent}  <Input${inputClassName}${inputStyleBlock} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(element.textHint)} />\n${indent}</div>`;
+    }
+
+    if (element.elementTypeId === "element-icon") {
+      const iconName = toPascalCase(element.value || "Home") || "Home";
+      return `${indent}<${iconName} className="text-foreground" size={${10 + element.styles.size * 2}} />`;
+    }
+
+    if (element.elementTypeId === "element-image") {
+      const styleBlock = formatJsxStyleBlock(
+        [
+          ["width", toCssDimension(element.styles.width)],
+          ["height", toCssDimension(element.styles.height)],
+          ["objectFit", element.styles.sizing === "contain" ? "contain" : "cover"],
+        ],
+        indent,
+      );
+      return `${indent}<img\n${indent}  src=${JSON.stringify(element.src)}\n${indent}  alt="preview"\n${indent}  className="rounded border border-border bg-muted"${styleBlock}\n${indent}/>`;
+    }
+
+    const containerClasses = [
+      "flex",
+      "flex-1",
+      "flex-col",
+      getFlexJustifyClass(element.styles.justifyContent),
+      getFlexAlignItemsClass(element.styles.alignItems),
+    ].join(" ");
+    const containerStyleBlock = formatJsxStyleBlock(
+      [
+        ["gap", `${element.styles.gap}px`],
+        ["backgroundColor", isTransparentHex(element.styles.backgroundColor) ? undefined : element.styles.backgroundColor],
+        ["borderColor", element.styles.borderWidth > 0 ? element.styles.borderColor : undefined],
+        ["borderRadius", `${element.styles.borderRadius}px`],
+        ["borderWidth", `${element.styles.borderWidth}px`],
+        ["borderStyle", element.styles.borderWidth > 0 ? "solid" : undefined],
+      ],
+      indent,
+    );
+    const children =
+      element.elements.length > 0
+        ? element.elements.map((child) => renderComponentElementCode(child, `${indent}  `)).join("\n")
+        : `${indent}  <div className="w-full text-sm text-muted-foreground">Empty container</div>`;
+
+    return `${indent}<div\n${indent}  className=${JSON.stringify(containerClasses)}${containerStyleBlock}\n${indent}>\n${children}\n${indent}</div>`;
+  };
+
+  const getComponentPreviewCode = (component: AppComponent): string => {
+    const className = [
+      "flex",
+      "w-full",
+      "flex-1",
+      "flex-row",
+      "flex-wrap",
+      getFlexAlignItemsClass(component.styles.alignItems),
+      getFlexJustifyClass(component.styles.justifyContent),
+    ].join(" ");
+    const styleBlock = formatJsxStyleBlock(
+      [
+        ["gap", `${component.styles.gap}px`],
+        ["paddingLeft", `${component.styles.paddingX}px`],
+        ["paddingRight", `${component.styles.paddingX}px`],
+        ["paddingTop", `${component.styles.paddingY}px`],
+        ["paddingBottom", `${component.styles.paddingY}px`],
+        ["marginLeft", `${component.styles.marginX}px`],
+        ["marginRight", `${component.styles.marginX}px`],
+        ["marginTop", `${component.styles.marginY}px`],
+        ["marginBottom", `${component.styles.marginY}px`],
+        ["backgroundColor", isTransparentHex(component.styles.backgroundColor) ? undefined : component.styles.backgroundColor],
+        ["borderColor", component.styles.borderWidth > 0 ? component.styles.borderColor : undefined],
+        ["borderRadius", `${component.styles.borderRadius}px`],
+        ["borderWidth", `${component.styles.borderWidth}px`],
+        ["borderStyle", component.styles.borderWidth > 0 ? "solid" : undefined],
+      ],
+      "",
+    );
+    const children =
+      component.elements.length > 0
+        ? component.elements.map((element) => renderComponentElementCode(element, "  ")).join("\n")
+        : "  {/* Add elements here */}";
+
+    return `<div\n  className=${JSON.stringify(className)}${styleBlock}\n>\n${children}\n</div>`;
+  };
+
   const renderComponentElementPreview = (element: ComponentElement) => {
     if (element.elementTypeId === "element-text") {
       const fontSize = `${0.5 + element.styles.size * 0.125}rem`;
@@ -2519,25 +3005,18 @@ function App() {
       const widthStyle =
         element.styles.width === "full"
           ? { width: "100%" }
-          : { width: `${element.styles.width}px` };
-
-      const alignmentClass =
-        element.styles.alignment === "left"
-          ? "justify-start"
-          : element.styles.alignment === "right"
-            ? "justify-end"
-            : "justify-center";
+          : element.styles.width === "auto"
+            ? undefined
+            : { width: `${element.styles.width}px` };
 
       return (
-        <div className={`flex w-full ${alignmentClass}`}>
-          <Button
-            variant={element.isGhost ? "ghost" : "default"}
-            style={widthStyle}
-            className={element.styles.width === "full" ? "w-full" : undefined}
-          >
-            {element.label}
-          </Button>
-        </div>
+        <Button
+          variant={element.isGhost ? "ghost" : "default"}
+          style={widthStyle}
+          className={element.styles.width === "full" ? "w-full" : "w-auto"}
+        >
+          {element.label}
+        </Button>
       );
     }
 
@@ -2605,8 +3084,15 @@ function App() {
     if (element.elementTypeId === "element-vertical-container") {
       return (
         <div
-          className={`flex w-full flex-col rounded-lg p-4 ${getContainerAlignmentClass(element.styles.alignment)}`}
-          style={{ gap: `${element.styles.gap}px` }}
+          className={`flex h-full w-full flex-1 flex-col rounded-lg p-4 ${getFlexJustifyClass(element.styles.justifyContent)} ${getFlexAlignItemsClass(element.styles.alignItems)}`}
+          style={{
+            gap: `${element.styles.gap}px`,
+            backgroundColor: element.styles.backgroundColor,
+            borderColor: element.styles.borderColor,
+            borderRadius: `${element.styles.borderRadius}px`,
+            borderWidth: `${element.styles.borderWidth}px`,
+            borderStyle: element.styles.borderWidth > 0 ? "solid" : "none",
+          }}
         >
           {element.elements.length > 0 ? (
             element.elements.map((child) => (
@@ -2843,17 +3329,19 @@ function App() {
           <div className="space-y-2">
             <Label>Width</Label>
             <Select
-              value={element.styles.width === "full" ? "full" : "pixels"}
-              onValueChange={(mode: "full" | "pixels") =>
+              value={element.styles.width === "full" ? "full" : element.styles.width === "auto" ? "auto" : "pixels"}
+              onValueChange={(mode: "auto" | "full" | "pixels") =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
                     width:
                       mode === "full"
                         ? "full"
-                        : typeof element.styles.width === "number"
-                          ? element.styles.width
-                          : 240,
+                        : mode === "auto"
+                          ? "auto"
+                          : typeof element.styles.width === "number"
+                            ? element.styles.width
+                            : 240,
                   },
                 })
               }
@@ -2862,35 +3350,13 @@ function App() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
                 <SelectItem value="full">Full Width</SelectItem>
                 <SelectItem value="pixels">Pixels</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Alignment</Label>
-            <Select
-              value={element.styles.alignment}
-              onValueChange={(value: ButtonAlignment) =>
-                updateComponentElementField(componentId, element.instanceId, {
-                  styles: {
-                    ...element.styles,
-                    alignment: value,
-                  },
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="left">Left</SelectItem>
-                <SelectItem value="center">Center</SelectItem>
-                <SelectItem value="right">Right</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {element.styles.width !== "full" && (
+          {element.styles.width !== "full" && element.styles.width !== "auto" && (
             <div className="space-y-2">
               <Label>Width (px)</Label>
               <Input
@@ -3244,33 +3710,60 @@ function App() {
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Alignment</Label>
-            <Select
-              value={element.styles.alignment}
-              onValueChange={(value: "start" | "center" | "end") =>
-                updateComponentElementField(componentId, element.instanceId, {
-                  styles: {
-                    ...element.styles,
-                    alignment: value,
-                  },
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="start">Start</SelectItem>
-                <SelectItem value="center">Center</SelectItem>
-                <SelectItem value="end">End</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <Label>Justify Content</Label>
+              <Select
+                value={element.styles.justifyContent}
+                onValueChange={(value: FlexJustifyContent) =>
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      justifyContent: value,
+                    },
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="start">Start</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="end">End</SelectItem>
+                  <SelectItem value="space-between">Space Between</SelectItem>
+                  <SelectItem value="space-around">Space Around</SelectItem>
+                  <SelectItem value="space-evenly">Space Evenly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Align Items</Label>
+              <Select
+                value={element.styles.alignItems}
+                onValueChange={(value: FlexAlignItems) =>
+                  updateComponentElementField(componentId, element.instanceId, {
+                    styles: {
+                      ...element.styles,
+                      alignItems: value,
+                    },
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="start">Start</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="end">End</SelectItem>
+                  <SelectItem value="stretch">Stretch</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           <div className="space-y-2">
-            <Label>Flex Gap (1-50 px)</Label>
+            <Label>Flex Gap (0-50 px)</Label>
             <Input
               type="number"
-              min={1}
+              min={0}
               max={50}
               value={element.styles.gap}
               onChange={(e) =>
@@ -3278,6 +3771,105 @@ function App() {
                   styles: {
                     ...element.styles,
                     gap: clampFlexGap(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Background Color</Label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-between font-mono"
+              onClick={() =>
+                openColorPicker(
+                  {
+                    scope: "vertical-container",
+                    componentId,
+                    elementId: element.instanceId,
+                    field: "backgroundColor",
+                    styles: element.styles,
+                  },
+                  element.styles.backgroundColor,
+                )
+              }
+            >
+              <span>{element.styles.backgroundColor}</span>
+              <span
+                className="h-4 w-4 rounded border border-border"
+                style={{
+                  backgroundColor: normalizeHexColor(
+                    element.styles.backgroundColor,
+                    "#000000",
+                  ),
+                }}
+              />
+            </Button>
+          </div>
+          <div className="space-y-2">
+            <Label>Border Color</Label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-between font-mono"
+              onClick={() =>
+                openColorPicker(
+                  {
+                    scope: "vertical-container",
+                    componentId,
+                    elementId: element.instanceId,
+                    field: "borderColor",
+                    styles: element.styles,
+                  },
+                  element.styles.borderColor,
+                )
+              }
+            >
+              <span>{element.styles.borderColor}</span>
+              <span
+                className="h-4 w-4 rounded border border-border"
+                style={{
+                  backgroundColor: normalizeHexColor(
+                    element.styles.borderColor,
+                    "#000000",
+                  ),
+                }}
+              />
+            </Button>
+          </div>
+          <div className="space-y-2">
+            <Label>Border Radius (px)</Label>
+            <Input
+              type="range"
+              min={0}
+              max={64}
+              value={element.styles.borderRadius}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    borderRadius: clampContainerBorderRadius(e.target.value),
+                  },
+                })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              {element.styles.borderRadius}px
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Border Width (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={16}
+              value={element.styles.borderWidth}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    borderWidth: clampContainerBorderWidth(e.target.value),
                   },
                 })
               }
@@ -3477,6 +4069,109 @@ function App() {
                   Copy Both to Clipboard
                 </Button>
               </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={colorPickerDialogOpen}
+            onOpenChange={(open) => {
+              setColorPickerDialogOpen(open);
+              if (!open) {
+                setColorEditTarget(null);
+              }
+            }}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="font-mono">
+                  Pick Color
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="picker-native-color">Color Picker</Label>
+                  <Input
+                    id="picker-native-color"
+                    type="color"
+                    value={rgbaToHex(colorDraftRed, colorDraftGreen, colorDraftBlue)}
+                    onChange={(e) => syncColorFromHex(e.target.value)}
+                    className="h-10 w-full"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="picker-hex">HEX</Label>
+                  <Input
+                    id="picker-hex"
+                    value={colorDraftHex}
+                    onChange={(e) => syncColorFromHex(e.target.value)}
+                    placeholder="#RRGGBB or #RRGGBBAA"
+                    className="font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="picker-r">R</Label>
+                    <Input
+                      id="picker-r"
+                      type="number"
+                      min={0}
+                      max={255}
+                      value={colorDraftRed}
+                      onChange={(e) => syncColorFromRgb("r", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="picker-g">G</Label>
+                    <Input
+                      id="picker-g"
+                      type="number"
+                      min={0}
+                      max={255}
+                      value={colorDraftGreen}
+                      onChange={(e) => syncColorFromRgb("g", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="picker-b">B</Label>
+                    <Input
+                      id="picker-b"
+                      type="number"
+                      min={0}
+                      max={255}
+                      value={colorDraftBlue}
+                      onChange={(e) => syncColorFromRgb("b", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="picker-a">A</Label>
+                    <Input
+                      id="picker-a"
+                      type="number"
+                      min={0}
+                      max={255}
+                      value={colorDraftAlpha}
+                      onChange={(e) => syncColorFromAlpha(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setColorPickerDialogOpen(false);
+                    setColorEditTarget(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" onClick={saveColorFromPicker}>
+                  Save
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -4425,58 +5120,73 @@ function App() {
                       </h2>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label htmlFor="comp-vert-align">
-                            Vertical Alignment
+                          <Label htmlFor="comp-justify-content">
+                            Justify Content
                           </Label>
                           <Select
-                            value={selectedComponent.styles.verticalAlignment}
-                            onValueChange={(
-                              value: ComponentStyles["verticalAlignment"],
-                            ) =>
+                            value={selectedComponent.styles.justifyContent}
+                            onValueChange={(value: ComponentStyles["justifyContent"]) =>
                               updateComponentStyles(selectedComponent.id, {
-                                verticalAlignment: value,
+                                justifyContent: value,
                               })
                             }
                           >
-                            <SelectTrigger id="comp-vert-align">
+                            <SelectTrigger id="comp-justify-content">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="beginning">
-                                Beginning
-                              </SelectItem>
+                              <SelectItem value="start">Start</SelectItem>
                               <SelectItem value="center">Center</SelectItem>
                               <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="space-between">
+                                Space Between
+                              </SelectItem>
+                              <SelectItem value="space-around">
+                                Space Around
+                              </SelectItem>
+                              <SelectItem value="space-evenly">
+                                Space Evenly
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="comp-horiz-align">
-                            Horizontal Alignment
+                          <Label htmlFor="comp-align-items">
+                            Align Items
                           </Label>
                           <Select
-                            value={selectedComponent.styles.horizontalAlignment}
-                            onValueChange={(
-                              value: ComponentStyles["horizontalAlignment"],
-                            ) =>
+                            value={selectedComponent.styles.alignItems}
+                            onValueChange={(value: ComponentStyles["alignItems"]) =>
                               updateComponentStyles(selectedComponent.id, {
-                                horizontalAlignment: value,
+                                alignItems: value,
                               })
                             }
                           >
-                            <SelectTrigger id="comp-horiz-align">
+                            <SelectTrigger id="comp-align-items">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="end-to-end">
-                                End to End
-                              </SelectItem>
+                              <SelectItem value="start">Start</SelectItem>
                               <SelectItem value="center">Center</SelectItem>
-                              <SelectItem value="evenly-spaced">
-                                Evenly Spaced
-                              </SelectItem>
+                              <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="stretch">Stretch</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-gap">Gap (px)</Label>
+                          <Input
+                            id="comp-gap"
+                            type="number"
+                            min={0}
+                            max={50}
+                            value={selectedComponent.styles.gap}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                gap: clampFlexGap(e.target.value),
+                              })
+                            }
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="comp-padding-x">
@@ -4546,13 +5256,164 @@ function App() {
                             }
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-background-color">
+                            Background Color
+                          </Label>
+                          <Button
+                            id="comp-background-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
+                            onClick={() =>
+                              openColorPicker(
+                                {
+                                  scope: "component",
+                                  componentId: selectedComponent.id,
+                                  field: "backgroundColor",
+                                  styles: selectedComponent.styles,
+                                },
+                                selectedComponent.styles.backgroundColor,
+                              )
+                            }
+                          >
+                            <span>{selectedComponent.styles.backgroundColor}</span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedComponent.styles.backgroundColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-color">Border Color</Label>
+                          <Button
+                            id="comp-border-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
+                            onClick={() =>
+                              openColorPicker(
+                                {
+                                  scope: "component",
+                                  componentId: selectedComponent.id,
+                                  field: "borderColor",
+                                  styles: selectedComponent.styles,
+                                },
+                                selectedComponent.styles.borderColor,
+                              )
+                            }
+                          >
+                            <span>{selectedComponent.styles.borderColor}</span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedComponent.styles.borderColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-radius">
+                            Border Radius
+                          </Label>
+                          <Input
+                            id="comp-border-radius"
+                            type="range"
+                            min={0}
+                            max={64}
+                            value={selectedComponent.styles.borderRadius}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                borderRadius: clampContainerBorderRadius(
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {selectedComponent.styles.borderRadius}px
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-width">
+                            Border Width (px)
+                          </Label>
+                          <Input
+                            id="comp-border-width"
+                            type="number"
+                            min={0}
+                            max={16}
+                            value={selectedComponent.styles.borderWidth}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                borderWidth: clampContainerBorderWidth(
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                        </div>
                       </div>
                     </Card>
 
                     <Card className="p-4">
-                      <h2 className="text-lg font-semibold mb-4 font-mono">
-                        Component Preview
-                      </h2>
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-semibold font-mono">
+                          Component Preview
+                        </h2>
+                        {selectedComponent && (
+                          <div className="flex items-center gap-2">
+                            <Dialog
+                              open={componentCodeDialogOpen}
+                              onOpenChange={setComponentCodeDialogOpen}
+                            >
+                              <DialogTrigger asChild>
+                                <Button type="button" variant="outline">
+                                  Code
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                                <DialogHeader className="shrink-0">
+                                  <DialogTitle className="font-mono">
+                                    {selectedComponent.label} JSX
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                  {getComponentPreviewCode(selectedComponent)}
+                                </pre>
+                              </DialogContent>
+                            </Dialog>
+                            <Dialog
+                              open={componentJsonDialogOpen}
+                              onOpenChange={setComponentJsonDialogOpen}
+                            >
+                              <DialogTrigger asChild>
+                                <Button type="button" variant="outline">
+                                  JSON
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                                <DialogHeader className="shrink-0">
+                                  <DialogTitle className="font-mono">
+                                    {selectedComponent.label} JSON
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                  {JSON.stringify(selectedComponent, null, 2)}
+                                </pre>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                        )}
+                      </div>
                       {!selectedComponent ? (
                         <p className="text-sm text-muted-foreground">
                           No component selected for preview.
@@ -4564,8 +5425,9 @@ function App() {
                               {selectedComponent.label}
                             </p>
                             <div
-                              className={`flex w-full gap-3 rounded-md border border-border bg-background p-3 ${getVerticalAlignmentClass(selectedComponent.styles.verticalAlignment)} ${getHorizontalAlignmentClass(selectedComponent.styles.horizontalAlignment)}`}
+                              className={`flex w-full flex-1 flex-row flex-wrap ${getFlexAlignItemsClass(selectedComponent.styles.alignItems)} ${getFlexJustifyClass(selectedComponent.styles.justifyContent)}`}
                               style={{
+                                gap: `${selectedComponent.styles.gap}px`,
                                 paddingLeft: `${selectedComponent.styles.paddingX}px`,
                                 paddingRight: `${selectedComponent.styles.paddingX}px`,
                                 paddingTop: `${selectedComponent.styles.paddingY}px`,
@@ -4574,12 +5436,20 @@ function App() {
                                 marginRight: `${selectedComponent.styles.marginX}px`,
                                 marginTop: `${selectedComponent.styles.marginY}px`,
                                 marginBottom: `${selectedComponent.styles.marginY}px`,
+                                backgroundColor: selectedComponent.styles.backgroundColor,
+                                borderColor: selectedComponent.styles.borderColor,
+                                borderRadius: `${selectedComponent.styles.borderRadius}px`,
+                                borderWidth: `${selectedComponent.styles.borderWidth}px`,
+                                borderStyle:
+                                  selectedComponent.styles.borderWidth > 0
+                                    ? "solid"
+                                    : "none",
                               }}
                             >
                               {selectedComponent.elements.map((element) => (
                                 <div
                                   key={element.instanceId}
-                                  className="min-h-8 min-w-0 flex-1"
+                                  className={`min-h-8 min-w-0 flex-1 ${element.elementTypeId === "element-vertical-container" ? "flex self-stretch" : ""}`}
                                 >
                                   {renderComponentElementPreview(element)}
                                 </div>
