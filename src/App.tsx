@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -43,6 +43,7 @@ import {
 import * as LucideIcons from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import prebuiltSourceConfig from "./appgen-config-prebuilt.json";
 
 interface NavPage {
   id: string;
@@ -165,6 +166,12 @@ interface ExportPrebuiltConfig {
   elements: PrebuiltElementDef[];
 }
 
+interface AppgenPrebuiltSourceConfig {
+  components?: unknown;
+  pages?: unknown;
+  elements?: unknown;
+}
+
 type ElementTypeId =
   | "element-text"
   | "element-toggle"
@@ -181,7 +188,22 @@ interface BaseComponentElement {
   flex?: number | null;
 }
 
-interface TextElementStyles {
+interface ElementSpacingStyles {
+  paddingX: number;
+  paddingY: number;
+  marginX: number;
+  marginY: number;
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+}
+
+interface TextElementStyles extends ElementSpacingStyles {
   alignment: "left" | "center" | "right";
   size: number;
   isBold: boolean;
@@ -189,27 +211,29 @@ interface TextElementStyles {
   isLabel: boolean;
 }
 
-interface ToggleElementStyles {
+interface ToggleElementStyles extends ElementSpacingStyles {
   position: "left" | "center" | "right";
 }
 
-interface IconElementStyles {
+interface IconElementStyles extends ElementSpacingStyles {
   size: number;
 }
 
 type ElementDimension = number | string;
 type ButtonWidth = number | "full" | "auto";
 
-interface ButtonElementStyles {
+interface ButtonElementStyles extends ElementSpacingStyles {
   width: ButtonWidth;
 }
 
-interface TextInputElementStyles {
+interface TextInputElementStyles extends ElementSpacingStyles {
   alignment: "left" | "center" | "right";
   width: ButtonWidth;
 }
 
-interface ImageElementStyles {
+interface SelectElementStyles extends ElementSpacingStyles {}
+
+interface ImageElementStyles extends ElementSpacingStyles {
   sizing: "contain" | "cover";
   width: ButtonWidth;
   height: ElementDimension;
@@ -271,6 +295,7 @@ interface ButtonComponentElement extends BaseComponentElement {
 interface SelectComponentElement extends BaseComponentElement {
   elementTypeId: "element-select";
   values: string[];
+  styles: SelectElementStyles;
 }
 
 interface TextInputComponentElement extends BaseComponentElement {
@@ -431,6 +456,10 @@ interface ColorThemePair {
 type ColorTheme = Record<ThemeVariableKey, ColorThemePair>;
 
 type ThemePreviewMode = "light" | "dark";
+type NewCustomComponentMode =
+  | "blank-component"
+  | "project-components"
+  | "component-library";
 
 const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = {
   primary: "Primary",
@@ -513,32 +542,64 @@ const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
   variant: "all",
 };
 
-const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = [
-  {
-    id: "component-type-toggle",
-    type: "toggle",
-    label: "Toggle",
-    kind: "prebuilt",
-  },
-  {
-    id: "component-type-input",
-    type: "input",
-    label: "Input",
-    kind: "prebuilt",
-  },
-  {
-    id: "component-type-select",
-    type: "select",
-    label: "Select",
-    kind: "prebuilt",
-  },
-  {
-    id: "component-type-header1",
-    type: "header",
-    label: "Header 1",
-    kind: "prebuilt",
-  },
-];
+const PREBUILT_SOURCE = prebuiltSourceConfig as AppgenPrebuiltSourceConfig;
+
+const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = Array.isArray(
+  PREBUILT_SOURCE.components,
+)
+  ? PREBUILT_SOURCE.components
+      .map((component, index) => {
+        if (!component || typeof component !== "object") return null;
+        const entry = component as Record<string, unknown>;
+        const type =
+          entry.type === "toggle" ||
+          entry.type === "input" ||
+          entry.type === "select" ||
+          entry.type === "header"
+            ? entry.type
+            : null;
+        if (!type) return null;
+
+        return {
+          id:
+            typeof entry.id === "string" && entry.id.trim().length > 0
+              ? entry.id
+              : `component-type-${type}-${index + 1}`,
+          type,
+          label:
+            typeof entry.label === "string" && entry.label.trim().length > 0
+              ? entry.label
+              : type,
+          kind: "prebuilt" as const,
+        };
+      })
+      .filter(
+        (component): component is SettingComponentDefinition =>
+          component !== null,
+      )
+  : [];
+
+const PREBUILT_SOURCE_PAGES: ExportedPrebuiltPage[] = Array.isArray(
+  PREBUILT_SOURCE.pages,
+)
+  ? PREBUILT_SOURCE.pages
+      .map((page) => {
+        if (!page || typeof page !== "object") return null;
+        const entry = page as Record<string, unknown>;
+        if (typeof entry.id !== "string" || typeof entry.title !== "string") {
+          return null;
+        }
+
+        return {
+          id: entry.id,
+          title: entry.title,
+          items: Array.isArray(entry.items)
+            ? (entry.items as Array<SettingsItem | HomeItem>)
+            : [],
+        };
+      })
+      .filter((page): page is ExportedPrebuiltPage => page !== null)
+  : [];
 
 const createDefaultSettingsPage = (): PrebuiltSettingsPage => ({
   id: "settings",
@@ -562,6 +623,47 @@ const createDefaultHomePage = (): PrebuiltHomePage => ({
   ],
 });
 
+const PREBUILT_PAGES_FROM_SOURCE: AppPage[] = PREBUILT_SOURCE_PAGES.flatMap(
+  (page) => {
+    if (page.id === "settings") {
+      return [
+        {
+          id: "settings",
+          kind: "prebuilt" as const,
+          title: page.title,
+          items: page.items.filter((item): item is SettingsItem =>
+            Boolean(item && typeof item === "object"),
+          ),
+        },
+      ];
+    }
+
+    if (page.id === "home") {
+      return [
+        {
+          id: "home",
+          kind: "prebuilt" as const,
+          title: page.title,
+          items: page.items.filter((item): item is HomeItem =>
+            Boolean(item && typeof item === "object"),
+          ),
+        },
+      ];
+    }
+
+    return [];
+  },
+);
+
+const getFallbackSettingComponent = (
+  type: SettingComponentType,
+): SettingComponentDefinition => ({
+  id: `component-type-${type}`,
+  type,
+  label: type.charAt(0).toUpperCase() + type.slice(1),
+  kind: "prebuilt",
+});
+
 export type {
   ComponentElement,
   ComponentStyles,
@@ -569,101 +671,19 @@ export type {
   ComponentDirection,
 };
 
-export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
-  {
-    id: "element-text",
-    label: "Text",
-    value: "",
-    styles: {
-      alignment: "center",
-      size: 3,
-      fontWeight: 400,
-      isBold: false,
-      isItalic: false,
-      isLabel: false,
-      textColor: "$text",
-      labelColor: "$textHint",
-    },
-  },
-  {
-    id: "element-toggle",
-    label: "Toggle Button",
-    value: false,
-    styles: {
-      position: "center",
-      activeColor: "$primary",
-      inactiveColor: "$border",
-    },
-  },
-  {
-    id: "element-button",
-    label: "Button",
-    buttonLabel: "Button",
-    highlightOnHover: true,
-    isGhost: false,
-    styles: {
-      width: "full",
-      alignment: "center",
-      textColor: "$text",
-      backgroundColor: "$button",
-      highlightColor: "$highlight",
-    },
-  },
-  {
-    id: "element-select",
-    label: "Select Dropdown",
-    values: ["Value One", "Value Two"],
-    showDefaultLabel: true,
-    defaultLabel: "Please Select",
-    styles: {
-      textColor: "$text",
-      backgroundColor: "$secondary",
-      highlightColor: "$highlight",
-      borderColor: "$border",
-    },
-  },
-  {
-    id: "element-text-input",
-    label: "Text Input",
-    textHint: "",
-    value: "",
-    styles: {
-      width: "full",
-      textColor: "$text",
-      borderColor: "$border",
-      backgroundColor: "$secondary",
-    },
-  },
-  {
-    id: "element-icon",
-    label: "Icon",
-    value: "Home",
-    styles: {
-      alignment: "center",
-      size: 24,
-      color: "#111827",
-      borderWidth: 0,
-      borderColor: "#d1d5db",
-      borderRadius: 8,
-    },
-  },
-  {
-    id: "element-image",
-    label: "Image",
-    styles: {
-      alignment: "center",
-      sizing: "contain",
-      containerWidth: "auto",
-      containerHeight: "auto",
-      backgroundColor: "#ffffff",
-      borderWidth: 0,
-      borderColor: "#d1d5db",
-      borderRadius: 8,
-      padding: 0,
-    },
-    src: "https://placehold.co/600x400",
-  },
-];
+export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = Array.isArray(
+  PREBUILT_SOURCE.elements,
+)
+  ? PREBUILT_SOURCE.elements
+      .filter((element): element is PrebuiltElementDef =>
+        Boolean(
+          element &&
+          typeof element === "object" &&
+          typeof (element as { id?: unknown }).id === "string",
+        ),
+      )
+      .map((element) => ({ ...element }))
+  : [];
 
 const ELEMENT_TYPE_IDS = new Set<string>([
   ...PREBUILT_ELEMENTS.map((e) => e.id),
@@ -693,6 +713,7 @@ const getPrebuiltElementDef = (
 const getDefaultTextStyles = (): TextElementStyles => {
   const styles = getPrebuiltElementDef("element-text")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     alignment:
       styles?.alignment === "left" ||
       styles?.alignment === "center" ||
@@ -714,6 +735,7 @@ const getDefaultToggleValue = (): boolean =>
 const getDefaultToggleStyles = (): ToggleElementStyles => {
   const styles = getPrebuiltElementDef("element-toggle")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     position:
       styles?.position === "left" ||
       styles?.position === "center" ||
@@ -791,9 +813,14 @@ const normalizeImageWidth = (value: unknown): ButtonWidth => {
 const getDefaultButtonStyles = (): ButtonElementStyles => {
   const styles = getPrebuiltElementDef("element-button")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     width: normalizeButtonWidth(styles?.width),
   };
 };
+
+const getDefaultSelectStyles = (): SelectElementStyles => ({
+  ...getDefaultElementSpacingStyles(),
+});
 
 const getDefaultSelectValues = (): string[] => {
   const values = getPrebuiltElementDef("element-select")?.values;
@@ -816,6 +843,7 @@ const getDefaultTextInputHint = (): string => {
 const getDefaultTextInputStyles = (): TextInputElementStyles => {
   const styles = getPrebuiltElementDef("element-text-input")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     alignment:
       styles?.alignment === "left" ||
       styles?.alignment === "center" ||
@@ -834,6 +862,7 @@ const getDefaultIconValue = (): string => {
 const getDefaultIconStyles = (): IconElementStyles => {
   const styles = getPrebuiltElementDef("element-icon")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     size: clampTextSize(styles?.size),
   };
 };
@@ -869,6 +898,7 @@ const normalizeDimension = (
 const getDefaultImageStyles = (): ImageElementStyles => {
   const styles = getPrebuiltElementDef("element-image")?.styles;
   return {
+    ...getDefaultElementSpacingStyles(),
     sizing:
       styles?.sizing === "contain" || styles?.sizing === "cover"
         ? styles.sizing
@@ -909,6 +939,23 @@ const normalizeElementFlex = (value: unknown): number | null => {
 
 const DEFAULT_CONTAINER_MAX_DIMENSION = 4096;
 
+function getDefaultElementSpacingStyles(): ElementSpacingStyles {
+  return {
+    paddingX: 0,
+    paddingY: 0,
+    marginX: 0,
+    marginY: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingLeft: 0,
+    paddingRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+    marginRight: 0,
+  };
+}
+
 const normalizeAxisValue = (
   rawAxis: unknown,
   rawStart: unknown,
@@ -932,6 +979,154 @@ const normalizeAxisValue = (
     end: endParsed,
   };
 };
+
+const normalizeElementSpacingStyles = (
+  rawStyles: Record<string, unknown>,
+  entry: Record<string, unknown>,
+  defaultStyles: ElementSpacingStyles,
+): ElementSpacingStyles => {
+  const paddingXValues = normalizeAxisValue(
+    rawStyles.paddingX ?? entry.paddingX,
+    rawStyles.paddingLeft ?? entry.paddingLeft,
+    rawStyles.paddingRight ?? entry.paddingRight,
+  );
+  const paddingYValues = normalizeAxisValue(
+    rawStyles.paddingY ?? entry.paddingY,
+    rawStyles.paddingTop ?? entry.paddingTop,
+    rawStyles.paddingBottom ?? entry.paddingBottom,
+  );
+  const marginXValues = normalizeAxisValue(
+    rawStyles.marginX ?? entry.marginX,
+    rawStyles.marginLeft ?? entry.marginLeft,
+    rawStyles.marginRight ?? entry.marginRight,
+  );
+  const marginYValues = normalizeAxisValue(
+    rawStyles.marginY ?? entry.marginY,
+    rawStyles.marginTop ?? entry.marginTop,
+    rawStyles.marginBottom ?? entry.marginBottom,
+  );
+
+  return {
+    paddingX:
+      rawStyles.paddingX === undefined && entry.paddingX === undefined
+        ? defaultStyles.paddingX
+        : paddingXValues.axis,
+    paddingY:
+      rawStyles.paddingY === undefined && entry.paddingY === undefined
+        ? defaultStyles.paddingY
+        : paddingYValues.axis,
+    marginX:
+      rawStyles.marginX === undefined && entry.marginX === undefined
+        ? defaultStyles.marginX
+        : marginXValues.axis,
+    marginY:
+      rawStyles.marginY === undefined && entry.marginY === undefined
+        ? defaultStyles.marginY
+        : marginYValues.axis,
+    paddingTop:
+      rawStyles.paddingTop === undefined &&
+      entry.paddingTop === undefined &&
+      rawStyles.paddingY === undefined &&
+      entry.paddingY === undefined
+        ? defaultStyles.paddingTop
+        : paddingYValues.start,
+    paddingBottom:
+      rawStyles.paddingBottom === undefined &&
+      entry.paddingBottom === undefined &&
+      rawStyles.paddingY === undefined &&
+      entry.paddingY === undefined
+        ? defaultStyles.paddingBottom
+        : paddingYValues.end,
+    paddingLeft:
+      rawStyles.paddingLeft === undefined &&
+      entry.paddingLeft === undefined &&
+      rawStyles.paddingX === undefined &&
+      entry.paddingX === undefined
+        ? defaultStyles.paddingLeft
+        : paddingXValues.start,
+    paddingRight:
+      rawStyles.paddingRight === undefined &&
+      entry.paddingRight === undefined &&
+      rawStyles.paddingX === undefined &&
+      entry.paddingX === undefined
+        ? defaultStyles.paddingRight
+        : paddingXValues.end,
+    marginTop:
+      rawStyles.marginTop === undefined &&
+      entry.marginTop === undefined &&
+      rawStyles.marginY === undefined &&
+      entry.marginY === undefined
+        ? defaultStyles.marginTop
+        : marginYValues.start,
+    marginBottom:
+      rawStyles.marginBottom === undefined &&
+      entry.marginBottom === undefined &&
+      rawStyles.marginY === undefined &&
+      entry.marginY === undefined
+        ? defaultStyles.marginBottom
+        : marginYValues.end,
+    marginLeft:
+      rawStyles.marginLeft === undefined &&
+      entry.marginLeft === undefined &&
+      rawStyles.marginX === undefined &&
+      entry.marginX === undefined
+        ? defaultStyles.marginLeft
+        : marginXValues.start,
+    marginRight:
+      rawStyles.marginRight === undefined &&
+      entry.marginRight === undefined &&
+      rawStyles.marginX === undefined &&
+      entry.marginX === undefined
+        ? defaultStyles.marginRight
+        : marginXValues.end,
+  };
+};
+
+export const getBoxSpacingStyle = (
+  styles: ElementSpacingStyles,
+): CSSProperties => ({
+  paddingTop: `${styles.paddingTop}px`,
+  paddingBottom: `${styles.paddingBottom}px`,
+  paddingLeft: `${styles.paddingLeft}px`,
+  paddingRight: `${styles.paddingRight}px`,
+  marginTop: `${styles.marginTop}px`,
+  marginBottom: `${styles.marginBottom}px`,
+  marginLeft: `${styles.marginLeft}px`,
+  marginRight: `${styles.marginRight}px`,
+});
+
+type EditableElementSpacingStyles = ElementSpacingStyles &
+  Record<string, unknown>;
+
+const getElementSpacingStyleEntries = (
+  styles: ElementSpacingStyles,
+): Array<[string, string]> => [
+  ["paddingTop", `${styles.paddingTop}px`],
+  ["paddingBottom", `${styles.paddingBottom}px`],
+  ["paddingLeft", `${styles.paddingLeft}px`],
+  ["paddingRight", `${styles.paddingRight}px`],
+  ["marginTop", `${styles.marginTop}px`],
+  ["marginBottom", `${styles.marginBottom}px`],
+  ["marginLeft", `${styles.marginLeft}px`],
+  ["marginRight", `${styles.marginRight}px`],
+];
+
+const getExplicitElementSpacingJson = (
+  styles: ElementSpacingStyles,
+): Record<string, number> => ({
+  paddingX: styles.paddingX ?? 0,
+  paddingY: styles.paddingY ?? 0,
+  marginX: styles.marginX ?? 0,
+  marginY: styles.marginY ?? 0,
+  paddingTop: styles.paddingTop ?? 0,
+  paddingBottom: styles.paddingBottom ?? 0,
+  paddingLeft: styles.paddingLeft ?? 0,
+  paddingRight: styles.paddingRight ?? 0,
+  marginTop: styles.marginTop ?? 0,
+  marginBottom: styles.marginBottom ?? 0,
+  marginLeft: styles.marginLeft ?? 0,
+  marginRight: styles.marginRight ?? 0,
+});
 
 const clampContainerBorderRadius = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -1208,6 +1403,7 @@ export const normalizeElementFromRaw = (
         elementTypeId: "element-text",
         value: typeof entry.value === "string" ? entry.value : "",
         styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           alignment:
             rawStyles.alignment === "left" ||
             rawStyles.alignment === "center" ||
@@ -1251,6 +1447,7 @@ export const normalizeElementFromRaw = (
               ? entry.value
               : getDefaultToggleValue(),
         styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           position:
             rawStyles.position === "left" ||
             rawStyles.position === "center" ||
@@ -1277,6 +1474,7 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const defaultStyles = getDefaultButtonStyles();
 
       return {
         instanceId,
@@ -1295,19 +1493,28 @@ export const normalizeElementFromRaw = (
             ? entry.isGhost
             : getDefaultButtonIsGhost(),
         styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           width: normalizeButtonWidth(
-            rawStyles.width ?? entry.width ?? getDefaultButtonStyles().width,
+            rawStyles.width ?? entry.width ?? defaultStyles.width,
           ),
         },
       };
     }
-    case "element-select":
+    case "element-select": {
+      const rawStyles =
+        entry.styles && typeof entry.styles === "object"
+          ? (entry.styles as Record<string, unknown>)
+          : {};
+      const defaultStyles = getDefaultSelectStyles();
+
       return {
         instanceId,
         flex: elementFlex,
         elementTypeId: "element-select",
         values: normalizeSelectValues(entry.values),
+        styles: normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
       };
+    }
     case "element-text-input": {
       const rawStyles =
         entry.styles && typeof entry.styles === "object"
@@ -1325,6 +1532,7 @@ export const normalizeElementFromRaw = (
             : getDefaultTextInputHint(),
         value: typeof entry.value === "string" ? entry.value : "",
         styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           alignment:
             rawStyles.alignment === "left" ||
             rawStyles.alignment === "center" ||
@@ -1356,6 +1564,11 @@ export const normalizeElementFromRaw = (
             ? entry.value
             : getDefaultIconValue(),
         styles: {
+          ...normalizeElementSpacingStyles(
+            rawStyles,
+            entry,
+            getDefaultIconStyles(),
+          ),
           size: clampTextSize(
             rawStyles.size ?? entry.size ?? getDefaultIconStyles().size,
           ),
@@ -1374,6 +1587,7 @@ export const normalizeElementFromRaw = (
         flex: elementFlex,
         elementTypeId: "element-image",
         styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           sizing:
             rawStyles.sizing === "contain" || rawStyles.sizing === "cover"
               ? rawStyles.sizing
@@ -1980,7 +2194,7 @@ const DEFAULT_CONFIG: AppConfig = {
     navigationStyle: DEFAULT_NAVIGATION_STYLE,
     navigationPages: [],
   },
-  pages: [createDefaultSettingsPage(), createDefaultHomePage()],
+  pages: PREBUILT_PAGES_FROM_SOURCE,
 };
 
 const normalizeConfig = (input: unknown): AppConfig => {
@@ -2035,7 +2249,8 @@ const normalizeConfig = (input: unknown): AppConfig => {
     legacyComponentsObject?.settingComponentTypes;
 
   const defaultComponentByType = (type: SettingComponentType) =>
-    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)!;
+    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type) ??
+    getFallbackSettingComponent(type);
 
   const parseSettingComponent = (
     raw: unknown,
@@ -2688,9 +2903,12 @@ function App() {
   );
   const [showAddCustomComponent, setShowAddCustomComponent] = useState(false);
   const [newCustomComponentLabel, setNewCustomComponentLabel] = useState("");
-  const [newCustomComponentMode, setNewCustomComponentMode] = useState<
-    "template" | "blank"
-  >("template");
+  const [newCustomComponentMode, setNewCustomComponentMode] =
+    useState<NewCustomComponentMode>("blank-component");
+  const [newProjectTemplateComponentId, setNewProjectTemplateComponentId] =
+    useState<string>("");
+  const [newLibraryTemplateComponentId, setNewLibraryTemplateComponentId] =
+    useState<string>("");
   const [showImportPrebuilt, setShowImportPrebuilt] = useState(false);
   const [newComponentElementTypeId, setNewComponentElementTypeId] =
     useState<ElementTypeId>("element-text");
@@ -2768,6 +2986,27 @@ function App() {
   const customComponents = Array.isArray(safeConfig.customComponents)
     ? safeConfig.customComponents
     : [];
+  const prebuiltLibraryComponents = useMemo(
+    () =>
+      Array.isArray(PREBUILT_SOURCE.components)
+        ? PREBUILT_SOURCE.components
+            .map((component) => normalizeComponentFromRaw(component))
+            .filter(
+              (component): component is AppComponent => component !== null,
+            )
+        : [],
+    [],
+  );
+  const projectComponentTemplateOptions = customComponents.map((component) => ({
+    id: component.id,
+    label: component.label,
+  }));
+  const libraryComponentTemplateOptions = prebuiltLibraryComponents.map(
+    (component) => ({
+      id: component.id,
+      label: component.label,
+    }),
+  );
   const fallbackComponent = useMemo(
     () => createDefaultComponent("Main Component"),
     [],
@@ -2779,27 +3018,20 @@ function App() {
     customComponents[0] ??
     null;
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
-    components: safeConfig.components.map((component) => ({
+    components: DEFAULT_SETTING_COMPONENTS.map((component) => ({
       id: component.id,
       type: component.type,
       label: component.label,
     })),
-    pages: safePages
-      .filter(
-        (page): page is PrebuiltSettingsPage | PrebuiltHomePage =>
-          page.kind === "prebuilt",
-      )
-      .map((page) => ({
-        id: page.id,
-        title: page.title,
-        items: page.items,
-      })),
+    pages: PREBUILT_SOURCE_PAGES,
     elements: PREBUILT_ELEMENTS,
   };
 
   const getComponentTypeId = (type: SettingComponentType) =>
     safeConfig.components.find((component) => component.type === type)?.id ??
-    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)!.id;
+    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)
+      ?.id ??
+    getFallbackSettingComponent(type).id;
 
   useEffect(() => {
     if (pageTitleOptions.length === 0) {
@@ -2847,6 +3079,36 @@ function App() {
   }, [customComponents, selectedComponentId]);
 
   useEffect(() => {
+    if (projectComponentTemplateOptions.length === 0) {
+      setNewProjectTemplateComponentId("");
+      return;
+    }
+
+    const hasSelected = projectComponentTemplateOptions.some(
+      (component) => component.id === newProjectTemplateComponentId,
+    );
+
+    if (!hasSelected) {
+      setNewProjectTemplateComponentId(projectComponentTemplateOptions[0].id);
+    }
+  }, [projectComponentTemplateOptions, newProjectTemplateComponentId]);
+
+  useEffect(() => {
+    if (libraryComponentTemplateOptions.length === 0) {
+      setNewLibraryTemplateComponentId("");
+      return;
+    }
+
+    const hasSelected = libraryComponentTemplateOptions.some(
+      (component) => component.id === newLibraryTemplateComponentId,
+    );
+
+    if (!hasSelected) {
+      setNewLibraryTemplateComponentId(libraryComponentTemplateOptions[0].id);
+    }
+  }, [libraryComponentTemplateOptions, newLibraryTemplateComponentId]);
+
+  useEffect(() => {
     if (!selectedComponent) {
       setComponentMaxWidthInput("none");
       setComponentMaxHeightInput("none");
@@ -2885,6 +3147,35 @@ function App() {
     });
   };
 
+  const cloneComponentElementTree = (
+    elements: ComponentElement[],
+  ): ComponentElement[] =>
+    elements.map((element) => {
+      if (isContainerElement(element)) {
+        return {
+          ...element,
+          instanceId: crypto.randomUUID(),
+          elements: cloneComponentElementTree(element.elements),
+        };
+      }
+
+      return {
+        ...element,
+        instanceId: crypto.randomUUID(),
+      };
+    });
+
+  const cloneComponentTemplate = (
+    template: AppComponent,
+    label: string,
+  ): AppComponent => ({
+    ...template,
+    id: crypto.randomUUID(),
+    label,
+    elements: cloneComponentElementTree(template.elements),
+    styles: { ...template.styles },
+  });
+
   const addCustomComponent = () => {
     if (!newCustomComponentLabel.trim()) {
       toast.error("Please enter a component label");
@@ -2892,18 +3183,46 @@ function App() {
     }
 
     const label = newCustomComponentLabel.trim();
-    const newComponent =
-      newCustomComponentMode === "blank"
-        ? {
-            ...createDefaultComponent(label),
-            elements: [],
-          }
-        : createDefaultComponent(label);
+    const newComponent = (() => {
+      if (newCustomComponentMode === "blank-component") {
+        return {
+          ...createDefaultComponent(label),
+          elements: [],
+        };
+      }
+
+      if (newCustomComponentMode === "project-components") {
+        const template = customComponents.find(
+          (component) => component.id === newProjectTemplateComponentId,
+        );
+
+        if (!template) {
+          toast.error("Select a project component to clone");
+          return null;
+        }
+
+        return cloneComponentTemplate(template, label);
+      }
+
+      const template = prebuiltLibraryComponents.find(
+        (component) => component.id === newLibraryTemplateComponentId,
+      );
+
+      if (!template) {
+        toast.error("Select a library component to clone");
+        return null;
+      }
+
+      return cloneComponentTemplate(template, label);
+    })();
+
+    if (!newComponent) return;
+
     updateCustomComponents((components) => [...components, newComponent]);
     setSelectedComponentId(newComponent.id);
     setShowAddCustomComponent(false);
     setNewCustomComponentLabel("");
-    setNewCustomComponentMode("template");
+    setNewCustomComponentMode("blank-component");
     toast.success("Component added");
   };
 
@@ -3195,6 +3514,460 @@ function App() {
       marginX: nextLeft === nextRight ? nextLeft : currentStyles.marginX,
     });
   };
+
+  const updateElementStyles = (
+    componentId: string,
+    instanceId: string,
+    styles: EditableElementSpacingStyles,
+  ) => {
+    updateComponentElementField(componentId, instanceId, {
+      styles,
+    });
+  };
+
+  const updateElementPaddingAxis = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    axis: "x" | "y",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateElementStyles(componentId, instanceId, {
+        ...currentStyles,
+        paddingX: next,
+        paddingLeft: next,
+        paddingRight: next,
+      });
+      return;
+    }
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+    });
+  };
+
+  const updateElementPaddingAll = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      paddingX: next,
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+      paddingLeft: next,
+      paddingRight: next,
+    });
+  };
+
+  const updateElementMarginAxis = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    axis: "x" | "y",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateElementStyles(componentId, instanceId, {
+        ...currentStyles,
+        marginX: next,
+        marginLeft: next,
+        marginRight: next,
+      });
+      return;
+    }
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+    });
+  };
+
+  const updateElementMarginAll = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      marginX: next,
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+      marginLeft: next,
+      marginRight: next,
+    });
+  };
+
+  const updateElementPaddingSide = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const nextTop = side === "top" ? next : currentStyles.paddingTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.paddingBottom;
+    const nextLeft = side === "left" ? next : currentStyles.paddingLeft;
+    const nextRight = side === "right" ? next : currentStyles.paddingRight;
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      paddingTop: nextTop,
+      paddingBottom: nextBottom,
+      paddingLeft: nextLeft,
+      paddingRight: nextRight,
+      paddingY: nextTop === nextBottom ? nextTop : currentStyles.paddingY,
+      paddingX: nextLeft === nextRight ? nextLeft : currentStyles.paddingX,
+    });
+  };
+
+  const updateElementMarginSide = (
+    componentId: string,
+    instanceId: string,
+    currentStyles: EditableElementSpacingStyles,
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const nextTop = side === "top" ? next : currentStyles.marginTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.marginBottom;
+    const nextLeft = side === "left" ? next : currentStyles.marginLeft;
+    const nextRight = side === "right" ? next : currentStyles.marginRight;
+
+    updateElementStyles(componentId, instanceId, {
+      ...currentStyles,
+      marginTop: nextTop,
+      marginBottom: nextBottom,
+      marginLeft: nextLeft,
+      marginRight: nextRight,
+      marginY: nextTop === nextBottom ? nextTop : currentStyles.marginY,
+      marginX: nextLeft === nextRight ? nextLeft : currentStyles.marginX,
+    });
+  };
+
+  const renderElementSpacingSection = (
+    componentId: string,
+    instanceId: string,
+    styles: EditableElementSpacingStyles,
+  ) => (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          padding
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Padding (All Sides)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={
+                styles.paddingTop === styles.paddingBottom &&
+                styles.paddingTop === styles.paddingLeft &&
+                styles.paddingTop === styles.paddingRight
+                  ? styles.paddingTop
+                  : ""
+              }
+              onChange={(e) =>
+                updateElementPaddingAll(
+                  componentId,
+                  instanceId,
+                  styles,
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Horizontal Padding (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={getAxisInputValue(styles.paddingLeft, styles.paddingRight)}
+              onChange={(e) =>
+                updateElementPaddingAxis(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "x",
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Vertical Padding (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={getAxisInputValue(styles.paddingTop, styles.paddingBottom)}
+              onChange={(e) =>
+                updateElementPaddingAxis(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "y",
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Top (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.paddingTop}
+              onChange={(e) =>
+                updateElementPaddingSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "top",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Bottom (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.paddingBottom}
+              onChange={(e) =>
+                updateElementPaddingSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "bottom",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Left (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.paddingLeft}
+              onChange={(e) =>
+                updateElementPaddingSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "left",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Right (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.paddingRight}
+              onChange={(e) =>
+                updateElementPaddingSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "right",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          margin
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Margin (All Sides)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={
+                styles.marginTop === styles.marginBottom &&
+                styles.marginTop === styles.marginLeft &&
+                styles.marginTop === styles.marginRight
+                  ? styles.marginTop
+                  : ""
+              }
+              onChange={(e) =>
+                updateElementMarginAll(
+                  componentId,
+                  instanceId,
+                  styles,
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Horizontal Margin (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={getAxisInputValue(styles.marginLeft, styles.marginRight)}
+              onChange={(e) =>
+                updateElementMarginAxis(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "x",
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Vertical Margin (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={getAxisInputValue(styles.marginTop, styles.marginBottom)}
+              onChange={(e) =>
+                updateElementMarginAxis(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "y",
+                  e.target.value,
+                )
+              }
+              placeholder="Mixed"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Top (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.marginTop}
+              onChange={(e) =>
+                updateElementMarginSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "top",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Bottom (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.marginBottom}
+              onChange={(e) =>
+                updateElementMarginSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "bottom",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Left (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.marginLeft}
+              onChange={(e) =>
+                updateElementMarginSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "left",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Right (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={styles.marginRight}
+              onChange={(e) =>
+                updateElementMarginSide(
+                  componentId,
+                  instanceId,
+                  styles,
+                  "right",
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const openColorPicker = (target: ColorEditTarget, currentColor: string) => {
     const normalized = normalizeHexColor(currentColor, "#000000");
@@ -3719,6 +4492,7 @@ function App() {
           ["fontSize", `${0.5 + element.styles.size * 0.125}rem`],
           ["fontWeight", element.styles.isBold ? 700 : 400],
           ["fontStyle", element.styles.isItalic ? "italic" : "normal"],
+          ...getElementSpacingStyleEntries(element.styles),
         ],
         indent,
       );
@@ -3738,20 +4512,20 @@ function App() {
     }
 
     if (element.elementTypeId === "element-button") {
-      const buttonStyleBlock =
-        element.styles.width === "auto"
-          ? ""
-          : formatJsxStyleBlock(
-              [
-                [
-                  "width",
-                  element.styles.width === "full"
-                    ? "100%"
-                    : `${element.styles.width}px`,
-                ],
-              ],
-              `${indent}`,
-            );
+      const buttonStyleBlock = formatJsxStyleBlock(
+        [
+          [
+            "width",
+            element.styles.width === "auto"
+              ? undefined
+              : element.styles.width === "full"
+                ? "100%"
+                : `${element.styles.width}px`,
+          ],
+          ...getElementSpacingStyleEntries(element.styles),
+        ],
+        `${indent}`,
+      );
       const buttonClassName =
         element.styles.width === "full"
           ? ' className="w-full"'
@@ -3790,6 +4564,7 @@ function App() {
               ? "100%"
               : `${element.styles.width}px`,
           ],
+          ...getElementSpacingStyleEntries(element.styles),
         ],
         `${indent}  `,
       );
@@ -3801,7 +4576,11 @@ function App() {
 
     if (element.elementTypeId === "element-icon") {
       const iconName = toPascalCase(element.value || "Home") || "Home";
-      return `${indent}<${iconName} className="text-foreground" size={${10 + element.styles.size * 2}} />`;
+      const styleBlock = formatJsxStyleBlock(
+        getElementSpacingStyleEntries(element.styles),
+        indent,
+      );
+      return `${indent}<${iconName} className="text-foreground" size={${10 + element.styles.size * 2}}${styleBlock} />`;
     }
 
     if (element.elementTypeId === "element-image") {
@@ -3810,6 +4589,7 @@ function App() {
           ["width", toCssDimension(element.styles.width)],
           ["height", toCssDimension(element.styles.height)],
           ["objectFit", element.styles.sizing],
+          ...getElementSpacingStyleEntries(element.styles),
         ],
         indent,
       );
@@ -3907,6 +4687,7 @@ function App() {
         flex: element.flex ?? "none",
         value: element.value ?? "",
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           alignment: element.styles.alignment ?? "center",
           size: element.styles.size ?? 3,
           fontWeight:
@@ -3927,6 +4708,7 @@ function App() {
         flex: element.flex ?? "none",
         defaultValue: element.defaultValue ?? false,
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           position: element.styles.position ?? "center",
           activeColor: "$primary",
           inactiveColor: "$border",
@@ -3943,6 +4725,7 @@ function App() {
         highlightOnHover: element.highlightOnHover ?? true,
         isGhost: element.isGhost ?? false,
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           width: element.styles.width ?? "full",
           alignment: "center",
           textColor: "$text",
@@ -3961,6 +4744,7 @@ function App() {
         showDefaultLabel: true,
         defaultLabel: "Please Select",
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           textColor: "$text",
           backgroundColor: "$secondary",
           highlightColor: "$highlight",
@@ -3977,6 +4761,7 @@ function App() {
         textHint: element.textHint ?? "",
         value: element.value ?? "",
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           alignment: element.styles.alignment ?? "center",
           width: element.styles.width ?? "full",
           textColor: "$text",
@@ -3993,6 +4778,7 @@ function App() {
         flex: element.flex ?? "none",
         value: element.value ?? "Home",
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           alignment: "center",
           size: element.styles.size ?? 24,
           color: "$text",
@@ -4010,6 +4796,7 @@ function App() {
         flex: element.flex ?? "none",
         src: element.src ?? "https://placehold.co/600x400",
         styles: {
+          ...getExplicitElementSpacingJson(element.styles),
           alignment: "center",
           sizing: element.styles.sizing ?? "contain",
           containerWidth: "auto",
@@ -4223,7 +5010,9 @@ function App() {
         <p
           className={`${alignClass} w-full`}
           style={{
+            ...getBoxSpacingStyle(element.styles),
             fontSize,
+            ...getBoxSpacingStyle(element.styles),
             fontWeight: element.styles.isBold ? 700 : 400,
             fontStyle: element.styles.isItalic ? "italic" : "normal",
             color: textColor,
@@ -4246,7 +5035,10 @@ function App() {
       );
 
       return (
-        <div className={`flex w-full ${positionClass}`}>
+        <div
+          className={`flex w-full ${positionClass}`}
+          style={getBoxSpacingStyle(element.styles)}
+        >
           <div
             className="inline-flex items-center"
             style={{
@@ -4289,6 +5081,7 @@ function App() {
         <Button
           variant={element.isGhost ? "ghost" : "default"}
           style={{
+            ...getBoxSpacingStyle(element.styles),
             ...widthStyle,
             backgroundColor,
             color: textColor,
@@ -4315,6 +5108,7 @@ function App() {
           <SelectTrigger
             className="w-44"
             style={{
+              ...getBoxSpacingStyle(element.styles),
               color: selectTextColor,
               backgroundColor: selectBackgroundColor,
               borderColor: selectBorderColor,
@@ -4359,7 +5153,10 @@ function App() {
       const inputBorderColor = resolveColor("$border");
 
       return (
-        <div className={`flex w-full ${alignmentClass}`}>
+        <div
+          className={`flex w-full ${alignmentClass}`}
+          style={getBoxSpacingStyle(element.styles)}
+        >
           <Input
             className={element.styles.width === "full" ? "w-full" : undefined}
             style={{
@@ -4391,6 +5188,7 @@ function App() {
             borderRadius: "8px",
             padding: "6px",
             backgroundColor: resolveColor("$background"),
+            ...getBoxSpacingStyle(element.styles),
           }}
         >
           <IconComponent size={size} color={resolveColor("$text")} />
@@ -4477,6 +5275,7 @@ function App() {
         alt="preview"
         className="rounded"
         style={{
+          ...getBoxSpacingStyle(element.styles),
           width: toCssDimension(element.styles.width),
           height: toCssDimension(element.styles.height),
           objectFit,
@@ -4631,6 +5430,11 @@ function App() {
               }
             />
           </div>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -4675,6 +5479,11 @@ function App() {
               </SelectContent>
             </Select>
           </div>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -4780,59 +5589,66 @@ function App() {
                 />
               </div>
             )}
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
 
     if (element.elementTypeId === "element-select") {
       return (
-        <div className="space-y-2">
-          <Label>Options</Label>
+        <div className="space-y-3">
           <div className="space-y-2">
-            {element.values.map((val, valIndex) => (
-              <div
-                key={`${element.instanceId}-val-${valIndex}`}
-                className="flex items-center gap-2"
-              >
-                <Input
-                  placeholder={`Option ${valIndex + 1}`}
-                  value={val}
-                  onChange={(e) => {
-                    const updated = [...element.values];
-                    updated[valIndex] = e.target.value;
-                    updateComponentElementField(
-                      componentId,
-                      element.instanceId,
-                      {
-                        values: updated,
-                      },
-                    );
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    const updated =
-                      element.values.length <= 1
-                        ? [""]
-                        : element.values.filter((_, i) => i !== valIndex);
-                    updateComponentElementField(
-                      componentId,
-                      element.instanceId,
-                      {
-                        values: updated,
-                      },
-                    );
-                  }}
-                  className="text-destructive hover:text-destructive"
-                  aria-label="Remove option"
+            <Label>Options</Label>
+            <div className="space-y-2">
+              {element.values.map((val, valIndex) => (
+                <div
+                  key={`${element.instanceId}-val-${valIndex}`}
+                  className="flex items-center gap-2"
                 >
-                  <Trash2 size={18} />
-                </Button>
-              </div>
-            ))}
+                  <Input
+                    placeholder={`Option ${valIndex + 1}`}
+                    value={val}
+                    onChange={(e) => {
+                      const updated = [...element.values];
+                      updated[valIndex] = e.target.value;
+                      updateComponentElementField(
+                        componentId,
+                        element.instanceId,
+                        {
+                          values: updated,
+                        },
+                      );
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      const updated =
+                        element.values.length <= 1
+                          ? [""]
+                          : element.values.filter((_, i) => i !== valIndex);
+                      updateComponentElementField(
+                        componentId,
+                        element.instanceId,
+                        {
+                          values: updated,
+                        },
+                      );
+                    }}
+                    className="text-destructive hover:text-destructive"
+                    aria-label="Remove option"
+                  >
+                    <Trash2 size={18} />
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
           <Button
             type="button"
@@ -4848,6 +5664,14 @@ function App() {
             <Plus size={16} />
             Add Option
           </Button>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            styles
+          </p>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -4952,6 +5776,11 @@ function App() {
               </SelectContent>
             </Select>
           </div>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -4995,6 +5824,11 @@ function App() {
               }}
             />
           </div>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -5101,6 +5935,11 @@ function App() {
               placeholder="auto or 240"
             />
           </div>
+          {renderElementSpacingSection(
+            componentId,
+            element.instanceId,
+            element.styles,
+          )}
         </div>
       );
     }
@@ -6765,7 +7604,7 @@ function App() {
                       </Label>
                       <Select
                         value={newCustomComponentMode}
-                        onValueChange={(value: "template" | "blank") =>
+                        onValueChange={(value: NewCustomComponentMode) =>
                           setNewCustomComponentMode(value)
                         }
                       >
@@ -6773,13 +7612,85 @@ function App() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="template">
-                            Pre built template
+                          <SelectItem value="blank-component">
+                            Blank Component
                           </SelectItem>
-                          <SelectItem value="blank">Blank component</SelectItem>
+                          <SelectItem value="project-components">
+                            Project Components
+                          </SelectItem>
+                          <SelectItem value="component-library">
+                            Component Library
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {newCustomComponentMode === "project-components" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="project-component-template">
+                          Project Component
+                        </Label>
+                        <Select
+                          value={newProjectTemplateComponentId}
+                          onValueChange={setNewProjectTemplateComponentId}
+                        >
+                          <SelectTrigger id="project-component-template">
+                            <SelectValue placeholder="Select a project component" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projectComponentTemplateOptions.map(
+                              (component) => (
+                                <SelectItem
+                                  key={component.id}
+                                  value={component.id}
+                                >
+                                  {component.label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {projectComponentTemplateOptions.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            No project components available yet.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {newCustomComponentMode === "component-library" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="library-component-template">
+                          Library Component
+                        </Label>
+                        <Select
+                          value={newLibraryTemplateComponentId}
+                          onValueChange={setNewLibraryTemplateComponentId}
+                        >
+                          <SelectTrigger id="library-component-template">
+                            <SelectValue placeholder="Select a library component" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {libraryComponentTemplateOptions.map(
+                              (component) => (
+                                <SelectItem
+                                  key={component.id}
+                                  value={component.id}
+                                >
+                                  {component.label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {libraryComponentTemplateOptions.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            No library components found in
+                            appgen-config-prebuilt.json.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     <Button
                       type="button"
@@ -6811,7 +7722,7 @@ function App() {
                 )}
               </Card>
 
-              {selectedComponent && (
+              {!showAddCustomComponent && selectedComponent && (
                 <div className="space-y-4">
                   {(() => {
                     const topLevelElementOptions = getAllowedElementOptions(

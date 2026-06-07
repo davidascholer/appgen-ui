@@ -6,6 +6,7 @@ import {
   normalizeComponentFromRaw,
   isContainerElement,
   elementNeedsFullWidth,
+  getBoxSpacingStyle,
   getFlexJustifyClass,
   getFlexAlignItemsClass,
   getEffectiveFlexJustifyClass,
@@ -106,6 +107,26 @@ const normalizeSummaryColorTheme = (raw: unknown): SummaryColorTheme => {
     return acc;
   }, {} as SummaryColorTheme);
 };
+
+const getSpacingCodeParts = (styles: {
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+}): string[] => [
+  `paddingTop: "${styles.paddingTop}px"`,
+  `paddingBottom: "${styles.paddingBottom}px"`,
+  `paddingLeft: "${styles.paddingLeft}px"`,
+  `paddingRight: "${styles.paddingRight}px"`,
+  `marginTop: "${styles.marginTop}px"`,
+  `marginBottom: "${styles.marginBottom}px"`,
+  `marginLeft: "${styles.marginLeft}px"`,
+  `marginRight: "${styles.marginRight}px"`,
+];
 
 type ParsedKind =
   | {
@@ -237,6 +258,7 @@ function renderComponentElement(
       <p
         className={`${alignClass} w-full`}
         style={{
+          ...getBoxSpacingStyle(element.styles),
           fontSize,
           fontWeight: element.styles.isBold
             ? 700
@@ -264,7 +286,10 @@ function renderComponentElement(
           ? "justify-end"
           : "justify-center";
     return (
-      <div className={`flex w-full ${positionClass}`}>
+      <div
+        className={`flex w-full ${positionClass}`}
+        style={getBoxSpacingStyle(element.styles)}
+      >
         <Switch defaultChecked={element.defaultValue} />
       </div>
     );
@@ -285,6 +310,7 @@ function renderComponentElement(
         variant={element.isGhost ? "ghost" : "default"}
         className={element.styles.width === "full" ? "w-full" : undefined}
         style={{
+          ...getBoxSpacingStyle(element.styles),
           ...widthStyle,
           color: resolveColor(
             ((element.styles as Record<string, unknown>).textColor as string) ??
@@ -310,6 +336,7 @@ function renderComponentElement(
         <SelectTrigger
           className="w-44"
           style={{
+            ...getBoxSpacingStyle(element.styles),
             color: resolveColor(
               ((element.styles as Record<string, unknown>)
                 .textColor as string) ?? "$text",
@@ -346,6 +373,7 @@ function renderComponentElement(
       <Input
         className={element.styles.width === "full" ? "w-full" : undefined}
         style={{
+          ...getBoxSpacingStyle(element.styles),
           ...widthStyle,
           color: resolveColor(
             ((element.styles as Record<string, unknown>).textColor as string) ??
@@ -373,6 +401,7 @@ function renderComponentElement(
       <IconComponent
         size={size}
         style={{
+          ...getBoxSpacingStyle(element.styles),
           color: resolveColor(
             ((element.styles as Record<string, unknown>).color as string) ??
               "$text",
@@ -389,6 +418,7 @@ function renderComponentElement(
         alt="preview"
         className="rounded border border-border bg-muted"
         style={{
+          ...getBoxSpacingStyle(element.styles),
           width: toCssDimension(element.styles.width),
           height: toCssDimension(element.styles.height),
           objectFit: element.styles.sizing,
@@ -490,7 +520,7 @@ function codeForComponentElement(
       ? "text-muted-foreground"
       : "text-foreground";
     const fw = element.styles.isBold ? 700 : (element.styles.fontWeight ?? 400);
-    return `${indent}<p className="${align} w-full ${label}" style={{ fontSize: "${0.5 + element.styles.size * 0.125}rem", fontWeight: ${fw} }}>${element.value || "Text"}</p>`;
+    return `${indent}<p className="${align} w-full ${label}" style={{ fontSize: "${0.5 + element.styles.size * 0.125}rem", fontWeight: ${fw}, ${getSpacingCodeParts(element.styles).join(", ")} }}>${element.value || "Text"}</p>`;
   }
 
   if (element.elementTypeId === "element-toggle") {
@@ -500,18 +530,20 @@ function codeForComponentElement(
         : element.styles.position === "right"
           ? "justify-end"
           : "justify-center";
-    return `${indent}<div className="flex w-full ${pos}">\n${indent}  <Switch defaultChecked={${element.defaultValue}} />\n${indent}</div>`;
+    return `${indent}<div className="flex w-full ${pos}" style={{ ${getSpacingCodeParts(element.styles).join(", ")} }}>\n${indent}  <Switch defaultChecked={${element.defaultValue}} />\n${indent}</div>`;
   }
 
   if (element.elementTypeId === "element-button") {
     const widthProp =
       element.styles.width === "full"
         ? 'className="w-full"'
-        : element.styles.width === "auto"
-          ? 'className="w-auto"'
-          : `style={{ width: "${element.styles.width}px" }}`;
+        : 'className="w-auto"';
+    const styleProp =
+      element.styles.width === "auto"
+        ? `style={{ ${getSpacingCodeParts(element.styles).join(", ")} }}`
+        : `style={{ width: "${element.styles.width}px", ${getSpacingCodeParts(element.styles).join(", ")} }}`;
     const ghost = element.isGhost ? ' variant="ghost"' : "";
-    return `${indent}<Button${ghost} ${widthProp}>${element.label}</Button>`;
+    return `${indent}<Button${ghost} ${widthProp} ${styleProp}>${element.label}</Button>`;
   }
 
   if (element.elementTypeId === "element-select") {
@@ -519,23 +551,24 @@ function codeForComponentElement(
       .filter((v) => v.trim())
       .map((v, i) => `${indent}    <SelectItem value="${i}">${v}</SelectItem>`)
       .join("\n");
-    return `${indent}<Select defaultValue="0">\n${indent}  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>\n${indent}  <SelectContent>\n${opts}\n${indent}  </SelectContent>\n${indent}</Select>`;
+    return `${indent}<Select defaultValue="0">\n${indent}  <SelectTrigger className="w-44" style={{ ${getSpacingCodeParts(element.styles).join(", ")} }}><SelectValue /></SelectTrigger>\n${indent}  <SelectContent>\n${opts}\n${indent}  </SelectContent>\n${indent}</Select>`;
   }
 
   if (element.elementTypeId === "element-text-input") {
-    const w =
+    const w = element.styles.width === "full" ? 'className="w-full"' : "";
+    const style =
       element.styles.width === "full"
-        ? 'className="w-full"'
-        : `style={{ width: "${element.styles.width}px" }}`;
-    return `${indent}<Input ${w} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(element.textHint)} />`;
+        ? `style={{ width: "100%", ${getSpacingCodeParts(element.styles).join(", ")} }}`
+        : `style={{ width: "${element.styles.width}px", ${getSpacingCodeParts(element.styles).join(", ")} }}`;
+    return `${indent}<Input ${w} ${style} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(element.textHint)} />`;
   }
 
   if (element.elementTypeId === "element-icon") {
-    return `${indent}<${element.value || "Home"} size={${10 + element.styles.size * 2}} className="text-foreground" />`;
+    return `${indent}<${element.value || "Home"} size={${10 + element.styles.size * 2}} className="text-foreground" style={{ ${getSpacingCodeParts(element.styles).join(", ")} }} />`;
   }
 
   if (element.elementTypeId === "element-image") {
-    return `${indent}<img src=${JSON.stringify(element.src)} alt="preview" style={{ width: "${toCssDimension(element.styles.width)}", height: "${toCssDimension(element.styles.height)}", objectFit: "${element.styles.sizing}" }} />`;
+    return `${indent}<img src=${JSON.stringify(element.src)} alt="preview" style={{ width: "${toCssDimension(element.styles.width)}", height: "${toCssDimension(element.styles.height)}", objectFit: "${element.styles.sizing}", ${getSpacingCodeParts(element.styles).join(", ")} }} />`;
   }
 
   if (isContainerElement(element)) {

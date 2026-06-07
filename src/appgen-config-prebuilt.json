@@ -1,0 +1,252 @@
+{
+  "components": [
+    {
+  "id": "432e7847-0d82-4228-982d-6cafc31fc219",
+  "label": "Image Card",
+  "styles": {
+    "direction": "horizontal",
+    "justifyContent": "space-between",
+    "alignItems": "start",
+    "overflowScroll": false,
+    "gap": 0,
+    "minWidth": 0,
+    "maxWidth": 4096,
+    "minHeight": 0,
+    "maxHeight": 4096,
+    "paddingX": 0,
+    "paddingY": 0,
+    "marginX": 0,
+    "marginY": 0,
+    "paddingTop": 0,
+    "paddingBottom": 0,
+    "paddingLeft": 0,
+    "paddingRight": 0,
+    "marginTop": 0,
+    "marginBottom": 0,
+    "marginLeft": 0,
+    "marginRight": 0,
+    "backgroundColor": "#ffffff",
+    "borderColor": "#e2e8f0",
+    "borderRadius": 8,
+    "borderWidth": 0
+  },
+  "elements": [
+    {
+      "elementTypeId": "element-vertical-container",
+      "instanceId": "83a27cf1-ea69-4842-942a-a453dfcb151b",
+      "flex": 1,
+      "styles": {
+        "justifyContent": "start",
+        "alignItems": "center",
+        "overflowScroll": false,
+        "gap": 4,
+        "minWidth": 0,
+        "maxWidth": 4096,
+        "minHeight": 0,
+        "maxHeight": 4096,
+        "paddingTop": 0,
+        "paddingBottom": 0,
+        "paddingLeft": 0,
+        "paddingRight": 0,
+        "marginTop": 0,
+        "marginBottom": 0,
+        "marginLeft": 0,
+        "marginRight": 0,
+        "backgroundColor": "#ffffff00",
+        "borderColor": "#d4d4d8",
+        "borderRadius": 8,
+        "borderWidth": 0
+      },
+      "elements": [
+        {
+          "elementTypeId": "element-image",
+          "instanceId": "a4f77f5d-37db-4dc2-b2e1-d7d216515dbc",
+          "flex": "none",
+          "src": "https://placehold.co/400x600",
+          "styles": {
+            "paddingX": 0,
+            "paddingY": 0,
+            "marginX": 0,
+            "marginY": 0,
+            "paddingTop": 0,
+            "paddingBottom": 0,
+            "paddingLeft": 0,
+            "paddingRight": 0,
+            "marginTop": 0,
+            "marginBottom": 0,
+            "marginLeft": 0,
+            "marginRight": 0,
+            "alignment": "center",
+            "sizing": "contain",
+            "containerWidth": "auto",
+            "containerHeight": "auto",
+            "backgroundColor": "$background",
+            "borderWidth": 0,
+            "borderColor": "$border",
+            "borderRadius": 8,
+            "padding": 0,
+            "width": 300,
+            "height": "auto"
+          }
+        },
+        {
+          "elementTypeId": "element-text",
+          "instanceId": "ac67c587-e7b2-410e-988e-5ec856f56324",
+          "flex": "none",
+          "value": "Image Card Header",
+          "styles": {
+            "paddingX": 0,
+            "paddingY": 0,
+            "marginX": 0,
+            "marginY": 0,
+            "paddingTop": 0,
+            "paddingBottom": 0,
+            "paddingLeft": 0,
+            "paddingRight": 0,
+            "marginTop": 0,
+            "marginBottom": 0,
+            "marginLeft": 0,
+            "marginRight": 0,
+            "alignment": "left",
+            "size": 4,
+            "fontWeight": 700,
+            "isBold": true,
+            "isItalic": false,
+            "isLabel": false,
+            "textColor": "$text",
+            "labelColor": "$textHint"
+          }
+        },
+        {
+          "elementTypeId": "element-text",
+          "instanceId": "3155726c-63e6-49fc-9d31-a067a7584a33",
+          "flex": "none",
+          "value": "Content of the Image Card meta",
+          "styles": {
+            "paddingX": 0,
+            "paddingY": 0,
+            "marginX": 0,
+            "marginY": 0,
+            "paddingTop": 0,
+            "paddingBottom": 0,
+            "paddingLeft": 0,
+            "paddingRight": 0,
+            "marginTop": 0,
+            "marginBottom": 0,
+            "marginLeft": 0,
+            "marginRight": 0,
+            "alignment": "center",
+            "size": 2,
+            "fontWeight": 400,
+            "isBold": false,
+            "isItalic": false,
+            "isLabel": true,
+            "textColor": "$text",
+            "labelColor": "$textHint"
+          }
+        }
+      ]
+    }
+  ]
+}
+  ],
+  "pages": [],
+  "elements": [
+    {
+      "id": "element-text",
+      "label": "Text",
+      "value": "",
+      "styles": {
+        "alignment": "center",
+        "size": 3,
+        "fontWeight": 400,
+        "isBold": false,
+        "isItalic": false,
+        "isLabel": false,
+        "textColor": "$text",
+        "labelColor": "$textHint"
+      }
+    },
+    {
+      "id": "element-toggle",
+      "label": "Toggle Button",
+      "value": false,
+      "styles": {
+        "position": "center",
+        "activeColor": "$primary",
+        "inactiveColor": "$border"
+      }
+    },
+    {
+      "id": "element-button",
+      "label": "Button",
+      "buttonLabel": "Button",
+      "highlightOnHover": true,
+      "isGhost": false,
+      "styles": {
+        "width": "full",
+        "alignment": "center",
+        "textColor": "$text",
+        "backgroundColor": "$button",
+        "highlightColor": "$highlight"
+      }
+    },
+    {
+      "id": "element-select",
+      "label": "Select Dropdown",
+      "values": [
+        "Value One",
+        "Value Two"
+      ],
+      "showDefaultLabel": true,
+      "defaultLabel": "Please Select",
+      "styles": {
+        "textColor": "$text",
+        "backgroundColor": "$secondary",
+        "highlightColor": "$highlight",
+        "borderColor": "$border"
+      }
+    },
+    {
+      "id": "element-text-input",
+      "label": "Text Input",
+      "textHint": "",
+      "value": "",
+      "styles": {
+        "width": "full",
+        "textColor": "$text",
+        "borderColor": "$border",
+        "backgroundColor": "$secondary"
+      }
+    },
+    {
+      "id": "element-icon",
+      "label": "Icon",
+      "value": "Home",
+      "styles": {
+        "alignment": "center",
+        "size": 24,
+        "color": "#111827",
+        "borderWidth": 0,
+        "borderColor": "#d1d5db",
+        "borderRadius": 8
+      }
+    },
+    {
+      "id": "element-image",
+      "label": "Image",
+      "styles": {
+        "alignment": "center",
+        "sizing": "contain",
+        "containerWidth": "auto",
+        "containerHeight": "auto",
+        "backgroundColor": "#ffffff",
+        "borderWidth": 0,
+        "borderColor": "#d1d5db",
+        "borderRadius": 8,
+        "padding": 0
+      },
+      "src": "https://placehold.co/600x400"
+    }
+  ]
+}
