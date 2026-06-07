@@ -2833,6 +2833,21 @@ function App() {
     });
   };
 
+  const updateComponentPaddingAll = (componentId: string, value: string) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateComponentStyles(componentId, {
+      paddingX: next,
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+      paddingLeft: next,
+      paddingRight: next,
+    });
+  };
+
   const updateComponentMarginAxis = (
     componentId: string,
     axis: "x" | "y",
@@ -2855,6 +2870,21 @@ function App() {
       marginY: next,
       marginTop: next,
       marginBottom: next,
+    });
+  };
+
+  const updateComponentMarginAll = (componentId: string, value: string) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateComponentStyles(componentId, {
+      marginX: next,
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+      marginLeft: next,
+      marginRight: next,
     });
   };
 
@@ -6448,251 +6478,344 @@ function App() {
                           }}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-x">
-                          Horizontal Padding (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-x"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={getAxisInputValue(
-                            selectedComponent.styles.paddingLeft,
-                            selectedComponent.styles.paddingRight,
-                          )}
-                          onChange={(e) =>
-                            updateComponentPaddingAxis(
-                              selectedComponent.id,
-                              "x",
-                              e.target.value,
-                            )
-                          }
-                        />
+                      <div className="sm:col-span-2">
+                        <Accordion type="single" collapsible>
+                          <AccordionItem value="component-padding">
+                            <AccordionTrigger className="font-mono text-sm">
+                              Padding
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-all">
+                                    Padding (All Sides)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-all"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={
+                                      selectedComponent.styles.paddingTop ===
+                                        selectedComponent.styles
+                                          .paddingBottom &&
+                                      selectedComponent.styles.paddingTop ===
+                                        selectedComponent.styles.paddingLeft &&
+                                      selectedComponent.styles.paddingTop ===
+                                        selectedComponent.styles.paddingRight
+                                        ? String(
+                                            selectedComponent.styles.paddingTop,
+                                          )
+                                        : ""
+                                    }
+                                    onChange={(e) =>
+                                      updateComponentPaddingAll(
+                                        selectedComponent.id,
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-x">
+                                    Horizontal Padding (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-x"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={getAxisInputValue(
+                                      selectedComponent.styles.paddingLeft,
+                                      selectedComponent.styles.paddingRight,
+                                    )}
+                                    onChange={(e) =>
+                                      updateComponentPaddingAxis(
+                                        selectedComponent.id,
+                                        "x",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-y">
+                                    Vertical Padding (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-y"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={getAxisInputValue(
+                                      selectedComponent.styles.paddingTop,
+                                      selectedComponent.styles.paddingBottom,
+                                    )}
+                                    onChange={(e) =>
+                                      updateComponentPaddingAxis(
+                                        selectedComponent.id,
+                                        "y",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-top">
+                                    Padding Top (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-top"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={selectedComponent.styles.paddingTop}
+                                    onChange={(e) =>
+                                      updateComponentPaddingSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "top",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-bottom">
+                                    Padding Bottom (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-bottom"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={
+                                      selectedComponent.styles.paddingBottom
+                                    }
+                                    onChange={(e) =>
+                                      updateComponentPaddingSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "bottom",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-left">
+                                    Padding Left (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-left"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={selectedComponent.styles.paddingLeft}
+                                    onChange={(e) =>
+                                      updateComponentPaddingSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "left",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-padding-right">
+                                    Padding Right (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-padding-right"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={
+                                      selectedComponent.styles.paddingRight
+                                    }
+                                    onChange={(e) =>
+                                      updateComponentPaddingSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "right",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-y">
-                          Vertical Padding (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-y"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={getAxisInputValue(
-                            selectedComponent.styles.paddingTop,
-                            selectedComponent.styles.paddingBottom,
-                          )}
-                          onChange={(e) =>
-                            updateComponentPaddingAxis(
-                              selectedComponent.id,
-                              "y",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-x">
-                          Horizontal Margin (px)
-                        </Label>
-                        <Input
-                          id="comp-margin-x"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={getAxisInputValue(
-                            selectedComponent.styles.marginLeft,
-                            selectedComponent.styles.marginRight,
-                          )}
-                          onChange={(e) =>
-                            updateComponentMarginAxis(
-                              selectedComponent.id,
-                              "x",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-y">
-                          Vertical Margin (px)
-                        </Label>
-                        <Input
-                          id="comp-margin-y"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={getAxisInputValue(
-                            selectedComponent.styles.marginTop,
-                            selectedComponent.styles.marginBottom,
-                          )}
-                          onChange={(e) =>
-                            updateComponentMarginAxis(
-                              selectedComponent.id,
-                              "y",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-top">
-                          Padding Top (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-top"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.paddingTop}
-                          onChange={(e) =>
-                            updateComponentPaddingSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "top",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-bottom">
-                          Padding Bottom (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-bottom"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.paddingBottom}
-                          onChange={(e) =>
-                            updateComponentPaddingSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "bottom",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-left">
-                          Padding Left (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-left"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.paddingLeft}
-                          onChange={(e) =>
-                            updateComponentPaddingSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "left",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-padding-right">
-                          Padding Right (px)
-                        </Label>
-                        <Input
-                          id="comp-padding-right"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.paddingRight}
-                          onChange={(e) =>
-                            updateComponentPaddingSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "right",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-top">Margin Top (px)</Label>
-                        <Input
-                          id="comp-margin-top"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.marginTop}
-                          onChange={(e) =>
-                            updateComponentMarginSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "top",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-bottom">
-                          Margin Bottom (px)
-                        </Label>
-                        <Input
-                          id="comp-margin-bottom"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.marginBottom}
-                          onChange={(e) =>
-                            updateComponentMarginSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "bottom",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-left">
-                          Margin Left (px)
-                        </Label>
-                        <Input
-                          id="comp-margin-left"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.marginLeft}
-                          onChange={(e) =>
-                            updateComponentMarginSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "left",
-                              e.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-margin-right">
-                          Margin Right (px)
-                        </Label>
-                        <Input
-                          id="comp-margin-right"
-                          type="number"
-                          min={0}
-                          max={200}
-                          value={selectedComponent.styles.marginRight}
-                          onChange={(e) =>
-                            updateComponentMarginSide(
-                              selectedComponent.id,
-                              selectedComponent.styles,
-                              "right",
-                              e.target.value,
-                            )
-                          }
-                        />
+                      <div className="sm:col-span-2">
+                        <Accordion type="single" collapsible>
+                          <AccordionItem value="component-margin">
+                            <AccordionTrigger className="font-mono text-sm">
+                              Margin
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-all">
+                                    Margin (All Sides)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-all"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={
+                                      selectedComponent.styles.marginTop ===
+                                        selectedComponent.styles.marginBottom &&
+                                      selectedComponent.styles.marginTop ===
+                                        selectedComponent.styles.marginLeft &&
+                                      selectedComponent.styles.marginTop ===
+                                        selectedComponent.styles.marginRight
+                                        ? String(
+                                            selectedComponent.styles.marginTop,
+                                          )
+                                        : ""
+                                    }
+                                    onChange={(e) =>
+                                      updateComponentMarginAll(
+                                        selectedComponent.id,
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-x">
+                                    Horizontal Margin (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-x"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={getAxisInputValue(
+                                      selectedComponent.styles.marginLeft,
+                                      selectedComponent.styles.marginRight,
+                                    )}
+                                    onChange={(e) =>
+                                      updateComponentMarginAxis(
+                                        selectedComponent.id,
+                                        "x",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-y">
+                                    Vertical Margin (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-y"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={getAxisInputValue(
+                                      selectedComponent.styles.marginTop,
+                                      selectedComponent.styles.marginBottom,
+                                    )}
+                                    onChange={(e) =>
+                                      updateComponentMarginAxis(
+                                        selectedComponent.id,
+                                        "y",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-top">
+                                    Margin Top (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-top"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={selectedComponent.styles.marginTop}
+                                    onChange={(e) =>
+                                      updateComponentMarginSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "top",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-bottom">
+                                    Margin Bottom (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-bottom"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={
+                                      selectedComponent.styles.marginBottom
+                                    }
+                                    onChange={(e) =>
+                                      updateComponentMarginSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "bottom",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-left">
+                                    Margin Left (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-left"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={selectedComponent.styles.marginLeft}
+                                    onChange={(e) =>
+                                      updateComponentMarginSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "left",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="comp-margin-right">
+                                    Margin Right (px)
+                                  </Label>
+                                  <Input
+                                    id="comp-margin-right"
+                                    type="number"
+                                    min={0}
+                                    max={200}
+                                    value={selectedComponent.styles.marginRight}
+                                    onChange={(e) =>
+                                      updateComponentMarginSide(
+                                        selectedComponent.id,
+                                        selectedComponent.styles,
+                                        "right",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="comp-background-color">
