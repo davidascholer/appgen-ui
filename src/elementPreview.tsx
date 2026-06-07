@@ -61,14 +61,19 @@ const toAlignItems = (value: unknown): CSSProperties["alignItems"] => {
   }
 };
 
-const toHorizontalJustify = (value: unknown): CSSProperties["justifyContent"] => {
+const toHorizontalJustify = (
+  value: unknown,
+): CSSProperties["justifyContent"] => {
   if (value === "left") return "flex-start";
   if (value === "right") return "flex-end";
   return "center";
 };
 
 const resolveTextFontWeight = (styles: PrebuiltElement["styles"]): number => {
-  if (typeof styles?.fontWeight === "number" && Number.isFinite(styles.fontWeight)) {
+  if (
+    typeof styles?.fontWeight === "number" &&
+    Number.isFinite(styles.fontWeight)
+  ) {
     return Math.max(100, Math.min(900, Math.round(styles.fontWeight)));
   }
 
@@ -76,7 +81,9 @@ const resolveTextFontWeight = (styles: PrebuiltElement["styles"]): number => {
 };
 
 const formatStyleObject = (style: Record<string, unknown>): string => {
-  const entries = Object.entries(style).filter(([, value]) => value !== undefined);
+  const entries = Object.entries(style).filter(
+    ([, value]) => value !== undefined,
+  );
   if (entries.length === 0) return "";
 
   const body = entries
@@ -111,7 +118,13 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
       width: "100%",
     };
 
-    return <p style={style}>{typeof element.value === "string" && element.value ? element.value : "Text"}</p>;
+    return (
+      <p style={style}>
+        {typeof element.value === "string" && element.value
+          ? element.value
+          : "Text"}
+      </p>
+    );
   }
 
   if (element.id === "element-toggle") {
@@ -146,14 +159,22 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
   }
 
   if (element.id === "element-select") {
-    const options = Array.isArray(element.values) && element.values.length > 0 ? element.values : ["Value One"];
+    const options =
+      Array.isArray(element.values) && element.values.length > 0
+        ? element.values
+        : ["Value One"];
     const showDefaultLabel = element.showDefaultLabel !== false;
-    const defaultLabel = typeof element.defaultLabel === "string" && element.defaultLabel.trim().length > 0
-      ? element.defaultLabel
-      : "Please Select";
+    const defaultLabel =
+      typeof element.defaultLabel === "string" &&
+      element.defaultLabel.trim().length > 0
+        ? element.defaultLabel
+        : "Please Select";
 
     return (
-      <Select key={showDefaultLabel ? "placeholder" : "first-option"} defaultValue={showDefaultLabel ? undefined : "0"}>
+      <Select
+        key={showDefaultLabel ? "placeholder" : "first-option"}
+        defaultValue={showDefaultLabel ? undefined : "0"}
+      >
         <SelectTrigger className="w-44">
           <SelectValue placeholder={defaultLabel} />
         </SelectTrigger>
@@ -181,12 +202,22 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
   }
 
   if (element.id === "element-icon") {
-    const iconName = toPascalCase(typeof element.value === "string" ? element.value : "Home") || "Home";
+    const iconName =
+      toPascalCase(
+        typeof element.value === "string" ? element.value : "Home",
+      ) || "Home";
     const Icon =
-      (LucideIcons as Record<string, ComponentType<{ size?: number; color?: string }>>)[iconName] ||
-      LucideIcons.Ban;
-    const isRecognized = Boolean((LucideIcons as Record<string, unknown>)[iconName]);
-    const sizeRaw = typeof element.styles?.size === "number" ? element.styles.size : 24;
+      (
+        LucideIcons as Record<
+          string,
+          ComponentType<{ size?: number; color?: string }>
+        >
+      )[iconName] || LucideIcons.Ban;
+    const isRecognized = Boolean(
+      (LucideIcons as Record<string, unknown>)[iconName],
+    );
+    const sizeRaw =
+      typeof element.styles?.size === "number" ? element.styles.size : 24;
     const size = Math.max(8, Math.min(96, Math.round(sizeRaw)));
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
 
@@ -198,8 +229,10 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
   }
 
   if (element.id === "element-image") {
-    const containerWidth = toCssDimension(element.styles?.containerWidth) || "auto";
-    const containerHeight = toCssDimension(element.styles?.containerHeight) || "auto";
+    const containerWidth =
+      toCssDimension(element.styles?.containerWidth) || "auto";
+    const containerHeight =
+      toCssDimension(element.styles?.containerHeight) || "auto";
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
 
     return (
@@ -231,13 +264,32 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
           flexDirection: "column",
           justifyContent: toJustifyContent(element.styles?.justifyContent),
           alignItems: toAlignItems(element.styles?.alignItems),
-          gap: typeof element.styles?.gap === "number" ? `${element.styles.gap}px` : "8px",
+          gap:
+            typeof element.styles?.gap === "number"
+              ? `${element.styles.gap}px`
+              : "8px",
           minHeight: "96px",
-          backgroundColor: typeof element.styles?.backgroundColor === "string" ? element.styles.backgroundColor : undefined,
-          borderColor: typeof element.styles?.borderColor === "string" ? element.styles.borderColor : undefined,
-          borderRadius: typeof element.styles?.borderRadius === "number" ? `${element.styles.borderRadius}px` : undefined,
-          borderWidth: typeof element.styles?.borderWidth === "number" ? `${element.styles.borderWidth}px` : undefined,
-          borderStyle: typeof element.styles?.borderWidth === "number" && element.styles.borderWidth > 0 ? "solid" : undefined,
+          backgroundColor:
+            typeof element.styles?.backgroundColor === "string"
+              ? element.styles.backgroundColor
+              : undefined,
+          borderColor:
+            typeof element.styles?.borderColor === "string"
+              ? element.styles.borderColor
+              : undefined,
+          borderRadius:
+            typeof element.styles?.borderRadius === "number"
+              ? `${element.styles.borderRadius}px`
+              : undefined,
+          borderWidth:
+            typeof element.styles?.borderWidth === "number"
+              ? `${element.styles.borderWidth}px`
+              : undefined,
+          borderStyle:
+            typeof element.styles?.borderWidth === "number" &&
+            element.styles.borderWidth > 0
+              ? "solid"
+              : undefined,
           padding: "12px",
         }}
       >
@@ -274,36 +326,57 @@ export const renderElementCode = (element: PrebuiltElement): string => {
   }
 
   if (element.id === "element-button") {
-    const style = formatStyleObject({ width: toCssDimension(element.styles?.width) });
+    const style = formatStyleObject({
+      width: toCssDimension(element.styles?.width),
+    });
     const variantProp = element.isGhost ? ' variant="ghost"' : "";
-    const className = element.styles?.width === "full" ? ' className="w-full"' : ' className="w-auto"';
+    const className =
+      element.styles?.width === "full"
+        ? ' className="w-full"'
+        : ' className="w-auto"';
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
     return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><Button${variantProp}${className}${style}>${element.buttonLabel || "Button"}</Button></div>`;
   }
 
   if (element.id === "element-select") {
-    const options = Array.isArray(element.values) && element.values.length > 0 ? element.values : ["Value One"];
+    const options =
+      Array.isArray(element.values) && element.values.length > 0
+        ? element.values
+        : ["Value One"];
     const showDefaultLabel = element.showDefaultLabel !== false;
     const defaultValue = showDefaultLabel ? undefined : "0";
-    const defaultLabel = typeof element.defaultLabel === "string" && element.defaultLabel.trim().length > 0
-      ? element.defaultLabel
-      : "Please Select";
+    const defaultLabel =
+      typeof element.defaultLabel === "string" &&
+      element.defaultLabel.trim().length > 0
+        ? element.defaultLabel
+        : "Please Select";
     const items = options
-      .map((option, index) => `    <SelectItem value=${JSON.stringify(String(index))}>${option}</SelectItem>`)
+      .map(
+        (option, index) =>
+          `    <SelectItem value=${JSON.stringify(String(index))}>${option}</SelectItem>`,
+      )
       .join("\n");
     return `<Select${defaultValue ? ` defaultValue=${JSON.stringify(defaultValue)}` : ""}>\n  <SelectTrigger className="w-44">\n    <SelectValue placeholder=${JSON.stringify(defaultLabel)} />\n  </SelectTrigger>\n  <SelectContent>\n${items}\n  </SelectContent>\n</Select>`;
   }
 
   if (element.id === "element-text-input") {
-    const style = formatStyleObject({ width: toCssDimension(element.styles?.width) });
+    const style = formatStyleObject({
+      width: toCssDimension(element.styles?.width),
+    });
     return `<Input defaultValue=${JSON.stringify(typeof element.value === "string" ? element.value : "")} placeholder=${JSON.stringify(element.textHint || "")} className=${JSON.stringify(element.styles?.width === "full" ? "w-full" : "")} ${style} />`;
   }
 
   if (element.id === "element-icon") {
-    const iconName = toPascalCase(typeof element.value === "string" ? element.value : "Home") || "Home";
-    const isRecognized = Boolean((LucideIcons as Record<string, unknown>)[iconName]);
+    const iconName =
+      toPascalCase(
+        typeof element.value === "string" ? element.value : "Home",
+      ) || "Home";
+    const isRecognized = Boolean(
+      (LucideIcons as Record<string, unknown>)[iconName],
+    );
     const emittedIcon = isRecognized ? iconName : "Ban";
-    const sizeRaw = typeof element.styles?.size === "number" ? element.styles.size : 24;
+    const sizeRaw =
+      typeof element.styles?.size === "number" ? element.styles.size : 24;
     const size = Math.max(8, Math.min(96, Math.round(sizeRaw)));
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
     return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><${emittedIcon} size={${size}}${isRecognized ? "" : ' color="#dc2626"'} /></div>`;
@@ -316,9 +389,7 @@ export const renderElementCode = (element: PrebuiltElement): string => {
       width: "100%",
       height: "100%",
       objectFit:
-        element.styles?.sizing === "cover"
-          ? element.styles.sizing
-          : "contain",
+        element.styles?.sizing === "cover" ? element.styles.sizing : "contain",
     });
     const containerStyle = formatStyleObject({
       width: toCssDimension(element.styles?.containerWidth) || "auto",
@@ -333,13 +404,26 @@ export const renderElementCode = (element: PrebuiltElement): string => {
       flexDirection: "column",
       justifyContent: toJustifyContent(element.styles?.justifyContent),
       alignItems: toAlignItems(element.styles?.alignItems),
-      gap: typeof element.styles?.gap === "number" ? `${element.styles.gap}px` : "8px",
+      gap:
+        typeof element.styles?.gap === "number"
+          ? `${element.styles.gap}px`
+          : "8px",
       minHeight: "96px",
       backgroundColor: element.styles?.backgroundColor,
       borderColor: element.styles?.borderColor,
-      borderRadius: typeof element.styles?.borderRadius === "number" ? `${element.styles.borderRadius}px` : undefined,
-      borderWidth: typeof element.styles?.borderWidth === "number" ? `${element.styles.borderWidth}px` : undefined,
-      borderStyle: typeof element.styles?.borderWidth === "number" && element.styles.borderWidth > 0 ? "solid" : undefined,
+      borderRadius:
+        typeof element.styles?.borderRadius === "number"
+          ? `${element.styles.borderRadius}px`
+          : undefined,
+      borderWidth:
+        typeof element.styles?.borderWidth === "number"
+          ? `${element.styles.borderWidth}px`
+          : undefined,
+      borderStyle:
+        typeof element.styles?.borderWidth === "number" &&
+        element.styles.borderWidth > 0
+          ? "solid"
+          : undefined,
       padding: "12px",
     });
     return `<div${style}>\n  <div>Item 1</div>\n  <div>Item 2</div>\n</div>`;

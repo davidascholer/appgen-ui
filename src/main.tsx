@@ -16,9 +16,8 @@ createRoot(document.getElementById("root")!).render(
   <ErrorBoundary FallbackComponent={ErrorFallback}>
     {window.location.pathname === "/playground" ? (
       <Playground />
-    ) :
-    window.location.pathname === "/elements/playground" ||
-    window.location.pathname === "/element/playground" ? (
+    ) : window.location.pathname === "/elements/playground" ||
+      window.location.pathname === "/element/playground" ? (
       <ElementPlayground />
     ) : window.location.pathname === "/components" ? (
       <Components />

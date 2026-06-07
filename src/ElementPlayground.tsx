@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { PREBUILT_ELEMENTS } from "./App";
-import { PrebuiltElement, renderElementCode, renderPrebuiltElement } from "./elementPreview";
+import {
+  PrebuiltElement,
+  renderElementCode,
+  renderPrebuiltElement,
+} from "./elementPreview";
 import {
   Accordion,
   AccordionContent,
@@ -23,7 +27,10 @@ type ElementOptionSection = {
   items: string[];
 };
 
-const ELEMENT_OPTION_SECTIONS: Record<PrebuiltElement["id"], ElementOptionSection[]> = {
+const ELEMENT_OPTION_SECTIONS: Record<
+  PrebuiltElement["id"],
+  ElementOptionSection[]
+> = {
   "element-text": [
     {
       title: "Properties",
@@ -131,7 +138,10 @@ const ELEMENT_OPTION_SECTIONS: Record<PrebuiltElement["id"], ElementOptionSectio
 const getInitialElement = (): PrebuiltElement | null => {
   const params = new URLSearchParams(window.location.search);
   const elementId = params.get("element");
-  const source = PREBUILT_ELEMENTS.find((entry) => entry.id === elementId) ?? PREBUILT_ELEMENTS[0] ?? null;
+  const source =
+    PREBUILT_ELEMENTS.find((entry) => entry.id === elementId) ??
+    PREBUILT_ELEMENTS[0] ??
+    null;
 
   if (!source) return null;
 
@@ -139,7 +149,9 @@ const getInitialElement = (): PrebuiltElement | null => {
 };
 
 export default function ElementPlayground() {
-  const [element, setElement] = useState<PrebuiltElement | null>(() => getInitialElement());
+  const [element, setElement] = useState<PrebuiltElement | null>(() =>
+    getInitialElement(),
+  );
   const [editorValue, setEditorValue] = useState<string>(() =>
     JSON.stringify(getInitialElement(), null, 2),
   );
@@ -152,7 +164,8 @@ export default function ElementPlayground() {
     const styleParts: string[] = [];
     if (flexEnabled) styleParts.push('display: "flex"');
     if (borderEnabled) styleParts.push('border: "1px solid #d4d4d8"');
-    const wrapperStyle = styleParts.length > 0 ? ` style={{ ${styleParts.join(", ")} }}` : "";
+    const wrapperStyle =
+      styleParts.length > 0 ? ` style={{ ${styleParts.join(", ")} }}` : "";
 
     return `import { Button } from \"@/components/ui/button\";\nimport { Input } from \"@/components/ui/input\";\nimport { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from \"@/components/ui/select\";\nimport { Switch } from \"@/components/ui/switch\";\n\nexport default function ElementPlayground() {\n  return (\n    <div${wrapperStyle}>${renderElementCode(element)}</div>\n  );\n}`;
   }, [borderEnabled, element, flexEnabled]);
@@ -170,7 +183,11 @@ export default function ElementPlayground() {
 
     try {
       const parsed = JSON.parse(nextValue) as PrebuiltElement;
-      if (!parsed || typeof parsed !== "object" || typeof parsed.id !== "string") {
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        typeof parsed.id !== "string"
+      ) {
         setEditorError("Element JSON must include a valid id.");
         return;
       }
@@ -189,7 +206,8 @@ export default function ElementPlayground() {
   const optionSections = ELEMENT_OPTION_SECTIONS[element.id] ?? [];
   const objectPreviewStyleParts: string[] = [];
   if (flexEnabled) objectPreviewStyleParts.push('display: "flex"');
-  if (borderEnabled) objectPreviewStyleParts.push('border: "1px solid #d4d4d8"');
+  if (borderEnabled)
+    objectPreviewStyleParts.push('border: "1px solid #d4d4d8"');
   const objectPreviewStyle =
     objectPreviewStyleParts.length > 0
       ? ` style={{ ${objectPreviewStyleParts.join(", ")} }}`
@@ -201,22 +219,40 @@ export default function ElementPlayground() {
       <div style={{ marginBottom: "16px" }}>
         <h1>Element Playground</h1>
         <div style={{ marginBottom: "8px" }}>
-          <Button type="button" variant="outline" onClick={() => { window.location.href = "/components"; }}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              window.location.href = "/components";
+            }}
+          >
             Back
           </Button>{" "}
-          <Button type="button" variant={flexEnabled ? "default" : "outline"} onClick={() => setFlexEnabled((current) => !current)}>
+          <Button
+            type="button"
+            variant={flexEnabled ? "default" : "outline"}
+            onClick={() => setFlexEnabled((current) => !current)}
+          >
             Flex {flexEnabled ? "On" : "Off"}
           </Button>{" "}
-          <Button type="button" variant={borderEnabled ? "default" : "outline"} onClick={() => setBorderEnabled((current) => !current)}>
+          <Button
+            type="button"
+            variant={borderEnabled ? "default" : "outline"}
+            onClick={() => setBorderEnabled((current) => !current)}
+          >
             Border {borderEnabled ? "On" : "Off"}
           </Button>{" "}
           <Dialog>
             <DialogTrigger asChild>
-              <Button type="button" variant="outline">Code</Button>
+              <Button type="button" variant="outline">
+                Code
+              </Button>
             </DialogTrigger>
             <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
               <DialogHeader>
-                <DialogTitle className="font-mono">Element Playground Code</DialogTitle>
+                <DialogTitle className="font-mono">
+                  Element Playground Code
+                </DialogTitle>
               </DialogHeader>
               <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
                 {rawCode}
@@ -228,7 +264,11 @@ export default function ElementPlayground() {
           <strong>Selected Element:</strong> {element.label}
         </div>
         <div style={{ marginBottom: "16px" }}>
-          <Accordion type="single" collapsible className="w-full rounded-md border px-4">
+          <Accordion
+            type="single"
+            collapsible
+            className="w-full rounded-md border px-4"
+          >
             {optionSections.map((section) => (
               <AccordionItem key={section.title} value={section.title}>
                 <AccordionTrigger>{section.title}</AccordionTrigger>
@@ -243,9 +283,17 @@ export default function ElementPlayground() {
             ))}
           </Accordion>
         </div>
-        <div style={{ display: "grid", gap: "16px", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+        <div
+          style={{
+            display: "grid",
+            gap: "16px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          }}
+        >
           <div>
-            <p style={{ marginBottom: "8px", fontWeight: 600 }}>Edit Element JSON</p>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>
+              Edit Element JSON
+            </p>
             <textarea
               value={editorValue}
               onChange={(event) => handleEditorChange(event.target.value)}
@@ -260,11 +308,15 @@ export default function ElementPlayground() {
               }}
             />
             {editorError ? (
-              <p style={{ color: "#dc2626", marginTop: "8px" }}>{editorError}</p>
+              <p style={{ color: "#dc2626", marginTop: "8px" }}>
+                {editorError}
+              </p>
             ) : null}
           </div>
           <div>
-            <p style={{ marginBottom: "8px", fontWeight: 600 }}>Object Preview</p>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>
+              Object Preview
+            </p>
             <pre
               style={{
                 background: "#f4f4f5",

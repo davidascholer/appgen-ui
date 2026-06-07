@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { ComponentType } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -171,6 +171,7 @@ type ElementTypeId =
   | "element-text-input"
   | "element-icon"
   | "element-image"
+  | "element-horizontal-container"
   | "element-vertical-container";
 
 interface BaseComponentElement {
@@ -224,7 +225,20 @@ type FlexAlignItems = "start" | "center" | "end" | "stretch";
 interface ContainerElementStyles {
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
+  overflowScroll: boolean;
   gap: number;
+  minWidth: number;
+  maxWidth: number;
+  minHeight: number;
+  maxHeight: number;
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
   backgroundColor: string;
   borderColor: string;
   borderRadius: number;
@@ -276,10 +290,12 @@ interface ImageComponentElement extends BaseComponentElement {
 }
 
 interface ContainerComponentElement extends BaseComponentElement {
-  elementTypeId: "element-vertical-container";
+  elementTypeId: "element-horizontal-container" | "element-vertical-container";
   elements: ComponentElement[];
   styles: ContainerElementStyles;
 }
+
+type ComponentDirection = "horizontal" | "vertical";
 
 type ComponentElement =
   | TextComponentElement
@@ -292,13 +308,27 @@ type ComponentElement =
   | ContainerComponentElement;
 
 interface ComponentStyles {
+  direction: ComponentDirection;
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
+  overflowScroll: boolean;
   gap: number;
+  minWidth: number;
+  maxWidth: number;
+  minHeight: number;
+  maxHeight: number;
   paddingX: number;
   paddingY: number;
   marginX: number;
   marginY: number;
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
   backgroundColor: string;
   borderColor: string;
   borderRadius: number;
@@ -439,6 +469,13 @@ const createDefaultHomePage = (): PrebuiltHomePage => ({
   ],
 });
 
+export type {
+  ComponentElement,
+  ComponentStyles,
+  AppComponent,
+  ComponentDirection,
+};
+
 export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
   {
     id: "element-text",
@@ -484,6 +521,7 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
   {
     id: "element-icon",
     label: "Icon",
+    value: "Home",
     styles: { alignment: "center", size: 24 },
   },
   {
@@ -499,7 +537,11 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
   },
 ];
 
-const ELEMENT_TYPE_IDS = new Set<string>(PREBUILT_ELEMENTS.map((e) => e.id));
+const ELEMENT_TYPE_IDS = new Set<string>([
+  ...PREBUILT_ELEMENTS.map((e) => e.id),
+  "element-horizontal-container",
+  "element-vertical-container",
+]);
 
 const DEFAULT_IMAGE_SRC = "https://placehold.co/600x400";
 
@@ -700,8 +742,7 @@ const getDefaultImageStyles = (): ImageElementStyles => {
   const styles = getPrebuiltElementDef("element-image")?.styles;
   return {
     sizing:
-      styles?.sizing === "contain" ||
-      styles?.sizing === "cover"
+      styles?.sizing === "contain" || styles?.sizing === "cover"
         ? styles.sizing
         : "contain",
     width: normalizeImageWidth(styles?.width),
@@ -713,6 +754,36 @@ const clampFlexGap = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return Math.max(0, Math.min(50, Math.round(parsed)));
+};
+
+const clampContainerDimension = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(4096, Math.round(parsed)));
+};
+
+const normalizeAxisValue = (
+  rawAxis: unknown,
+  rawStart: unknown,
+  rawEnd: unknown,
+): { axis: number; start: number; end: number } => {
+  const axisParsed = clampComponentSpacing(rawAxis);
+  const startParsed =
+    rawStart === undefined ? axisParsed : clampComponentSpacing(rawStart);
+  const endParsed =
+    rawEnd === undefined ? axisParsed : clampComponentSpacing(rawEnd);
+  const axis =
+    rawAxis === undefined
+      ? startParsed === endParsed
+        ? startParsed
+        : axisParsed
+      : axisParsed;
+
+  return {
+    axis,
+    start: startParsed,
+    end: endParsed,
+  };
 };
 
 const clampContainerBorderRadius = (value: unknown): number => {
@@ -788,7 +859,8 @@ const rgbaToHex = (
   a = 255,
   includeAlpha = false,
 ): string => {
-  const toHex = (value: number) => clampRgbChannel(value).toString(16).padStart(2, "0");
+  const toHex = (value: number) =>
+    clampRgbChannel(value).toString(16).padStart(2, "0");
   const alphaHex = clampRgbChannel(a).toString(16).padStart(2, "0");
   return includeAlpha
     ? `#${toHex(r)}${toHex(g)}${toHex(b)}${alphaHex}`
@@ -830,13 +902,27 @@ const normalizeFlexAlignItems = (
 };
 
 const getDefaultComponentStyles = (): ComponentStyles => ({
+  direction: "horizontal",
   justifyContent: "space-between",
   alignItems: "start",
+  overflowScroll: false,
   gap: 0,
+  minWidth: 0,
+  maxWidth: 0,
+  minHeight: 0,
+  maxHeight: 0,
   paddingX: 0,
   paddingY: 0,
   marginX: 0,
   marginY: 0,
+  paddingTop: 0,
+  paddingBottom: 0,
+  paddingLeft: 0,
+  paddingRight: 0,
+  marginTop: 0,
+  marginBottom: 0,
+  marginLeft: 0,
+  marginRight: 0,
   backgroundColor: "#ffffff00",
   borderColor: "#d4d4d8",
   borderRadius: 8,
@@ -858,7 +944,20 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
         ? styles.alignment
         : "start",
     ),
+    overflowScroll: false,
     gap: clampFlexGap(styles?.gap),
+    minWidth: 0,
+    maxWidth: 0,
+    minHeight: 0,
+    maxHeight: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingLeft: 0,
+    paddingRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+    marginRight: 0,
     backgroundColor: normalizeHexColor(styles?.backgroundColor, "#ffffff00"),
     borderColor: normalizeHexColor(styles?.borderColor, "#d4d4d8"),
     borderRadius: clampContainerBorderRadius(styles?.borderRadius),
@@ -886,7 +985,9 @@ const normalizeSelectValues = (rawValues: unknown): string[] => {
   );
 };
 
-const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
+export const normalizeElementFromRaw = (
+  raw: unknown,
+): ComponentElement | null => {
   if (!raw || typeof raw !== "object") return null;
 
   const entry = raw as Record<string, unknown>;
@@ -1080,11 +1181,9 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
         elementTypeId: "element-image",
         styles: {
           sizing:
-            rawStyles.sizing === "contain" ||
-            rawStyles.sizing === "cover"
+            rawStyles.sizing === "contain" || rawStyles.sizing === "cover"
               ? rawStyles.sizing
-              : entry.sizing === "contain" ||
-                  entry.sizing === "cover"
+              : entry.sizing === "contain" || entry.sizing === "cover"
                 ? entry.sizing
                 : defaultStyles.sizing,
           width: normalizeImageWidth(
@@ -1101,6 +1200,7 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
             : getDefaultImageSrc(),
       };
     }
+    case "element-horizontal-container":
     case "element-vertical-container": {
       const rawStyles =
         entry.styles && typeof entry.styles === "object"
@@ -1110,7 +1210,7 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
 
       return {
         instanceId,
-        elementTypeId: "element-vertical-container",
+        elementTypeId,
         elements: Array.isArray(entry.elements)
           ? entry.elements
               .map((child) => normalizeElementFromRaw(child))
@@ -1128,7 +1228,61 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
               entry.alignment,
             defaultStyles.alignItems,
           ),
+          overflowScroll:
+            typeof rawStyles.overflowScroll === "boolean"
+              ? rawStyles.overflowScroll
+              : defaultStyles.overflowScroll,
           gap: clampFlexGap(rawStyles.gap ?? entry.gap ?? defaultStyles.gap),
+          minWidth: clampContainerDimension(
+            rawStyles.minWidth ?? entry.minWidth ?? defaultStyles.minWidth,
+          ),
+          maxWidth: clampContainerDimension(
+            rawStyles.maxWidth ?? entry.maxWidth ?? defaultStyles.maxWidth,
+          ),
+          minHeight: clampContainerDimension(
+            rawStyles.minHeight ?? entry.minHeight ?? defaultStyles.minHeight,
+          ),
+          maxHeight: clampContainerDimension(
+            rawStyles.maxHeight ?? entry.maxHeight ?? defaultStyles.maxHeight,
+          ),
+          paddingTop: clampComponentSpacing(
+            rawStyles.paddingTop ??
+              entry.paddingTop ??
+              defaultStyles.paddingTop,
+          ),
+          paddingBottom: clampComponentSpacing(
+            rawStyles.paddingBottom ??
+              entry.paddingBottom ??
+              defaultStyles.paddingBottom,
+          ),
+          paddingLeft: clampComponentSpacing(
+            rawStyles.paddingLeft ??
+              entry.paddingLeft ??
+              defaultStyles.paddingLeft,
+          ),
+          paddingRight: clampComponentSpacing(
+            rawStyles.paddingRight ??
+              entry.paddingRight ??
+              defaultStyles.paddingRight,
+          ),
+          marginTop: clampComponentSpacing(
+            rawStyles.marginTop ?? entry.marginTop ?? defaultStyles.marginTop,
+          ),
+          marginBottom: clampComponentSpacing(
+            rawStyles.marginBottom ??
+              entry.marginBottom ??
+              defaultStyles.marginBottom,
+          ),
+          marginLeft: clampComponentSpacing(
+            rawStyles.marginLeft ??
+              entry.marginLeft ??
+              defaultStyles.marginLeft,
+          ),
+          marginRight: clampComponentSpacing(
+            rawStyles.marginRight ??
+              entry.marginRight ??
+              defaultStyles.marginRight,
+          ),
           backgroundColor: normalizeHexColor(
             rawStyles.backgroundColor ?? entry.backgroundColor,
             defaultStyles.backgroundColor,
@@ -1138,15 +1292,121 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
             defaultStyles.borderColor,
           ),
           borderRadius: clampContainerBorderRadius(
-            rawStyles.borderRadius ?? entry.borderRadius ?? defaultStyles.borderRadius,
+            rawStyles.borderRadius ??
+              entry.borderRadius ??
+              defaultStyles.borderRadius,
           ),
           borderWidth: clampContainerBorderWidth(
-            rawStyles.borderWidth ?? entry.borderWidth ?? defaultStyles.borderWidth,
+            rawStyles.borderWidth ??
+              entry.borderWidth ??
+              defaultStyles.borderWidth,
           ),
         },
       };
     }
   }
+};
+
+export const normalizeComponentFromRaw = (
+  raw: unknown,
+): AppComponent | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const comp = raw as Record<string, unknown>;
+  const rawStyles =
+    comp.styles && typeof comp.styles === "object"
+      ? (comp.styles as Record<string, unknown>)
+      : {};
+  const defaultStyles = getDefaultComponentStyles();
+  const paddingXValues = normalizeAxisValue(
+    rawStyles.paddingX,
+    rawStyles.paddingLeft,
+    rawStyles.paddingRight,
+  );
+  const paddingYValues = normalizeAxisValue(
+    rawStyles.paddingY,
+    rawStyles.paddingTop,
+    rawStyles.paddingBottom,
+  );
+  const marginXValues = normalizeAxisValue(
+    rawStyles.marginX,
+    rawStyles.marginLeft,
+    rawStyles.marginRight,
+  );
+  const marginYValues = normalizeAxisValue(
+    rawStyles.marginY,
+    rawStyles.marginTop,
+    rawStyles.marginBottom,
+  );
+  return {
+    id:
+      typeof comp.id === "string" && comp.id.trim()
+        ? comp.id
+        : crypto.randomUUID(),
+    label: typeof comp.label === "string" ? comp.label : "Component",
+    elements: Array.isArray(comp.elements)
+      ? (comp.elements as unknown[])
+          .map((el) => normalizeElementFromRaw(el))
+          .filter((el): el is ComponentElement => Boolean(el))
+      : [],
+    styles: {
+      direction:
+        rawStyles.direction === "vertical" ||
+        rawStyles.direction === "horizontal"
+          ? rawStyles.direction
+          : defaultStyles.direction,
+      justifyContent: normalizeFlexJustifyContent(
+        rawStyles.justifyContent,
+        defaultStyles.justifyContent,
+      ),
+      alignItems: normalizeFlexAlignItems(
+        rawStyles.alignItems,
+        defaultStyles.alignItems,
+      ),
+      overflowScroll:
+        typeof rawStyles.overflowScroll === "boolean"
+          ? rawStyles.overflowScroll
+          : defaultStyles.overflowScroll,
+      gap: clampFlexGap(rawStyles.gap ?? defaultStyles.gap),
+      minWidth: clampContainerDimension(
+        rawStyles.minWidth ?? defaultStyles.minWidth,
+      ),
+      maxWidth: clampContainerDimension(
+        rawStyles.maxWidth ?? defaultStyles.maxWidth,
+      ),
+      minHeight: clampContainerDimension(
+        rawStyles.minHeight ?? defaultStyles.minHeight,
+      ),
+      maxHeight: clampContainerDimension(
+        rawStyles.maxHeight ?? defaultStyles.maxHeight,
+      ),
+      paddingX: paddingXValues.axis,
+      paddingY: paddingYValues.axis,
+      marginX: marginXValues.axis,
+      marginY: marginYValues.axis,
+      paddingTop: paddingYValues.start,
+      paddingBottom: paddingYValues.end,
+      paddingLeft: paddingXValues.start,
+      paddingRight: paddingXValues.end,
+      marginTop: marginYValues.start,
+      marginBottom: marginYValues.end,
+      marginLeft: marginXValues.start,
+      marginRight: marginXValues.end,
+      backgroundColor: normalizeHexColor(
+        rawStyles.backgroundColor,
+        defaultStyles.backgroundColor,
+      ),
+      borderColor: normalizeHexColor(
+        rawStyles.borderColor,
+        defaultStyles.borderColor,
+      ),
+      borderRadius: clampContainerBorderRadius(
+        rawStyles.borderRadius ?? defaultStyles.borderRadius,
+      ),
+      borderWidth: clampContainerBorderWidth(
+        rawStyles.borderWidth ?? defaultStyles.borderWidth,
+      ),
+    },
+  };
 };
 
 const createDefaultComponentElement = (
@@ -1205,10 +1465,11 @@ const createDefaultComponentElement = (
         styles: getDefaultImageStyles(),
         src: getDefaultImageSrc(),
       };
+    case "element-horizontal-container":
     case "element-vertical-container":
       return {
         instanceId,
-        elementTypeId: "element-vertical-container",
+        elementTypeId: typeId,
         elements: [],
         styles: getDefaultContainerStyles(),
       };
@@ -1277,10 +1538,10 @@ const renderNavIcon = (
   return <Home size={size} className={className} />;
 };
 
-const toCssDimension = (value: number | string): string =>
+export const toCssDimension = (value: number | string): string =>
   typeof value === "number" ? `${value}px` : value === "full" ? "100%" : value;
 
-const getFlexJustifyClass = (value: FlexJustifyContent): string => {
+export const getFlexJustifyClass = (value: FlexJustifyContent): string => {
   if (value === "center") return "justify-center";
   if (value === "end") return "justify-end";
   if (value === "space-around") return "justify-around";
@@ -1289,11 +1550,39 @@ const getFlexJustifyClass = (value: FlexJustifyContent): string => {
   return "justify-start";
 };
 
-const getFlexAlignItemsClass = (value: FlexAlignItems): string => {
+export const getFlexAlignItemsClass = (value: FlexAlignItems): string => {
   if (value === "center") return "items-center";
   if (value === "end") return "items-end";
   if (value === "stretch") return "items-stretch";
   return "items-start";
+};
+
+export const getEffectiveFlexJustifyClass = (
+  value: FlexJustifyContent,
+  childCount: number,
+): string => {
+  const effectiveValue =
+    childCount <= 1 &&
+    (value === "space-between" ||
+      value === "space-around" ||
+      value === "space-evenly")
+      ? "start"
+      : value;
+
+  return getFlexJustifyClass(effectiveValue);
+};
+
+export const getFlexOverflowStyle = (
+  direction: ComponentDirection,
+  overflowScroll: boolean,
+): Record<string, string> => {
+  if (!overflowScroll) {
+    return {};
+  }
+
+  return direction === "horizontal"
+    ? { overflowX: "auto", overflowY: "hidden" }
+    : { overflowY: "auto", overflowX: "hidden" };
 };
 
 const toPascalCase = (value: string): string =>
@@ -1314,17 +1603,56 @@ const formatJsxStyleBlock = (
   if (definedEntries.length === 0) return "";
 
   return `\n${indent}  style={{\n${definedEntries
-    .map(([key, value]) => `${indent}    ${key}: ${formatJsxStyleValue(value as string | number)},`)
+    .map(
+      ([key, value]) =>
+        `${indent}    ${key}: ${formatJsxStyleValue(value as string | number)},`,
+    )
     .join("\n")}\n${indent}  }}`;
 };
 
-const isTransparentHex = (value: string): boolean =>
+export const isTransparentHex = (value: string): boolean =>
   /^#(?:0000|ffffff00)$/i.test(value);
 
-const isContainerElement = (
+const getDirectionFromContainerType = (
+  typeId: ContainerComponentElement["elementTypeId"],
+): ComponentDirection =>
+  typeId === "element-horizontal-container" ? "horizontal" : "vertical";
+
+const getOppositeDirection = (
+  direction: ComponentDirection,
+): ComponentDirection =>
+  direction === "horizontal" ? "vertical" : "horizontal";
+
+const getContainerTypeFromDirection = (
+  direction: ComponentDirection,
+): ContainerComponentElement["elementTypeId"] =>
+  direction === "horizontal"
+    ? "element-horizontal-container"
+    : "element-vertical-container";
+
+export const elementNeedsFullWidth = (element: ComponentElement): boolean => {
+  if (isContainerElement(element)) return false; // containers handle their own sizing
+  if (
+    element.elementTypeId === "element-button" ||
+    element.elementTypeId === "element-text-input"
+  ) {
+    return element.styles.width === "full";
+  }
+  if (element.elementTypeId === "element-image") {
+    return (
+      element.styles.width === "full" ||
+      (element.styles as Record<string, unknown>).containerWidth === "full"
+    );
+  }
+  // text is always w-full internally; toggle/icon/select size themselves
+  return false;
+};
+
+export const isContainerElement = (
   element: ComponentElement,
 ): element is ContainerComponentElement =>
-  element.elementTypeId === "element-vertical-container";
+  element.elementTypeId === "element-vertical-container" ||
+  element.elementTypeId === "element-horizontal-container";
 
 const updateElementTree = (
   elements: ComponentElement[],
@@ -1389,7 +1717,9 @@ const reorderElementInTree = (
   instanceId: string,
   direction: "up" | "down",
 ): ComponentElement[] => {
-  const localIndex = elements.findIndex((element) => element.instanceId === instanceId);
+  const localIndex = elements.findIndex(
+    (element) => element.instanceId === instanceId,
+  );
   if (localIndex !== -1) {
     const targetIndex = direction === "up" ? localIndex - 1 : localIndex + 1;
     if (targetIndex < 0 || targetIndex >= elements.length) {
@@ -1397,7 +1727,10 @@ const reorderElementInTree = (
     }
 
     const next = [...elements];
-    [next[localIndex], next[targetIndex]] = [next[targetIndex], next[localIndex]];
+    [next[localIndex], next[targetIndex]] = [
+      next[targetIndex],
+      next[localIndex],
+    ];
     return next;
   }
 
@@ -1405,7 +1738,11 @@ const reorderElementInTree = (
     isContainerElement(element)
       ? {
           ...element,
-          elements: reorderElementInTree(element.elements, instanceId, direction),
+          elements: reorderElementInTree(
+            element.elements,
+            instanceId,
+            direction,
+          ),
         }
       : element,
   );
@@ -1421,6 +1758,21 @@ const elementTreeHasInstanceId = (
       (isContainerElement(element) &&
         elementTreeHasInstanceId(element.elements, instanceId)),
   );
+
+const getElementByInstanceId = (
+  elements: ComponentElement[],
+  instanceId: string,
+): ComponentElement | null => {
+  for (const element of elements) {
+    if (element.instanceId === instanceId) return element;
+    if (isContainerElement(element)) {
+      const nested = getElementByInstanceId(element.elements, instanceId);
+      if (nested) return nested;
+    }
+  }
+
+  return null;
+};
 
 const DEFAULT_CONFIG: AppConfig = {
   id: crypto.randomUUID(),
@@ -1946,6 +2298,26 @@ const normalizeConfig = (input: unknown): AppConfig => {
           ? (comp.styles as Record<string, unknown>)
           : {};
       const defaultStyles = getDefaultComponentStyles();
+      const paddingXValues = normalizeAxisValue(
+        rawStyles.paddingX,
+        rawStyles.paddingLeft,
+        rawStyles.paddingRight,
+      );
+      const paddingYValues = normalizeAxisValue(
+        rawStyles.paddingY,
+        rawStyles.paddingTop,
+        rawStyles.paddingBottom,
+      );
+      const marginXValues = normalizeAxisValue(
+        rawStyles.marginX,
+        rawStyles.marginLeft,
+        rawStyles.marginRight,
+      );
+      const marginYValues = normalizeAxisValue(
+        rawStyles.marginY,
+        rawStyles.marginTop,
+        rawStyles.marginBottom,
+      );
       return [
         {
           id:
@@ -1959,6 +2331,11 @@ const normalizeConfig = (input: unknown): AppConfig => {
                 .filter((el): el is ComponentElement => Boolean(el))
             : [],
           styles: {
+            direction:
+              rawStyles.direction === "vertical" ||
+              rawStyles.direction === "horizontal"
+                ? rawStyles.direction
+                : defaultStyles.direction,
             justifyContent: normalizeFlexJustifyContent(
               rawStyles.justifyContent ??
                 (rawStyles.horizontalAlignment === "end-to-end"
@@ -1975,11 +2352,35 @@ const normalizeConfig = (input: unknown): AppConfig => {
                   : rawStyles.verticalAlignment),
               defaultStyles.alignItems,
             ),
+            overflowScroll:
+              typeof rawStyles.overflowScroll === "boolean"
+                ? rawStyles.overflowScroll
+                : defaultStyles.overflowScroll,
             gap: clampFlexGap(rawStyles.gap ?? defaultStyles.gap),
-            paddingX: clampComponentSpacing(rawStyles.paddingX),
-            paddingY: clampComponentSpacing(rawStyles.paddingY),
-            marginX: clampComponentSpacing(rawStyles.marginX),
-            marginY: clampComponentSpacing(rawStyles.marginY),
+            minWidth: clampContainerDimension(
+              rawStyles.minWidth ?? defaultStyles.minWidth,
+            ),
+            maxWidth: clampContainerDimension(
+              rawStyles.maxWidth ?? defaultStyles.maxWidth,
+            ),
+            minHeight: clampContainerDimension(
+              rawStyles.minHeight ?? defaultStyles.minHeight,
+            ),
+            maxHeight: clampContainerDimension(
+              rawStyles.maxHeight ?? defaultStyles.maxHeight,
+            ),
+            paddingX: paddingXValues.axis,
+            paddingY: paddingYValues.axis,
+            marginX: marginXValues.axis,
+            marginY: marginYValues.axis,
+            paddingTop: paddingYValues.start,
+            paddingBottom: paddingYValues.end,
+            paddingLeft: paddingXValues.start,
+            paddingRight: paddingXValues.end,
+            marginTop: marginYValues.start,
+            marginBottom: marginYValues.end,
+            marginLeft: marginXValues.start,
+            marginRight: marginXValues.end,
             backgroundColor: normalizeHexColor(
               rawStyles.backgroundColor,
               defaultStyles.backgroundColor,
@@ -2050,7 +2451,8 @@ function App() {
   const [componentCodeDialogOpen, setComponentCodeDialogOpen] = useState(false);
   const [componentJsonDialogOpen, setComponentJsonDialogOpen] = useState(false);
   const [colorPickerDialogOpen, setColorPickerDialogOpen] = useState(false);
-  const [colorEditTarget, setColorEditTarget] = useState<ColorEditTarget | null>(null);
+  const [colorEditTarget, setColorEditTarget] =
+    useState<ColorEditTarget | null>(null);
   const [colorDraftHex, setColorDraftHex] = useState("#000000");
   const [colorDraftRed, setColorDraftRed] = useState(0);
   const [colorDraftGreen, setColorDraftGreen] = useState(0);
@@ -2146,8 +2548,11 @@ function App() {
   const customComponents = Array.isArray(safeConfig.customComponents)
     ? safeConfig.customComponents
     : [];
-  const selectedComponent =
-    customComponents.find((c) => c.id === selectedComponentId) ?? null;
+  const fallbackComponent = useMemo(
+    () => createDefaultComponent("Main Component"),
+    [],
+  );
+  const selectedComponent = customComponents[0] ?? fallbackComponent;
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
     components: safeConfig.components.map((component) => ({
       id: component.id,
@@ -2177,7 +2582,7 @@ function App() {
         id: page.id,
         title: page.title,
       })),
-    components: customComponents,
+    components: selectedComponent ? [selectedComponent] : [],
   };
   const getComponentTypeId = (type: SettingComponentType) =>
     safeConfig.components.find((component) => component.type === type)?.id ??
@@ -2214,27 +2619,34 @@ function App() {
   }, [selectedPageId, pageTitleOptions]);
 
   useEffect(() => {
-    if (customComponents.length === 0) {
-      setSelectedComponentId(null);
-      return;
-    }
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const currentComponents = Array.isArray(base.customComponents)
+        ? base.customComponents
+        : [];
 
-    const exists = customComponents.some((c) => c.id === selectedComponentId);
-    if (!exists) {
-      setSelectedComponentId(customComponents[0].id);
-    }
-  }, [selectedComponentId, customComponents]);
+      if (currentComponents.length === 1) return base;
+
+      return {
+        ...base,
+        customComponents: [currentComponents[0] ?? fallbackComponent],
+      };
+    });
+  }, [fallbackComponent]);
 
   const updateCustomComponents = (
     transform: (components: AppComponent[]) => AppComponent[],
   ) => {
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
+      const existing = Array.isArray(base.customComponents)
+        ? base.customComponents
+        : [];
+      const seed = existing[0] ?? fallbackComponent;
+      const transformed = transform([seed]);
       return {
         ...base,
-        customComponents: transform(
-          Array.isArray(base.customComponents) ? base.customComponents : [],
-        ),
+        customComponents: [transformed[0] ?? seed],
       };
     });
   };
@@ -2266,16 +2678,52 @@ function App() {
     typeId: ElementTypeId,
     parentInstanceId?: string,
   ) => {
-    const newElement = createDefaultComponentElement(typeId);
     updateCustomComponents((components) =>
       components.map((comp) =>
         comp.id !== componentId
           ? comp
           : {
               ...comp,
-              elements: parentInstanceId
-                ? addChildElementToTree(comp.elements, parentInstanceId, newElement)
-                : [...comp.elements, newElement],
+              elements: (() => {
+                let resolvedTypeId = typeId;
+
+                if (
+                  typeId === "element-horizontal-container" ||
+                  typeId === "element-vertical-container"
+                ) {
+                  const parentDirection: ComponentDirection | null =
+                    parentInstanceId
+                      ? (() => {
+                          const parent = getElementByInstanceId(
+                            comp.elements,
+                            parentInstanceId,
+                          );
+                          return parent && isContainerElement(parent)
+                            ? getDirectionFromContainerType(
+                                parent.elementTypeId,
+                              )
+                            : null;
+                        })()
+                      : comp.styles.direction;
+
+                  const targetDirection = getOppositeDirection(
+                    parentDirection ?? "horizontal",
+                  );
+                  resolvedTypeId =
+                    getContainerTypeFromDirection(targetDirection);
+                }
+
+                const newElement =
+                  createDefaultComponentElement(resolvedTypeId);
+
+                return parentInstanceId
+                  ? addChildElementToTree(
+                      comp.elements,
+                      parentInstanceId,
+                      newElement,
+                    )
+                  : [...comp.elements, newElement];
+              })(),
             },
       ),
     );
@@ -2309,8 +2757,11 @@ function App() {
           ? comp
           : {
               ...comp,
-              elements: updateElementTree(comp.elements, instanceId, (element) =>
-                normalizeElementFromRaw({ ...element, ...update }) ?? element,
+              elements: updateElementTree(
+                comp.elements,
+                instanceId,
+                (element) =>
+                  normalizeElementFromRaw({ ...element, ...update }) ?? element,
               ),
             },
       ),
@@ -2346,6 +2797,115 @@ function App() {
     );
   };
 
+  const getAxisInputValue = (start: number, end: number): string =>
+    start === end ? String(start) : "";
+
+  const parseStyleNumber = (value: string): number | null => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed;
+  };
+
+  const updateComponentPaddingAxis = (
+    componentId: string,
+    axis: "x" | "y",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateComponentStyles(componentId, {
+        paddingX: next,
+        paddingLeft: next,
+        paddingRight: next,
+      });
+      return;
+    }
+
+    updateComponentStyles(componentId, {
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+    });
+  };
+
+  const updateComponentMarginAxis = (
+    componentId: string,
+    axis: "x" | "y",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateComponentStyles(componentId, {
+        marginX: next,
+        marginLeft: next,
+        marginRight: next,
+      });
+      return;
+    }
+
+    updateComponentStyles(componentId, {
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+    });
+  };
+
+  const updateComponentPaddingSide = (
+    componentId: string,
+    currentStyles: ComponentStyles,
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const nextTop = side === "top" ? next : currentStyles.paddingTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.paddingBottom;
+    const nextLeft = side === "left" ? next : currentStyles.paddingLeft;
+    const nextRight = side === "right" ? next : currentStyles.paddingRight;
+
+    updateComponentStyles(componentId, {
+      paddingTop: nextTop,
+      paddingBottom: nextBottom,
+      paddingLeft: nextLeft,
+      paddingRight: nextRight,
+      paddingY: nextTop === nextBottom ? nextTop : currentStyles.paddingY,
+      paddingX: nextLeft === nextRight ? nextLeft : currentStyles.paddingX,
+    });
+  };
+
+  const updateComponentMarginSide = (
+    componentId: string,
+    currentStyles: ComponentStyles,
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const nextTop = side === "top" ? next : currentStyles.marginTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.marginBottom;
+    const nextLeft = side === "left" ? next : currentStyles.marginLeft;
+    const nextRight = side === "right" ? next : currentStyles.marginRight;
+
+    updateComponentStyles(componentId, {
+      marginTop: nextTop,
+      marginBottom: nextBottom,
+      marginLeft: nextLeft,
+      marginRight: nextRight,
+      marginY: nextTop === nextBottom ? nextTop : currentStyles.marginY,
+      marginX: nextLeft === nextRight ? nextLeft : currentStyles.marginX,
+    });
+  };
+
   const openColorPicker = (target: ColorEditTarget, currentColor: string) => {
     const normalized = normalizeHexColor(currentColor, "#000000");
     const rgba = hexToRgba(normalized) ?? { r: 0, g: 0, b: 0, a: 255 };
@@ -2372,10 +2932,7 @@ function App() {
     }
   };
 
-  const syncColorFromRgb = (
-    channel: "r" | "g" | "b",
-    value: string,
-  ) => {
+  const syncColorFromRgb = (channel: "r" | "g" | "b", value: string) => {
     const parsed = clampRgbChannel(value);
     const next = {
       r: channel === "r" ? parsed : colorDraftRed,
@@ -2423,7 +2980,13 @@ function App() {
       a: colorDraftAlpha,
     };
     const useHex8 = normalized.trim().length === 9 || parsed.a < 255;
-    const finalColor = rgbaToHex(parsed.r, parsed.g, parsed.b, parsed.a, useHex8);
+    const finalColor = rgbaToHex(
+      parsed.r,
+      parsed.g,
+      parsed.b,
+      parsed.a,
+      useHex8,
+    );
 
     if (colorEditTarget.scope === "component") {
       updateComponentStyles(colorEditTarget.componentId, {
@@ -2857,19 +3420,32 @@ function App() {
         element.styles.width === "auto"
           ? ""
           : formatJsxStyleBlock(
-              [["width", element.styles.width === "full" ? "100%" : `${element.styles.width}px`]],
+              [
+                [
+                  "width",
+                  element.styles.width === "full"
+                    ? "100%"
+                    : `${element.styles.width}px`,
+                ],
+              ],
               `${indent}`,
             );
       const buttonClassName =
-        element.styles.width === "full" ? ' className="w-full"' : ' className="w-auto"';
+        element.styles.width === "full"
+          ? ' className="w-full"'
+          : ' className="w-auto"';
       const variantProp = element.isGhost ? ' variant="ghost"' : "";
 
       return `${indent}<Button${variantProp}${buttonClassName}${buttonStyleBlock}>${element.label}</Button>`;
     }
 
     if (element.elementTypeId === "element-select") {
-      const options = element.values.filter((option) => option.trim().length > 0);
-      const renderedOptions = (options.length > 0 ? options : ["No values"]).map(
+      const options = element.values.filter(
+        (option) => option.trim().length > 0,
+      );
+      const renderedOptions = (
+        options.length > 0 ? options : ["No values"]
+      ).map(
         (option, index) =>
           `${indent}      <SelectItem value=${JSON.stringify(String(index))}${options.length === 0 ? " disabled" : ""}>${option}</SelectItem>`,
       );
@@ -2885,7 +3461,14 @@ function App() {
             ? "justify-end"
             : "justify-center";
       const inputStyleBlock = formatJsxStyleBlock(
-        [["width", element.styles.width === "full" ? "100%" : `${element.styles.width}px`]],
+        [
+          [
+            "width",
+            element.styles.width === "full"
+              ? "100%"
+              : `${element.styles.width}px`,
+          ],
+        ],
         `${indent}  `,
       );
       const inputClassName =
@@ -2911,18 +3494,71 @@ function App() {
       return `${indent}<img\n${indent}  src=${JSON.stringify(element.src)}\n${indent}  alt="preview"\n${indent}  className="rounded border border-border bg-muted"${styleBlock}\n${indent}/>`;
     }
 
+    const containerDirection = getDirectionFromContainerType(
+      element.elementTypeId,
+    );
     const containerClasses = [
       "flex",
-      "flex-1",
-      "flex-col",
+      containerDirection === "horizontal" ? "flex-row" : "flex-col",
+      element.styles.overflowScroll ? "" : "flex-wrap",
       getFlexJustifyClass(element.styles.justifyContent),
       getFlexAlignItemsClass(element.styles.alignItems),
-    ].join(" ");
+    ]
+      .filter((value) => value.length > 0)
+      .join(" ");
+    const overflowStyle = getFlexOverflowStyle(
+      containerDirection,
+      element.styles.overflowScroll,
+    );
     const containerStyleBlock = formatJsxStyleBlock(
       [
         ["gap", `${element.styles.gap}px`],
-        ["backgroundColor", isTransparentHex(element.styles.backgroundColor) ? undefined : element.styles.backgroundColor],
-        ["borderColor", element.styles.borderWidth > 0 ? element.styles.borderColor : undefined],
+        [
+          "minWidth",
+          element.styles.minWidth > 0
+            ? `${element.styles.minWidth}px`
+            : undefined,
+        ],
+        [
+          "maxWidth",
+          element.styles.maxWidth > 0
+            ? `${element.styles.maxWidth}px`
+            : undefined,
+        ],
+        [
+          "minHeight",
+          element.styles.minHeight > 0
+            ? `${element.styles.minHeight}px`
+            : undefined,
+        ],
+        [
+          "maxHeight",
+          element.styles.maxHeight > 0
+            ? `${element.styles.maxHeight}px`
+            : undefined,
+        ],
+        ["paddingTop", `${element.styles.paddingTop}px`],
+        ["paddingBottom", `${element.styles.paddingBottom}px`],
+        ["paddingLeft", `${element.styles.paddingLeft}px`],
+        ["paddingRight", `${element.styles.paddingRight}px`],
+        ["marginTop", `${element.styles.marginTop}px`],
+        ["marginBottom", `${element.styles.marginBottom}px`],
+        ["marginLeft", `${element.styles.marginLeft}px`],
+        ["marginRight", `${element.styles.marginRight}px`],
+        ["overflowX", overflowStyle.overflowX],
+        ["overflowY", overflowStyle.overflowY],
+        [
+          "backgroundColor",
+          isTransparentHex(element.styles.backgroundColor)
+            ? undefined
+            : element.styles.backgroundColor,
+        ],
+        [
+          "borderColor",
+          element.styles.borderWidth > 0
+            ? element.styles.borderColor
+            : undefined,
+        ],
         ["borderRadius", `${element.styles.borderRadius}px`],
         ["borderWidth", `${element.styles.borderWidth}px`],
         ["borderStyle", element.styles.borderWidth > 0 ? "solid" : undefined],
@@ -2931,35 +3567,246 @@ function App() {
     );
     const children =
       element.elements.length > 0
-        ? element.elements.map((child) => renderComponentElementCode(child, `${indent}  `)).join("\n")
+        ? element.elements
+            .map((child) => renderComponentElementCode(child, `${indent}  `))
+            .join("\n")
         : `${indent}  <div className="w-full text-sm text-muted-foreground">Empty container</div>`;
 
     return `${indent}<div\n${indent}  className=${JSON.stringify(containerClasses)}${containerStyleBlock}\n${indent}>\n${children}\n${indent}</div>`;
   };
 
+  const getExplicitComponentElementJson = (
+    element: ComponentElement,
+  ): Record<string, unknown> => {
+    if (element.elementTypeId === "element-text") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        value: element.value ?? "",
+        styles: {
+          alignment: element.styles.alignment ?? "center",
+          size: element.styles.size ?? 3,
+          fontWeight:
+            element.styles.fontWeight ?? (element.styles.isBold ? 700 : 400),
+          isBold: element.styles.isBold ?? false,
+          isItalic: element.styles.isItalic ?? false,
+          isLabel: element.styles.isLabel ?? false,
+        },
+      };
+    }
+
+    if (element.elementTypeId === "element-toggle") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        defaultValue: element.defaultValue ?? false,
+        styles: {
+          position: element.styles.position ?? "center",
+        },
+      };
+    }
+
+    if (element.elementTypeId === "element-button") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        label: element.label ?? "Button",
+        highlightOnHover: element.highlightOnHover ?? true,
+        isGhost: element.isGhost ?? false,
+        styles: {
+          width: element.styles.width ?? "full",
+        },
+      };
+    }
+
+    if (element.elementTypeId === "element-select") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        values: element.values ?? [],
+      };
+    }
+
+    if (element.elementTypeId === "element-text-input") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        textHint: element.textHint ?? "",
+        value: element.value ?? "",
+        styles: {
+          alignment: element.styles.alignment ?? "center",
+          width: element.styles.width ?? "full",
+        },
+      };
+    }
+
+    if (element.elementTypeId === "element-icon") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        value: element.value ?? "Home",
+        styles: {
+          size: element.styles.size ?? 24,
+        },
+      };
+    }
+
+    if (element.elementTypeId === "element-image") {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        src: element.src ?? "https://placehold.co/600x400",
+        styles: {
+          sizing: element.styles.sizing ?? "contain",
+          width: element.styles.width ?? "full",
+          height: element.styles.height ?? "auto",
+        },
+      };
+    }
+
+    if (
+      element.elementTypeId === "element-vertical-container" ||
+      element.elementTypeId === "element-horizontal-container"
+    ) {
+      return {
+        elementTypeId: element.elementTypeId,
+        instanceId: element.instanceId,
+        styles: {
+          justifyContent: element.styles.justifyContent ?? "start",
+          alignItems: element.styles.alignItems ?? "start",
+          overflowScroll: element.styles.overflowScroll ?? false,
+          gap: element.styles.gap ?? 0,
+          minWidth: element.styles.minWidth ?? 0,
+          maxWidth: element.styles.maxWidth ?? 0,
+          minHeight: element.styles.minHeight ?? 0,
+          maxHeight: element.styles.maxHeight ?? 0,
+          paddingTop: element.styles.paddingTop ?? 0,
+          paddingBottom: element.styles.paddingBottom ?? 0,
+          paddingLeft: element.styles.paddingLeft ?? 0,
+          paddingRight: element.styles.paddingRight ?? 0,
+          marginTop: element.styles.marginTop ?? 0,
+          marginBottom: element.styles.marginBottom ?? 0,
+          marginLeft: element.styles.marginLeft ?? 0,
+          marginRight: element.styles.marginRight ?? 0,
+          backgroundColor: element.styles.backgroundColor ?? "#ffffff00",
+          borderColor: element.styles.borderColor ?? "#d4d4d8",
+          borderRadius: element.styles.borderRadius ?? 8,
+          borderWidth: element.styles.borderWidth ?? 0,
+        },
+        elements: element.elements.map((child) =>
+          getExplicitComponentElementJson(child),
+        ),
+      };
+    }
+
+    return element as unknown as Record<string, unknown>;
+  };
+
+  const getExplicitComponentJson = (
+    component: AppComponent,
+  ): Record<string, unknown> => ({
+    id: component.id,
+    label: component.label,
+    styles: {
+      direction: component.styles.direction ?? "horizontal",
+      justifyContent: component.styles.justifyContent ?? "space-between",
+      alignItems: component.styles.alignItems ?? "start",
+      overflowScroll: component.styles.overflowScroll ?? false,
+      gap: component.styles.gap ?? 0,
+      minWidth: component.styles.minWidth ?? 0,
+      maxWidth: component.styles.maxWidth ?? 0,
+      minHeight: component.styles.minHeight ?? 0,
+      maxHeight: component.styles.maxHeight ?? 0,
+      paddingX: component.styles.paddingX ?? 0,
+      paddingY: component.styles.paddingY ?? 0,
+      marginX: component.styles.marginX ?? 0,
+      marginY: component.styles.marginY ?? 0,
+      paddingTop: component.styles.paddingTop ?? 0,
+      paddingBottom: component.styles.paddingBottom ?? 0,
+      paddingLeft: component.styles.paddingLeft ?? 0,
+      paddingRight: component.styles.paddingRight ?? 0,
+      marginTop: component.styles.marginTop ?? 0,
+      marginBottom: component.styles.marginBottom ?? 0,
+      marginLeft: component.styles.marginLeft ?? 0,
+      marginRight: component.styles.marginRight ?? 0,
+      backgroundColor: component.styles.backgroundColor ?? "#ffffff00",
+      borderColor: component.styles.borderColor ?? "#d4d4d8",
+      borderRadius: component.styles.borderRadius ?? 8,
+      borderWidth: component.styles.borderWidth ?? 0,
+    },
+    elements: component.elements.map((el) =>
+      getExplicitComponentElementJson(el),
+    ),
+  });
+
   const getComponentPreviewCode = (component: AppComponent): string => {
+    const justifyClass = getEffectiveFlexJustifyClass(
+      component.styles.justifyContent,
+      component.elements.length,
+    );
     const className = [
       "flex",
       "w-full",
-      "flex-1",
-      "flex-row",
-      "flex-wrap",
+      component.styles.direction === "vertical" ? "flex-col" : "flex-row",
+      component.styles.overflowScroll ? "" : "flex-wrap",
       getFlexAlignItemsClass(component.styles.alignItems),
-      getFlexJustifyClass(component.styles.justifyContent),
-    ].join(" ");
+      justifyClass,
+    ]
+      .filter((value) => value.length > 0)
+      .join(" ");
+    const overflowStyle = getFlexOverflowStyle(
+      component.styles.direction,
+      component.styles.overflowScroll,
+    );
     const styleBlock = formatJsxStyleBlock(
       [
         ["gap", `${component.styles.gap}px`],
-        ["paddingLeft", `${component.styles.paddingX}px`],
-        ["paddingRight", `${component.styles.paddingX}px`],
-        ["paddingTop", `${component.styles.paddingY}px`],
-        ["paddingBottom", `${component.styles.paddingY}px`],
-        ["marginLeft", `${component.styles.marginX}px`],
-        ["marginRight", `${component.styles.marginX}px`],
-        ["marginTop", `${component.styles.marginY}px`],
-        ["marginBottom", `${component.styles.marginY}px`],
-        ["backgroundColor", isTransparentHex(component.styles.backgroundColor) ? undefined : component.styles.backgroundColor],
-        ["borderColor", component.styles.borderWidth > 0 ? component.styles.borderColor : undefined],
+        [
+          "minWidth",
+          component.styles.minWidth > 0
+            ? `${component.styles.minWidth}px`
+            : undefined,
+        ],
+        [
+          "maxWidth",
+          component.styles.maxWidth > 0
+            ? `${component.styles.maxWidth}px`
+            : undefined,
+        ],
+        [
+          "minHeight",
+          component.styles.minHeight > 0
+            ? `${component.styles.minHeight}px`
+            : undefined,
+        ],
+        [
+          "maxHeight",
+          component.styles.maxHeight > 0
+            ? `${component.styles.maxHeight}px`
+            : undefined,
+        ],
+        ["paddingLeft", `${component.styles.paddingLeft}px`],
+        ["paddingRight", `${component.styles.paddingRight}px`],
+        ["paddingTop", `${component.styles.paddingTop}px`],
+        ["paddingBottom", `${component.styles.paddingBottom}px`],
+        ["marginLeft", `${component.styles.marginLeft}px`],
+        ["marginRight", `${component.styles.marginRight}px`],
+        ["marginTop", `${component.styles.marginTop}px`],
+        ["marginBottom", `${component.styles.marginBottom}px`],
+        ["overflowX", overflowStyle.overflowX],
+        ["overflowY", overflowStyle.overflowY],
+        [
+          "backgroundColor",
+          isTransparentHex(component.styles.backgroundColor)
+            ? undefined
+            : component.styles.backgroundColor,
+        ],
+        [
+          "borderColor",
+          component.styles.borderWidth > 0
+            ? component.styles.borderColor
+            : undefined,
+        ],
         ["borderRadius", `${component.styles.borderRadius}px`],
         ["borderWidth", `${component.styles.borderWidth}px`],
         ["borderStyle", component.styles.borderWidth > 0 ? "solid" : undefined],
@@ -2968,7 +3815,9 @@ function App() {
     );
     const children =
       component.elements.length > 0
-        ? component.elements.map((element) => renderComponentElementCode(element, "  ")).join("\n")
+        ? component.elements
+            .map((element) => renderComponentElementCode(element, "  "))
+            .join("\n")
         : "  {/* Add elements here */}";
 
     return `<div\n  className=${JSON.stringify(className)}${styleBlock}\n>\n${children}\n</div>`;
@@ -3093,12 +3942,45 @@ function App() {
       return <IconComponent size={size} className="text-foreground" />;
     }
 
-    if (element.elementTypeId === "element-vertical-container") {
+    if (isContainerElement(element)) {
+      const containerDirection = getDirectionFromContainerType(
+        element.elementTypeId,
+      );
+      const overflowStyle = getFlexOverflowStyle(
+        containerDirection,
+        element.styles.overflowScroll,
+      );
       return (
         <div
-          className={`flex h-full w-full flex-1 flex-col rounded-lg p-4 ${getFlexJustifyClass(element.styles.justifyContent)} ${getFlexAlignItemsClass(element.styles.alignItems)}`}
+          className={`flex h-full w-full ${containerDirection === "horizontal" ? "flex-row" : "flex-col"} rounded-lg ${element.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexJustifyClass(element.styles.justifyContent)} ${getFlexAlignItemsClass(element.styles.alignItems)}`}
           style={{
             gap: `${element.styles.gap}px`,
+            minWidth:
+              element.styles.minWidth > 0
+                ? `${element.styles.minWidth}px`
+                : undefined,
+            maxWidth:
+              element.styles.maxWidth > 0
+                ? `${element.styles.maxWidth}px`
+                : undefined,
+            minHeight:
+              element.styles.minHeight > 0
+                ? `${element.styles.minHeight}px`
+                : undefined,
+            maxHeight:
+              element.styles.maxHeight > 0
+                ? `${element.styles.maxHeight}px`
+                : undefined,
+            paddingTop: `${element.styles.paddingTop}px`,
+            paddingBottom: `${element.styles.paddingBottom}px`,
+            paddingLeft: `${element.styles.paddingLeft}px`,
+            paddingRight: `${element.styles.paddingRight}px`,
+            marginTop: `${element.styles.marginTop}px`,
+            marginBottom: `${element.styles.marginBottom}px`,
+            marginLeft: `${element.styles.marginLeft}px`,
+            marginRight: `${element.styles.marginRight}px`,
+            overflowX: overflowStyle.overflowX,
+            overflowY: overflowStyle.overflowY,
             backgroundColor: element.styles.backgroundColor,
             borderColor: element.styles.borderColor,
             borderRadius: `${element.styles.borderRadius}px`,
@@ -3108,7 +3990,7 @@ function App() {
         >
           {element.elements.length > 0 ? (
             element.elements.map((child) => (
-              <div key={child.instanceId} className="flex w-full flex-1">
+              <div key={child.instanceId} className="flex w-full">
                 {renderComponentElementPreview(child)}
               </div>
             ))
@@ -3137,8 +4019,37 @@ function App() {
     );
   };
 
-  const getComponentElementLabel = (typeId: ElementTypeId) =>
-    PREBUILT_ELEMENTS.find((element) => element.id === typeId)?.label ?? typeId;
+  const getComponentElementLabel = (typeId: ElementTypeId) => {
+    if (typeId === "element-horizontal-container") {
+      return "Horizontal Container";
+    }
+    if (typeId === "element-vertical-container") {
+      return "Vertical Container";
+    }
+
+    return (
+      PREBUILT_ELEMENTS.find((element) => element.id === typeId)?.label ??
+      typeId
+    );
+  };
+
+  const getAllowedElementOptions = (parentDirection: ComponentDirection) => {
+    const oppositeContainerDirection = getOppositeDirection(parentDirection);
+    const oppositeContainerType = getContainerTypeFromDirection(
+      oppositeContainerDirection,
+    );
+
+    return [
+      ...PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label })),
+      {
+        id: oppositeContainerType as ElementTypeId,
+        label:
+          oppositeContainerType === "element-horizontal-container"
+            ? "Horizontal Container"
+            : "Vertical Container",
+      },
+    ];
+  };
 
   const renderComponentElementFields = (
     componentId: string,
@@ -3341,7 +4252,13 @@ function App() {
           <div className="space-y-2">
             <Label>Width</Label>
             <Select
-              value={element.styles.width === "full" ? "full" : element.styles.width === "auto" ? "auto" : "pixels"}
+              value={
+                element.styles.width === "full"
+                  ? "full"
+                  : element.styles.width === "auto"
+                    ? "auto"
+                    : "pixels"
+              }
               onValueChange={(mode: "auto" | "full" | "pixels") =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
@@ -3368,26 +4285,31 @@ function App() {
               </SelectContent>
             </Select>
           </div>
-          {element.styles.width !== "full" && element.styles.width !== "auto" && (
-            <div className="space-y-2">
-              <Label>Width (px)</Label>
-              <Input
-                type="number"
-                min={1}
-                value={element.styles.width}
-                onChange={(e) => {
-                  const parsed = parseInt(e.target.value, 10);
-                  const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
-                  updateComponentElementField(componentId, element.instanceId, {
-                    styles: {
-                      ...element.styles,
-                      width: nextWidth,
-                    },
-                  });
-                }}
-              />
-            </div>
-          )}
+          {element.styles.width !== "full" &&
+            element.styles.width !== "auto" && (
+              <div className="space-y-2">
+                <Label>Width (px)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={element.styles.width}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
+                    updateComponentElementField(
+                      componentId,
+                      element.instanceId,
+                      {
+                        styles: {
+                          ...element.styles,
+                          width: nextWidth,
+                        },
+                      },
+                    );
+                  }}
+                />
+              </div>
+            )}
         </div>
       );
     }
@@ -3408,9 +4330,13 @@ function App() {
                   onChange={(e) => {
                     const updated = [...element.values];
                     updated[valIndex] = e.target.value;
-                    updateComponentElementField(componentId, element.instanceId, {
-                      values: updated,
-                    });
+                    updateComponentElementField(
+                      componentId,
+                      element.instanceId,
+                      {
+                        values: updated,
+                      },
+                    );
                   }}
                 />
                 <Button
@@ -3422,9 +4348,13 @@ function App() {
                       element.values.length <= 1
                         ? [""]
                         : element.values.filter((_, i) => i !== valIndex);
-                    updateComponentElementField(componentId, element.instanceId, {
-                      values: updated,
-                    });
+                    updateComponentElementField(
+                      componentId,
+                      element.instanceId,
+                      {
+                        values: updated,
+                      },
+                    );
                   }}
                   className="text-destructive hover:text-destructive"
                   aria-label="Remove option"
@@ -3705,9 +4635,25 @@ function App() {
       );
     }
 
-    const nestedElementOptions = PREBUILT_ELEMENTS.filter(
-      (prebuiltElement) => prebuiltElement.id !== "element-vertical-container",
+    const nestedContainerDirection = getOppositeDirection(
+      getDirectionFromContainerType(element.elementTypeId),
     );
+    const nestedContainerTypeId = getContainerTypeFromDirection(
+      nestedContainerDirection,
+    );
+    const nestedElementOptions: Array<{ id: ElementTypeId; label: string }> = [
+      ...PREBUILT_ELEMENTS.map((prebuiltElement) => ({
+        id: prebuiltElement.id,
+        label: prebuiltElement.label,
+      })),
+      {
+        id: nestedContainerTypeId,
+        label:
+          nestedContainerTypeId === "element-horizontal-container"
+            ? "Horizontal Container"
+            : "Vertical Container",
+      },
+    ];
     const nestedDraftType = nestedElementOptions.some(
       (prebuiltElement) =>
         prebuiltElement.id === containerElementTypeDrafts[element.instanceId],
@@ -3722,55 +4668,55 @@ function App() {
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
-              <Label>Justify Content</Label>
-              <Select
-                value={element.styles.justifyContent}
-                onValueChange={(value: FlexJustifyContent) =>
-                  updateComponentElementField(componentId, element.instanceId, {
-                    styles: {
-                      ...element.styles,
-                      justifyContent: value,
-                    },
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="start">Start</SelectItem>
-                  <SelectItem value="center">Center</SelectItem>
-                  <SelectItem value="end">End</SelectItem>
-                  <SelectItem value="space-between">Space Between</SelectItem>
-                  <SelectItem value="space-around">Space Around</SelectItem>
-                  <SelectItem value="space-evenly">Space Evenly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Align Items</Label>
-              <Select
-                value={element.styles.alignItems}
-                onValueChange={(value: FlexAlignItems) =>
-                  updateComponentElementField(componentId, element.instanceId, {
-                    styles: {
-                      ...element.styles,
-                      alignItems: value,
-                    },
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="start">Start</SelectItem>
-                  <SelectItem value="center">Center</SelectItem>
-                  <SelectItem value="end">End</SelectItem>
-                  <SelectItem value="stretch">Stretch</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Label>Justify Content</Label>
+            <Select
+              value={element.styles.justifyContent}
+              onValueChange={(value: FlexJustifyContent) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    justifyContent: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="start">Start</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="end">End</SelectItem>
+                <SelectItem value="space-between">Space Between</SelectItem>
+                <SelectItem value="space-around">Space Around</SelectItem>
+                <SelectItem value="space-evenly">Space Evenly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Align Items</Label>
+            <Select
+              value={element.styles.alignItems}
+              onValueChange={(value: FlexAlignItems) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    alignItems: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="start">Start</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="end">End</SelectItem>
+                <SelectItem value="stretch">Stretch</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label>Flex Gap (0-50 px)</Label>
             <Input
@@ -3783,6 +4729,224 @@ function App() {
                   styles: {
                     ...element.styles,
                     gap: clampFlexGap(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
+            <Label>Overflow Scroll</Label>
+            <Switch
+              checked={element.styles.overflowScroll}
+              onCheckedChange={(checked) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    overflowScroll: checked,
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Min Width (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={4096}
+              value={element.styles.minWidth}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    minWidth: clampContainerDimension(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Max Width (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={4096}
+              value={element.styles.maxWidth}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    maxWidth: clampContainerDimension(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Min Height (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={4096}
+              value={element.styles.minHeight}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    minHeight: clampContainerDimension(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Max Height (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={4096}
+              value={element.styles.maxHeight}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    maxHeight: clampContainerDimension(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Top (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.paddingTop}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    paddingTop: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Bottom (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.paddingBottom}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    paddingBottom: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Left (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.paddingLeft}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    paddingLeft: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Padding Right (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.paddingRight}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    paddingRight: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Top (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.marginTop}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    marginTop: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Bottom (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.marginBottom}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    marginBottom: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Left (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.marginLeft}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    marginLeft: clampComponentSpacing(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Margin Right (px)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={200}
+              value={element.styles.marginRight}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    marginRight: clampComponentSpacing(e.target.value),
                   },
                 })
               }
@@ -3909,7 +5073,10 @@ function App() {
                 </SelectTrigger>
                 <SelectContent>
                   {nestedElementOptions.map((prebuiltElement) => (
-                    <SelectItem key={prebuiltElement.id} value={prebuiltElement.id}>
+                    <SelectItem
+                      key={prebuiltElement.id}
+                      value={prebuiltElement.id}
+                    >
                       {prebuiltElement.label}
                     </SelectItem>
                   ))}
@@ -3920,7 +5087,11 @@ function App() {
               type="button"
               className="gap-2 sm:w-auto"
               onClick={() =>
-                addComponentElement(componentId, nestedDraftType, element.instanceId)
+                addComponentElement(
+                  componentId,
+                  nestedDraftType,
+                  element.instanceId,
+                )
               }
             >
               <Plus size={16} />
@@ -3961,7 +5132,7 @@ function App() {
       collapsible
       value={
         nested && parentInstanceId
-          ? activeNestedElementEditorIds[parentInstanceId] ?? ""
+          ? (activeNestedElementEditorIds[parentInstanceId] ?? "")
           : activeElementEditorId
       }
       onValueChange={(value) => {
@@ -4001,7 +5172,11 @@ function App() {
                   variant="ghost"
                   size="icon"
                   onClick={() =>
-                    reorderComponentElement(componentId, element.instanceId, "up")
+                    reorderComponentElement(
+                      componentId,
+                      element.instanceId,
+                      "up",
+                    )
                   }
                   disabled={elementIndex === 0}
                   aria-label="Move up"
@@ -4012,7 +5187,11 @@ function App() {
                   variant="ghost"
                   size="icon"
                   onClick={() =>
-                    reorderComponentElement(componentId, element.instanceId, "down")
+                    reorderComponentElement(
+                      componentId,
+                      element.instanceId,
+                      "down",
+                    )
                   }
                   disabled={elementIndex === elements.length - 1}
                   aria-label="Move down"
@@ -4095,9 +5274,7 @@ function App() {
           >
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-mono">
-                  Pick Color
-                </DialogTitle>
+                <DialogTitle className="font-mono">Pick Color</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -4105,7 +5282,11 @@ function App() {
                   <Input
                     id="picker-native-color"
                     type="color"
-                    value={rgbaToHex(colorDraftRed, colorDraftGreen, colorDraftBlue)}
+                    value={rgbaToHex(
+                      colorDraftRed,
+                      colorDraftGreen,
+                      colorDraftBlue,
+                    )}
                     onChange={(e) => syncColorFromHex(e.target.value)}
                     className="h-10 w-full"
                   />
@@ -4965,437 +6146,64 @@ function App() {
             )}
           {activeTab === "components" && (
             <div className="space-y-4">
-              <Card className="p-4">
-                <div className="space-y-2">
-                  <Label htmlFor="components-selector">Components</Label>
-                  <Select
-                    value={
-                      showAddCustomComponent
-                        ? "__add_custom__"
-                        : showImportPrebuilt
-                          ? "__import_prebuilt__"
-                          : (selectedComponentId ?? "")
-                    }
-                    onValueChange={(value) => {
-                      if (value === "__add_custom__") {
-                        setShowAddCustomComponent(true);
-                        setShowImportPrebuilt(false);
-                        return;
-                      }
-                      if (value === "__import_prebuilt__") {
-                        setShowImportPrebuilt(true);
-                        setShowAddCustomComponent(false);
-                        return;
-                      }
-                      setShowAddCustomComponent(false);
-                      setShowImportPrebuilt(false);
-                      setSelectedComponentId(value);
-                    }}
-                  >
-                    <SelectTrigger id="components-selector">
-                      <SelectValue placeholder="Select a component..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customComponents.map((comp) => (
-                        <SelectItem key={comp.id} value={comp.id}>
-                          {comp.label}
-                        </SelectItem>
-                      ))}
-                      <Separator className="my-1" />
-                      <SelectItem value="__import_prebuilt__">
-                        Import prebuilt component
-                      </SelectItem>
-                      <SelectItem value="__add_custom__">
-                        Add custom component
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {selectedComponent && (
+                <div className="space-y-4">
+                  {(() => {
+                    const topLevelElementOptions = getAllowedElementOptions(
+                      selectedComponent.styles.direction,
+                    );
+                    const selectedElementType = topLevelElementOptions.some(
+                      (option) => option.id === newComponentElementTypeId,
+                    )
+                      ? newComponentElementTypeId
+                      : (topLevelElementOptions[0]?.id ?? "element-text");
 
-                {showAddCustomComponent && (
-                  <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
-                    <Label htmlFor="new-component-label">Component Label</Label>
-                    <Input
-                      id="new-component-label"
-                      placeholder="My Widget"
-                      value={newCustomComponentLabel}
-                      onChange={(e) =>
-                        setNewCustomComponentLabel(e.target.value)
-                      }
-                    />
-                    <Button
-                      type="button"
-                      onClick={addCustomComponent}
-                      className="w-full gap-2"
-                    >
-                      <Plus size={16} />
-                      Save Component
-                    </Button>
-                  </div>
-                )}
-
-                {showImportPrebuilt && (
-                  <div className="mt-4 space-y-2 rounded-lg border border-border p-3">
-                    <Label>Select Prebuilt Component</Label>
-                    <div className="space-y-2 mt-2">
-                      {safeConfig.components.map((comp) => (
-                        <button
-                          key={comp.id}
-                          type="button"
-                          onClick={() => importPrebuiltComponent(comp)}
-                          className="w-full text-left p-3 rounded-md bg-secondary hover:bg-muted/80 transition-colors"
-                        >
-                          <p className="font-medium">{comp.label}</p>
-                          <p className="text-sm text-muted-foreground capitalize">
-                            {comp.type}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </Card>
-
-              {!showAddCustomComponent &&
-                !showImportPrebuilt &&
-                customComponents.length === 0 && (
-                  <Card className="p-6">
-                    <p className="text-center text-sm text-muted-foreground">
-                      No components yet. Use the dropdown above to add or import
-                      one.
-                    </p>
-                  </Card>
-                )}
-
-              {!showAddCustomComponent &&
-                !showImportPrebuilt &&
-                selectedComponent && (
-                  <div className="space-y-4">
-                    <Card className="p-4">
-                      <h2 className="text-lg font-semibold mb-4 font-mono">
-                        Component Items
-                      </h2>
-                      <div className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="component-element-type">
-                              Element Type
-                            </Label>
-                            <Select
-                              value={newComponentElementTypeId}
-                              onValueChange={(value: ElementTypeId) =>
-                                setNewComponentElementTypeId(value)
-                              }
-                            >
-                              <SelectTrigger id="component-element-type">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {PREBUILT_ELEMENTS.map((el) => (
-                                  <SelectItem key={el.id} value={el.id}>
-                                    {el.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <Button
-                          onClick={() =>
-                            addComponentElement(
-                              selectedComponent.id,
-                              newComponentElementTypeId,
-                            )
-                          }
-                          className="w-full gap-2"
-                        >
-                          <Plus size={18} />
-                          Add Element
-                        </Button>
-
-                        {selectedComponent.elements.length > 0 && (
-                          <>
-                            <Separator />
-                            {renderComponentElementEditors(
-                              selectedComponent.id,
-                              selectedComponent.elements,
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </Card>
-
-                    <Card className="p-4">
-                      <h2 className="text-lg font-semibold mb-4 font-mono">
-                        Component Styles
-                      </h2>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-justify-content">
-                            Justify Content
-                          </Label>
-                          <Select
-                            value={selectedComponent.styles.justifyContent}
-                            onValueChange={(value: ComponentStyles["justifyContent"]) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                justifyContent: value,
-                              })
-                            }
-                          >
-                            <SelectTrigger id="comp-justify-content">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="start">Start</SelectItem>
-                              <SelectItem value="center">Center</SelectItem>
-                              <SelectItem value="end">End</SelectItem>
-                              <SelectItem value="space-between">
-                                Space Between
-                              </SelectItem>
-                              <SelectItem value="space-around">
-                                Space Around
-                              </SelectItem>
-                              <SelectItem value="space-evenly">
-                                Space Evenly
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-align-items">
-                            Align Items
-                          </Label>
-                          <Select
-                            value={selectedComponent.styles.alignItems}
-                            onValueChange={(value: ComponentStyles["alignItems"]) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                alignItems: value,
-                              })
-                            }
-                          >
-                            <SelectTrigger id="comp-align-items">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="start">Start</SelectItem>
-                              <SelectItem value="center">Center</SelectItem>
-                              <SelectItem value="end">End</SelectItem>
-                              <SelectItem value="stretch">Stretch</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-gap">Gap (px)</Label>
-                          <Input
-                            id="comp-gap"
-                            type="number"
-                            min={0}
-                            max={50}
-                            value={selectedComponent.styles.gap}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                gap: clampFlexGap(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-padding-x">
-                            Horizontal Padding (px)
-                          </Label>
-                          <Input
-                            id="comp-padding-x"
-                            type="number"
-                            min={0}
-                            max={200}
-                            value={selectedComponent.styles.paddingX}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                paddingX: clampComponentSpacing(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-padding-y">
-                            Vertical Padding (px)
-                          </Label>
-                          <Input
-                            id="comp-padding-y"
-                            type="number"
-                            min={0}
-                            max={200}
-                            value={selectedComponent.styles.paddingY}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                paddingY: clampComponentSpacing(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-margin-x">
-                            Horizontal Margin (px)
-                          </Label>
-                          <Input
-                            id="comp-margin-x"
-                            type="number"
-                            min={0}
-                            max={200}
-                            value={selectedComponent.styles.marginX}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                marginX: clampComponentSpacing(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-margin-y">
-                            Vertical Margin (px)
-                          </Label>
-                          <Input
-                            id="comp-margin-y"
-                            type="number"
-                            min={0}
-                            max={200}
-                            value={selectedComponent.styles.marginY}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                marginY: clampComponentSpacing(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-background-color">
-                            Background Color
-                          </Label>
-                          <Button
-                            id="comp-background-color"
-                            type="button"
-                            variant="outline"
-                            className="w-full justify-between font-mono"
-                            onClick={() =>
-                              openColorPicker(
-                                {
-                                  scope: "component",
-                                  componentId: selectedComponent.id,
-                                  field: "backgroundColor",
-                                  styles: selectedComponent.styles,
-                                },
-                                selectedComponent.styles.backgroundColor,
-                              )
-                            }
-                          >
-                            <span>{selectedComponent.styles.backgroundColor}</span>
-                            <span
-                              className="h-4 w-4 rounded border border-border"
-                              style={{
-                                backgroundColor: normalizeHexColor(
-                                  selectedComponent.styles.backgroundColor,
-                                  "#000000",
-                                ),
-                              }}
-                            />
-                          </Button>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-border-color">Border Color</Label>
-                          <Button
-                            id="comp-border-color"
-                            type="button"
-                            variant="outline"
-                            className="w-full justify-between font-mono"
-                            onClick={() =>
-                              openColorPicker(
-                                {
-                                  scope: "component",
-                                  componentId: selectedComponent.id,
-                                  field: "borderColor",
-                                  styles: selectedComponent.styles,
-                                },
-                                selectedComponent.styles.borderColor,
-                              )
-                            }
-                          >
-                            <span>{selectedComponent.styles.borderColor}</span>
-                            <span
-                              className="h-4 w-4 rounded border border-border"
-                              style={{
-                                backgroundColor: normalizeHexColor(
-                                  selectedComponent.styles.borderColor,
-                                  "#000000",
-                                ),
-                              }}
-                            />
-                          </Button>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-border-radius">
-                            Border Radius
-                          </Label>
-                          <Input
-                            id="comp-border-radius"
-                            type="range"
-                            min={0}
-                            max={64}
-                            value={selectedComponent.styles.borderRadius}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                borderRadius: clampContainerBorderRadius(
-                                  e.target.value,
-                                ),
-                              })
-                            }
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {selectedComponent.styles.borderRadius}px
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="comp-border-width">
-                            Border Width (px)
-                          </Label>
-                          <Input
-                            id="comp-border-width"
-                            type="number"
-                            min={0}
-                            max={16}
-                            value={selectedComponent.styles.borderWidth}
-                            onChange={(e) =>
-                              updateComponentStyles(selectedComponent.id, {
-                                borderWidth: clampContainerBorderWidth(
-                                  e.target.value,
-                                ),
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-                    </Card>
-
-                    <Card className="p-4">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <h2 className="text-lg font-semibold font-mono">
-                          Component Preview
-                        </h2>
-                        {selectedComponent && (
+                    return (
+                      <Card className="p-4">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <h2 className="text-lg font-semibold font-mono">
+                            Component Items
+                          </h2>
                           <div className="flex items-center gap-2">
-                            <Dialog
-                              open={componentCodeDialogOpen}
-                              onOpenChange={setComponentCodeDialogOpen}
-                            >
+                            <Dialog>
                               <DialogTrigger asChild>
-                                <Button type="button" variant="outline">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  JSON
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                                <DialogHeader className="shrink-0">
+                                  <DialogTitle className="font-mono">
+                                    Component JSON
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                  {JSON.stringify(
+                                    getExplicitComponentJson(selectedComponent),
+                                    null,
+                                    2,
+                                  )}
+                                </pre>
+                              </DialogContent>
+                            </Dialog>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                >
                                   Code
                                 </Button>
                               </DialogTrigger>
                               <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
                                 <DialogHeader className="shrink-0">
                                   <DialogTitle className="font-mono">
-                                    {selectedComponent.label} JSX
+                                    Component React Code
                                   </DialogTitle>
                                 </DialogHeader>
                                 <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
@@ -5403,76 +6211,677 @@ function App() {
                                 </pre>
                               </DialogContent>
                             </Dialog>
-                            <Dialog
-                              open={componentJsonDialogOpen}
-                              onOpenChange={setComponentJsonDialogOpen}
-                            >
-                              <DialogTrigger asChild>
-                                <Button type="button" variant="outline">
-                                  JSON
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
-                                <DialogHeader className="shrink-0">
-                                  <DialogTitle className="font-mono">
-                                    {selectedComponent.label} JSON
-                                  </DialogTitle>
-                                </DialogHeader>
-                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
-                                  {JSON.stringify(selectedComponent, null, 2)}
-                                </pre>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        )}
-                      </div>
-                      {!selectedComponent ? (
-                        <p className="text-sm text-muted-foreground">
-                          No component selected for preview.
-                        </p>
-                      ) : (
-                        <div className="relative left-1/2 right-1/2 w-screen -translate-x-1/2 px-6">
-                          <div className="w-full rounded-lg border border-border bg-secondary p-3">
-                            <p className="mb-3 text-sm font-semibold">
-                              {selectedComponent.label}
-                            </p>
-                            <div
-                              className={`flex w-full flex-1 flex-row flex-wrap ${getFlexAlignItemsClass(selectedComponent.styles.alignItems)} ${getFlexJustifyClass(selectedComponent.styles.justifyContent)}`}
-                              style={{
-                                gap: `${selectedComponent.styles.gap}px`,
-                                paddingLeft: `${selectedComponent.styles.paddingX}px`,
-                                paddingRight: `${selectedComponent.styles.paddingX}px`,
-                                paddingTop: `${selectedComponent.styles.paddingY}px`,
-                                paddingBottom: `${selectedComponent.styles.paddingY}px`,
-                                marginLeft: `${selectedComponent.styles.marginX}px`,
-                                marginRight: `${selectedComponent.styles.marginX}px`,
-                                marginTop: `${selectedComponent.styles.marginY}px`,
-                                marginBottom: `${selectedComponent.styles.marginY}px`,
-                                backgroundColor: selectedComponent.styles.backgroundColor,
-                                borderColor: selectedComponent.styles.borderColor,
-                                borderRadius: `${selectedComponent.styles.borderRadius}px`,
-                                borderWidth: `${selectedComponent.styles.borderWidth}px`,
-                                borderStyle:
-                                  selectedComponent.styles.borderWidth > 0
-                                    ? "solid"
-                                    : "none",
-                              }}
-                            >
-                              {selectedComponent.elements.map((element) => (
-                                <div
-                                  key={element.instanceId}
-                                  className={`min-h-8 min-w-0 flex-1 ${element.elementTypeId === "element-vertical-container" ? "flex self-stretch" : ""}`}
-                                >
-                                  {renderComponentElementPreview(element)}
-                                </div>
-                              ))}
-                            </div>
                           </div>
                         </div>
-                      )}
-                    </Card>
-                  </div>
-                )}
+                        <div className="space-y-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="component-element-type">
+                                Element Type
+                              </Label>
+                              <Select
+                                value={selectedElementType}
+                                onValueChange={(value: ElementTypeId) =>
+                                  setNewComponentElementTypeId(value)
+                                }
+                              >
+                                <SelectTrigger id="component-element-type">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {topLevelElementOptions.map((option) => (
+                                    <SelectItem
+                                      key={option.id}
+                                      value={option.id}
+                                    >
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <Button
+                            onClick={() =>
+                              addComponentElement(
+                                selectedComponent.id,
+                                selectedElementType,
+                              )
+                            }
+                            className="w-full gap-2"
+                          >
+                            <Plus size={18} />
+                            Add Element
+                          </Button>
+
+                          {selectedComponent.elements.length > 0 && (
+                            <>
+                              <Separator />
+                              {renderComponentElementEditors(
+                                selectedComponent.id,
+                                selectedComponent.elements,
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })()}
+
+                  <Card className="p-4">
+                    <h2 className="text-lg font-semibold mb-4 font-mono">
+                      Component Styles
+                    </h2>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-direction">Orientation</Label>
+                        <Select
+                          value={selectedComponent.styles.direction}
+                          onValueChange={(value: ComponentDirection) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              direction: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger id="comp-direction">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="horizontal">
+                              Horizontal
+                            </SelectItem>
+                            <SelectItem value="vertical">Vertical</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-justify-content">
+                          Justify Content
+                        </Label>
+                        <Select
+                          value={selectedComponent.styles.justifyContent}
+                          onValueChange={(
+                            value: ComponentStyles["justifyContent"],
+                          ) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              justifyContent: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger id="comp-justify-content">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="start">Start</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                            <SelectItem value="end">End</SelectItem>
+                            <SelectItem value="space-between">
+                              Space Between
+                            </SelectItem>
+                            <SelectItem value="space-around">
+                              Space Around
+                            </SelectItem>
+                            <SelectItem value="space-evenly">
+                              Space Evenly
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-align-items">Align Items</Label>
+                        <Select
+                          value={selectedComponent.styles.alignItems}
+                          onValueChange={(
+                            value: ComponentStyles["alignItems"],
+                          ) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              alignItems: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger id="comp-align-items">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="start">Start</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                            <SelectItem value="end">End</SelectItem>
+                            <SelectItem value="stretch">Stretch</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-gap">Gap (px)</Label>
+                        <Input
+                          id="comp-gap"
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={selectedComponent.styles.gap}
+                          onChange={(e) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              gap: clampFlexGap(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
+                        <Label htmlFor="comp-overflow-scroll">
+                          Overflow Scroll
+                        </Label>
+                        <Switch
+                          id="comp-overflow-scroll"
+                          checked={selectedComponent.styles.overflowScroll}
+                          onCheckedChange={(checked) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              overflowScroll: checked,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-min-width">Min Width (px)</Label>
+                        <Input
+                          id="comp-min-width"
+                          type="number"
+                          min={0}
+                          max={4096}
+                          value={selectedComponent.styles.minWidth}
+                          onChange={(e) => {
+                            const parsed = parseStyleNumber(e.target.value);
+                            if (parsed === null) return;
+                            updateComponentStyles(selectedComponent.id, {
+                              minWidth: clampContainerDimension(parsed),
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-max-width">Max Width (px)</Label>
+                        <Input
+                          id="comp-max-width"
+                          type="number"
+                          min={0}
+                          max={4096}
+                          value={selectedComponent.styles.maxWidth}
+                          onChange={(e) => {
+                            const parsed = parseStyleNumber(e.target.value);
+                            if (parsed === null) return;
+                            updateComponentStyles(selectedComponent.id, {
+                              maxWidth: clampContainerDimension(parsed),
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-min-height">Min Height (px)</Label>
+                        <Input
+                          id="comp-min-height"
+                          type="number"
+                          min={0}
+                          max={4096}
+                          value={selectedComponent.styles.minHeight}
+                          onChange={(e) => {
+                            const parsed = parseStyleNumber(e.target.value);
+                            if (parsed === null) return;
+                            updateComponentStyles(selectedComponent.id, {
+                              minHeight: clampContainerDimension(parsed),
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-max-height">Max Height (px)</Label>
+                        <Input
+                          id="comp-max-height"
+                          type="number"
+                          min={0}
+                          max={4096}
+                          value={selectedComponent.styles.maxHeight}
+                          onChange={(e) => {
+                            const parsed = parseStyleNumber(e.target.value);
+                            if (parsed === null) return;
+                            updateComponentStyles(selectedComponent.id, {
+                              maxHeight: clampContainerDimension(parsed),
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-x">
+                          Horizontal Padding (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-x"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={getAxisInputValue(
+                            selectedComponent.styles.paddingLeft,
+                            selectedComponent.styles.paddingRight,
+                          )}
+                          onChange={(e) =>
+                            updateComponentPaddingAxis(
+                              selectedComponent.id,
+                              "x",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-y">
+                          Vertical Padding (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-y"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={getAxisInputValue(
+                            selectedComponent.styles.paddingTop,
+                            selectedComponent.styles.paddingBottom,
+                          )}
+                          onChange={(e) =>
+                            updateComponentPaddingAxis(
+                              selectedComponent.id,
+                              "y",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-x">
+                          Horizontal Margin (px)
+                        </Label>
+                        <Input
+                          id="comp-margin-x"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={getAxisInputValue(
+                            selectedComponent.styles.marginLeft,
+                            selectedComponent.styles.marginRight,
+                          )}
+                          onChange={(e) =>
+                            updateComponentMarginAxis(
+                              selectedComponent.id,
+                              "x",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-y">
+                          Vertical Margin (px)
+                        </Label>
+                        <Input
+                          id="comp-margin-y"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={getAxisInputValue(
+                            selectedComponent.styles.marginTop,
+                            selectedComponent.styles.marginBottom,
+                          )}
+                          onChange={(e) =>
+                            updateComponentMarginAxis(
+                              selectedComponent.id,
+                              "y",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-top">
+                          Padding Top (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-top"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.paddingTop}
+                          onChange={(e) =>
+                            updateComponentPaddingSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "top",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-bottom">
+                          Padding Bottom (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-bottom"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.paddingBottom}
+                          onChange={(e) =>
+                            updateComponentPaddingSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "bottom",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-left">
+                          Padding Left (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-left"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.paddingLeft}
+                          onChange={(e) =>
+                            updateComponentPaddingSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "left",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-padding-right">
+                          Padding Right (px)
+                        </Label>
+                        <Input
+                          id="comp-padding-right"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.paddingRight}
+                          onChange={(e) =>
+                            updateComponentPaddingSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "right",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-top">Margin Top (px)</Label>
+                        <Input
+                          id="comp-margin-top"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.marginTop}
+                          onChange={(e) =>
+                            updateComponentMarginSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "top",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-bottom">
+                          Margin Bottom (px)
+                        </Label>
+                        <Input
+                          id="comp-margin-bottom"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.marginBottom}
+                          onChange={(e) =>
+                            updateComponentMarginSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "bottom",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-left">
+                          Margin Left (px)
+                        </Label>
+                        <Input
+                          id="comp-margin-left"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.marginLeft}
+                          onChange={(e) =>
+                            updateComponentMarginSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "left",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-margin-right">
+                          Margin Right (px)
+                        </Label>
+                        <Input
+                          id="comp-margin-right"
+                          type="number"
+                          min={0}
+                          max={200}
+                          value={selectedComponent.styles.marginRight}
+                          onChange={(e) =>
+                            updateComponentMarginSide(
+                              selectedComponent.id,
+                              selectedComponent.styles,
+                              "right",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-background-color">
+                          Background Color
+                        </Label>
+                        <Button
+                          id="comp-background-color"
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between font-mono"
+                          onClick={() =>
+                            openColorPicker(
+                              {
+                                scope: "component",
+                                componentId: selectedComponent.id,
+                                field: "backgroundColor",
+                                styles: selectedComponent.styles,
+                              },
+                              selectedComponent.styles.backgroundColor,
+                            )
+                          }
+                        >
+                          <span>
+                            {selectedComponent.styles.backgroundColor}
+                          </span>
+                          <span
+                            className="h-4 w-4 rounded border border-border"
+                            style={{
+                              backgroundColor: normalizeHexColor(
+                                selectedComponent.styles.backgroundColor,
+                                "#000000",
+                              ),
+                            }}
+                          />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-border-color">Border Color</Label>
+                        <Button
+                          id="comp-border-color"
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between font-mono"
+                          onClick={() =>
+                            openColorPicker(
+                              {
+                                scope: "component",
+                                componentId: selectedComponent.id,
+                                field: "borderColor",
+                                styles: selectedComponent.styles,
+                              },
+                              selectedComponent.styles.borderColor,
+                            )
+                          }
+                        >
+                          <span>{selectedComponent.styles.borderColor}</span>
+                          <span
+                            className="h-4 w-4 rounded border border-border"
+                            style={{
+                              backgroundColor: normalizeHexColor(
+                                selectedComponent.styles.borderColor,
+                                "#000000",
+                              ),
+                            }}
+                          />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-border-radius">
+                          Border Radius
+                        </Label>
+                        <Input
+                          id="comp-border-radius"
+                          type="range"
+                          min={0}
+                          max={64}
+                          value={selectedComponent.styles.borderRadius}
+                          onChange={(e) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              borderRadius: clampContainerBorderRadius(
+                                e.target.value,
+                              ),
+                            })
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {selectedComponent.styles.borderRadius}px
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-border-width">
+                          Border Width (px)
+                        </Label>
+                        <Input
+                          id="comp-border-width"
+                          type="number"
+                          min={0}
+                          max={16}
+                          value={selectedComponent.styles.borderWidth}
+                          onChange={(e) =>
+                            updateComponentStyles(selectedComponent.id, {
+                              borderWidth: clampContainerBorderWidth(
+                                e.target.value,
+                              ),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="p-0 overflow-hidden">
+                    <div className="px-4 pt-4 pb-3 border-b border-border">
+                      <h2 className="text-lg font-semibold font-mono">
+                        Component Preview
+                      </h2>
+                    </div>
+                    {!selectedComponent ? (
+                      <p className="text-sm text-muted-foreground p-4">
+                        No component selected for preview.
+                      </p>
+                    ) : (
+                      (() => {
+                        const justifyClass = getEffectiveFlexJustifyClass(
+                          selectedComponent.styles.justifyContent,
+                          selectedComponent.elements.length,
+                        );
+                        const overflowStyle = getFlexOverflowStyle(
+                          selectedComponent.styles.direction,
+                          selectedComponent.styles.overflowScroll,
+                        );
+
+                        return (
+                          <div
+                            className={`flex w-full ${selectedComponent.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${selectedComponent.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(selectedComponent.styles.alignItems)} ${justifyClass}`}
+                            style={{
+                              gap: `${selectedComponent.styles.gap}px`,
+                              minWidth:
+                                selectedComponent.styles.minWidth > 0
+                                  ? `${selectedComponent.styles.minWidth}px`
+                                  : undefined,
+                              maxWidth:
+                                selectedComponent.styles.maxWidth > 0
+                                  ? `${selectedComponent.styles.maxWidth}px`
+                                  : undefined,
+                              minHeight:
+                                selectedComponent.styles.minHeight > 0
+                                  ? `${selectedComponent.styles.minHeight}px`
+                                  : undefined,
+                              maxHeight:
+                                selectedComponent.styles.maxHeight > 0
+                                  ? `${selectedComponent.styles.maxHeight}px`
+                                  : undefined,
+                              paddingLeft: `${selectedComponent.styles.paddingLeft}px`,
+                              paddingRight: `${selectedComponent.styles.paddingRight}px`,
+                              paddingTop: `${selectedComponent.styles.paddingTop}px`,
+                              paddingBottom: `${selectedComponent.styles.paddingBottom}px`,
+                              marginLeft: `${selectedComponent.styles.marginLeft}px`,
+                              marginRight: `${selectedComponent.styles.marginRight}px`,
+                              marginTop: `${selectedComponent.styles.marginTop}px`,
+                              marginBottom: `${selectedComponent.styles.marginBottom}px`,
+                              overflowX: overflowStyle.overflowX,
+                              overflowY: overflowStyle.overflowY,
+                              backgroundColor:
+                                selectedComponent.styles.backgroundColor,
+                              borderColor: selectedComponent.styles.borderColor,
+                              borderRadius: `${selectedComponent.styles.borderRadius}px`,
+                              borderWidth: `${selectedComponent.styles.borderWidth}px`,
+                              borderStyle:
+                                selectedComponent.styles.borderWidth > 0
+                                  ? "solid"
+                                  : "none",
+                            }}
+                          >
+                            {selectedComponent.elements.map((element) => (
+                              <div
+                                key={element.instanceId}
+                                className={`min-h-8 min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
+                              >
+                                {renderComponentElementPreview(element)}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </Card>
+                </div>
+              )}
             </div>
           )}
         </div>

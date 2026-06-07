@@ -30,9 +30,9 @@ const cloneElement = (element: PrebuiltElement): PrebuiltElement =>
   JSON.parse(JSON.stringify(element)) as PrebuiltElement;
 
 const cloneElements = (): PrebuiltElement[] =>
-  PREBUILT_ELEMENTS
-    .filter((element) => element.id !== "element-vertical-container")
-    .map((element) => cloneElement(element));
+  PREBUILT_ELEMENTS.filter(
+    (element) => element.id !== "element-vertical-container",
+  ).map((element) => cloneElement(element));
 
 const setValueAtPath = (
   source: PrebuiltElement,
@@ -83,7 +83,8 @@ const getFixedOptionsForField = (
     return null;
   }
 
-  if (fieldName === "containerWidth" || fieldName === "containerHeight") return null;
+  if (fieldName === "containerWidth" || fieldName === "containerHeight")
+    return null;
 
   return null;
 };
@@ -106,7 +107,12 @@ const getWidthMode = (value: unknown): WidthMode => {
 };
 
 const getWidthNumber = (value: unknown, mode: WidthMode): number => {
-  const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().toLowerCase() : "";
+  const raw =
+    typeof value === "number"
+      ? String(value)
+      : typeof value === "string"
+        ? value.trim().toLowerCase()
+        : "";
   const parsed = Number(raw.replace(/(px|vw)$/g, ""));
 
   if (!Number.isFinite(parsed)) {
@@ -120,20 +126,40 @@ const getWidthNumber = (value: unknown, mode: WidthMode): number => {
 const getImageSizingHelpText = (sizing: string): ReactNode => {
   if (sizing === "cover") {
     return (
-      <p style={{ marginTop: "6px", fontSize: "12px", color: "#71717a", lineHeight: 1.4 }}>
-        object-fit: cover. Gaps are filled completely. Cropping: Yes (excess is cut off). Distortion: None (retains ratio). Best for hero banners, profile cards, and background grids.
+      <p
+        style={{
+          marginTop: "6px",
+          fontSize: "12px",
+          color: "#71717a",
+          lineHeight: 1.4,
+        }}
+      >
+        object-fit: cover. Gaps are filled completely. Cropping: Yes (excess is
+        cut off). Distortion: None (retains ratio). Best for hero banners,
+        profile cards, and background grids.
       </p>
     );
   }
 
   return (
-    <p style={{ marginTop: "6px", fontSize: "12px", color: "#71717a", lineHeight: 1.4 }}>
-      object-fit: contain. Entire image is visible. Cropping: None. Distortion: None (retains ratio). Best for logos, product photos, and e-commerce listings.
+    <p
+      style={{
+        marginTop: "6px",
+        fontSize: "12px",
+        color: "#71717a",
+        lineHeight: 1.4,
+      }}
+    >
+      object-fit: contain. Entire image is visible. Cropping: None. Distortion:
+      None (retains ratio). Best for logos, product photos, and e-commerce
+      listings.
     </p>
   );
 };
 
-const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknown> => {
+const getExplicitElementJson = (
+  element: PrebuiltElement,
+): Record<string, unknown> => {
   if (element.id === "element-text") {
     return {
       id: element.id,
@@ -146,8 +172,12 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
           element.styles?.alignment === "right"
             ? element.styles.alignment
             : "center",
-        size: typeof element.styles?.size === "number" ? element.styles.size : 3,
-        fontWeight: typeof element.styles?.fontWeight === "number" ? element.styles.fontWeight : 400,
+        size:
+          typeof element.styles?.size === "number" ? element.styles.size : 3,
+        fontWeight:
+          typeof element.styles?.fontWeight === "number"
+            ? element.styles.fontWeight
+            : 400,
         isBold: Boolean(element.styles?.isBold),
         isItalic: Boolean(element.styles?.isItalic),
         isLabel: Boolean(element.styles?.isLabel),
@@ -175,12 +205,16 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
     return {
       id: element.id,
       label: element.label,
-      buttonLabel: typeof element.buttonLabel === "string" ? element.buttonLabel : "Button",
+      buttonLabel:
+        typeof element.buttonLabel === "string"
+          ? element.buttonLabel
+          : "Button",
       highlightOnHover: element.highlightOnHover !== false,
       isGhost: Boolean(element.isGhost),
       styles: {
         width:
-          typeof element.styles?.width === "string" || typeof element.styles?.width === "number"
+          typeof element.styles?.width === "string" ||
+          typeof element.styles?.width === "number"
             ? element.styles.width
             : "full",
         alignment:
@@ -203,7 +237,8 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
           : ["Value One", "Value Two"],
       showDefaultLabel: element.showDefaultLabel !== false,
       defaultLabel:
-        typeof element.defaultLabel === "string" && element.defaultLabel.trim().length > 0
+        typeof element.defaultLabel === "string" &&
+        element.defaultLabel.trim().length > 0
           ? element.defaultLabel
           : "Please Select",
     };
@@ -217,7 +252,8 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
       value: typeof element.value === "string" ? element.value : "",
       styles: {
         width:
-          typeof element.styles?.width === "string" || typeof element.styles?.width === "number"
+          typeof element.styles?.width === "string" ||
+          typeof element.styles?.width === "number"
             ? element.styles.width
             : "full",
       },
@@ -228,7 +264,10 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
     return {
       id: element.id,
       label: element.label,
-      value: typeof element.value === "string" && element.value.trim().length > 0 ? element.value : "Home",
+      value:
+        typeof element.value === "string" && element.value.trim().length > 0
+          ? element.value
+          : "Home",
       styles: {
         alignment:
           element.styles?.alignment === "left" ||
@@ -236,7 +275,8 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
           element.styles?.alignment === "right"
             ? element.styles.alignment
             : "center",
-        size: typeof element.styles?.size === "number" ? element.styles.size : 24,
+        size:
+          typeof element.styles?.size === "number" ? element.styles.size : 24,
       },
     };
   }
@@ -275,7 +315,9 @@ const getExplicitElementJson = (element: PrebuiltElement): Record<string, unknow
 };
 
 export default function Elements() {
-  const [elements, setElements] = useState<PrebuiltElement[]>(() => cloneElements());
+  const [elements, setElements] = useState<PrebuiltElement[]>(() =>
+    cloneElements(),
+  );
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const selectedElement = elements[selectedIndex] ?? null;
@@ -290,13 +332,12 @@ export default function Elements() {
     return JSON.stringify(getExplicitElementJson(selectedElement), null, 2);
   }, [selectedElement]);
 
-  const updateSelectedPath = (
-    path: Array<string | number>,
-    value: unknown,
-  ) => {
+  const updateSelectedPath = (path: Array<string | number>, value: unknown) => {
     setElements((current) =>
       current.map((element, index) =>
-        index === selectedIndex ? setValueAtPath(element, path, value) : element,
+        index === selectedIndex
+          ? setValueAtPath(element, path, value)
+          : element,
       ),
     );
   };
@@ -308,15 +349,20 @@ export default function Elements() {
   ): ReactNode => {
     const fieldKey = path.join(".");
     const fieldName = String(path[path.length - 1] ?? "");
-    const isWidthDimensionField = fieldName === "width" || fieldName === "containerWidth";
-    const isHeightDimensionField = fieldName === "height" || fieldName === "containerHeight";
+    const isWidthDimensionField =
+      fieldName === "width" || fieldName === "containerWidth";
+    const isHeightDimensionField =
+      fieldName === "height" || fieldName === "containerHeight";
     const isDimensionField = isWidthDimensionField || isHeightDimensionField;
 
     if (selectedElement?.id === "element-icon" && fieldName === "value") {
       return null;
     }
 
-    if (selectedElement?.id === "element-text-input" && fieldName === "alignment") {
+    if (
+      selectedElement?.id === "element-text-input" &&
+      fieldName === "alignment"
+    ) {
       return null;
     }
 
@@ -360,8 +406,8 @@ export default function Elements() {
           }}
         >
           <p style={{ fontWeight: 600, marginBottom: "8px" }}>{label}</p>
-          {Object.entries(fieldValue as Record<string, unknown>).map(([key, value]) =>
-            renderEditorField(value, [...path, key], key),
+          {Object.entries(fieldValue as Record<string, unknown>).map(
+            ([key, value]) => renderEditorField(value, [...path, key], key),
           )}
         </div>
       );
@@ -370,7 +416,14 @@ export default function Elements() {
     if (typeof fieldValue === "boolean") {
       return (
         <div key={fieldKey} style={{ marginBottom: "12px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+            }}
+          >
             <Label>{label}</Label>
             <Switch
               checked={fieldValue}
@@ -389,7 +442,9 @@ export default function Elements() {
           <Label>{label}</Label>
           <Select
             value={String(fieldValue)}
-            onValueChange={(nextValue) => updateSelectedPath(path, Number(nextValue))}
+            onValueChange={(nextValue) =>
+              updateSelectedPath(path, Number(nextValue))
+            }
           >
             <SelectTrigger>
               <SelectValue />
@@ -423,7 +478,10 @@ export default function Elements() {
                 }
 
                 if (nextMode === "vw") {
-                  updateSelectedPath(path, `${Math.max(1, Math.min(100, amount))}vw`);
+                  updateSelectedPath(
+                    path,
+                    `${Math.max(1, Math.min(100, amount))}vw`,
+                  );
                   return;
                 }
 
@@ -452,7 +510,10 @@ export default function Elements() {
                   if (!Number.isFinite(parsed)) return;
 
                   if (mode === "vw") {
-                    const clamped = Math.max(1, Math.min(100, Math.round(parsed)));
+                    const clamped = Math.max(
+                      1,
+                      Math.min(100, Math.round(parsed)),
+                    );
                     updateSelectedPath(path, `${clamped}vw`);
                     return;
                   }
@@ -477,7 +538,9 @@ export default function Elements() {
               value={fieldValue}
               onChange={(event) => {
                 const parsed = Number(event.target.value);
-                const next = Number.isFinite(parsed) ? Math.max(8, Math.min(96, parsed)) : 24;
+                const next = Number.isFinite(parsed)
+                  ? Math.max(8, Math.min(96, parsed))
+                  : 24;
                 updateSelectedPath(path, next);
               }}
             />
@@ -515,7 +578,10 @@ export default function Elements() {
               }
 
               if (nextMode === "vw") {
-                updateSelectedPath(path, `${Math.max(1, Math.min(100, amount))}vw`);
+                updateSelectedPath(
+                  path,
+                  `${Math.max(1, Math.min(100, amount))}vw`,
+                );
                 return;
               }
 
@@ -544,7 +610,10 @@ export default function Elements() {
                 if (!Number.isFinite(parsed)) return;
 
                 if (mode === "vw") {
-                  const clamped = Math.max(1, Math.min(100, Math.round(parsed)));
+                  const clamped = Math.max(
+                    1,
+                    Math.min(100, Math.round(parsed)),
+                  );
                   updateSelectedPath(path, `${clamped}vw`);
                   return;
                 }
@@ -578,7 +647,9 @@ export default function Elements() {
               ))}
             </SelectContent>
           </Select>
-          {selectedElement?.id === "element-image" && fieldName === "sizing" && getImageSizingHelpText(fieldValue)}
+          {selectedElement?.id === "element-image" &&
+            fieldName === "sizing" &&
+            getImageSizingHelpText(fieldValue)}
         </div>
       );
     }
@@ -587,7 +658,11 @@ export default function Elements() {
       <div key={fieldKey} style={{ marginBottom: "12px" }}>
         <Label>{label}</Label>
         <Input
-          value={typeof fieldValue === "string" ? fieldValue : String(fieldValue ?? "")}
+          value={
+            typeof fieldValue === "string"
+              ? fieldValue
+              : String(fieldValue ?? "")
+          }
           onChange={(event) => updateSelectedPath(path, event.target.value)}
         />
       </div>
@@ -598,7 +673,14 @@ export default function Elements() {
     <div style={{ padding: "16px" }}>
       <h1>Elements</h1>
 
-      <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginBottom: "12px",
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+        }}
+      >
         {elements.map((element, index) => (
           <Button
             key={`${element.id}-${index}`}
@@ -618,7 +700,9 @@ export default function Elements() {
           <div style={{ marginBottom: "12px", display: "flex", gap: "8px" }}>
             <Dialog>
               <DialogTrigger asChild>
-                <Button type="button" variant="outline">JSON</Button>
+                <Button type="button" variant="outline">
+                  JSON
+                </Button>
               </DialogTrigger>
               <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
                 <DialogHeader>
@@ -634,7 +718,9 @@ export default function Elements() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button type="button" variant="outline">Code</Button>
+                <Button type="button" variant="outline">
+                  Code
+                </Button>
               </DialogTrigger>
               <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
                 <DialogHeader>
@@ -660,7 +746,9 @@ export default function Elements() {
               padding: "12px",
             }}
           >
-            <p style={{ fontWeight: 600, marginBottom: "8px" }}>Edit Element Properties</p>
+            <p style={{ fontWeight: 600, marginBottom: "8px" }}>
+              Edit Element Properties
+            </p>
             {Object.entries(selectedElement).map(([key, value]) =>
               renderEditorField(value, [key], key),
             )}
