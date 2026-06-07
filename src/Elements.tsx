@@ -181,6 +181,14 @@ const getExplicitElementJson = (
         isBold: Boolean(element.styles?.isBold),
         isItalic: Boolean(element.styles?.isItalic),
         isLabel: Boolean(element.styles?.isLabel),
+        textColor:
+          typeof element.styles?.textColor === "string"
+            ? element.styles.textColor
+            : "$text",
+        labelColor:
+          typeof element.styles?.labelColor === "string"
+            ? element.styles.labelColor
+            : "$textHint",
       },
     };
   }
@@ -197,6 +205,14 @@ const getExplicitElementJson = (
           element.styles?.position === "right"
             ? element.styles.position
             : "center",
+        activeColor:
+          typeof element.styles?.activeColor === "string"
+            ? element.styles.activeColor
+            : "$primary",
+        inactiveColor:
+          typeof element.styles?.inactiveColor === "string"
+            ? element.styles.inactiveColor
+            : "$border",
       },
     };
   }
@@ -223,6 +239,18 @@ const getExplicitElementJson = (
           element.styles?.alignment === "right"
             ? element.styles.alignment
             : "center",
+        textColor:
+          typeof element.styles?.textColor === "string"
+            ? element.styles.textColor
+            : "$text",
+        backgroundColor:
+          typeof element.styles?.backgroundColor === "string"
+            ? element.styles.backgroundColor
+            : "$button",
+        highlightColor:
+          typeof element.styles?.highlightColor === "string"
+            ? element.styles.highlightColor
+            : "$highlight",
       },
     };
   }
@@ -241,6 +269,24 @@ const getExplicitElementJson = (
         element.defaultLabel.trim().length > 0
           ? element.defaultLabel
           : "Please Select",
+      styles: {
+        textColor:
+          typeof element.styles?.textColor === "string"
+            ? element.styles.textColor
+            : "$text",
+        backgroundColor:
+          typeof element.styles?.backgroundColor === "string"
+            ? element.styles.backgroundColor
+            : "$secondary",
+        highlightColor:
+          typeof element.styles?.highlightColor === "string"
+            ? element.styles.highlightColor
+            : "$highlight",
+        borderColor:
+          typeof element.styles?.borderColor === "string"
+            ? element.styles.borderColor
+            : "$border",
+      },
     };
   }
 
@@ -256,6 +302,18 @@ const getExplicitElementJson = (
           typeof element.styles?.width === "number"
             ? element.styles.width
             : "full",
+        textColor:
+          typeof element.styles?.textColor === "string"
+            ? element.styles.textColor
+            : "$text",
+        borderColor:
+          typeof element.styles?.borderColor === "string"
+            ? element.styles.borderColor
+            : "$border",
+        backgroundColor:
+          typeof element.styles?.backgroundColor === "string"
+            ? element.styles.backgroundColor
+            : "$secondary",
       },
     };
   }
@@ -277,6 +335,22 @@ const getExplicitElementJson = (
             : "center",
         size:
           typeof element.styles?.size === "number" ? element.styles.size : 24,
+        color:
+          typeof element.styles?.color === "string"
+            ? element.styles.color
+            : "$text",
+        borderWidth:
+          typeof element.styles?.borderWidth === "number"
+            ? element.styles.borderWidth
+            : 0,
+        borderColor:
+          typeof element.styles?.borderColor === "string"
+            ? element.styles.borderColor
+            : "$border",
+        borderRadius:
+          typeof element.styles?.borderRadius === "number"
+            ? element.styles.borderRadius
+            : 8,
       },
     };
   }
@@ -307,6 +381,26 @@ const getExplicitElementJson = (
           typeof element.styles?.containerHeight === "number"
             ? element.styles.containerHeight
             : "auto",
+        backgroundColor:
+          typeof element.styles?.backgroundColor === "string"
+            ? element.styles.backgroundColor
+            : "$secondary",
+        borderWidth:
+          typeof element.styles?.borderWidth === "number"
+            ? element.styles.borderWidth
+            : 0,
+        borderColor:
+          typeof element.styles?.borderColor === "string"
+            ? element.styles.borderColor
+            : "$border",
+        borderRadius:
+          typeof element.styles?.borderRadius === "number"
+            ? element.styles.borderRadius
+            : 8,
+        padding:
+          typeof element.styles?.padding === "number"
+            ? element.styles.padding
+            : 0,
       },
     };
   }

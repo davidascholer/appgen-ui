@@ -38,6 +38,7 @@ import {
   Box,
   ArrowUp,
   ArrowDown,
+  Palette,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { motion } from "framer-motion";
@@ -154,7 +155,8 @@ interface ExportConfig {
   appName: string;
   navigation: AppConfig["navigation"];
   pages: ExportedCustomPage[];
-  components: AppComponent[];
+  components: Record<string, unknown>[];
+  colorTheme: ColorTheme;
 }
 
 interface ExportPrebuiltConfig {
@@ -176,6 +178,7 @@ type ElementTypeId =
 
 interface BaseComponentElement {
   instanceId: string;
+  flex?: number | null;
 }
 
 interface TextElementStyles {
@@ -357,6 +360,11 @@ type ColorEditTarget =
       elementId: string;
       field: ContainerColorField;
       styles: ContainerElementStyles;
+    }
+  | {
+      scope: "theme";
+      variable: ThemeVariableKey;
+      mode: ThemePreviewMode;
     };
 
 interface PrebuiltElementDef {
@@ -386,6 +394,13 @@ interface PrebuiltElementDef {
     containerWidth?: ElementDimension;
     containerHeight?: ElementDimension;
     gap?: number;
+    textColor?: string;
+    color?: string;
+    labelColor?: string;
+    activeColor?: string;
+    inactiveColor?: string;
+    highlightColor?: string;
+    padding?: number;
   };
   textHint?: string;
   sizing?: "contain" | "cover";
@@ -396,7 +411,85 @@ interface PrebuiltElementDef {
 }
 
 type DrawerState = "closed" | "icons-only" | "open";
-type ActiveTab = "navigation" | "pages" | "components";
+type ActiveTab = "navigation" | "pages" | "components" | "theme";
+type ThemeVariableKey =
+  | "primary"
+  | "secondary"
+  | "tertiary"
+  | "highlight"
+  | "text"
+  | "button"
+  | "textHint"
+  | "background"
+  | "border";
+
+interface ColorThemePair {
+  light: string;
+  dark: string;
+}
+
+type ColorTheme = Record<ThemeVariableKey, ColorThemePair>;
+
+type ThemePreviewMode = "light" | "dark";
+
+const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = {
+  primary: "Primary",
+  secondary: "Secondary",
+  tertiary: "Tertiary",
+  highlight: "Highlight",
+  background: "Background",
+  border: "Border",
+  text: "Text",
+  button: "Button",
+  textHint: "Text Hint",
+};
+
+const THEME_VARIABLE_KEYS: ThemeVariableKey[] = [
+  "primary",
+  "secondary",
+  "tertiary",
+  "highlight",
+  "background",
+  "border",
+  "text",
+  "button",
+  "textHint",
+];
+
+const DEFAULT_COLOR_THEME: ColorTheme = {
+  primary: { light: "#6366f1", dark: "#818cf8" },
+  secondary: { light: "#64748b", dark: "#94a3b8" },
+  tertiary: { light: "#a855f7", dark: "#c084fc" },
+  highlight: { light: "#f59e0b", dark: "#fbbf24" },
+  background: { light: "#ffffff", dark: "#0f172a" },
+  border: { light: "#e2e8f0", dark: "#334155" },
+  text: { light: "#111827", dark: "#e2e8f0" },
+  button: { light: "#2563eb", dark: "#3b82f6" },
+  textHint: { light: "#71717a", dark: "#94a3b8" },
+};
+
+const normalizeColorTheme = (raw: unknown): ColorTheme => {
+  const parsed =
+    raw && typeof raw === "object"
+      ? (raw as Partial<Record<ThemeVariableKey, Partial<ColorThemePair>>>)
+      : {};
+
+  return THEME_VARIABLE_KEYS.reduce((acc, key) => {
+    const candidate = parsed[key];
+    const fallback = DEFAULT_COLOR_THEME[key];
+    acc[key] = {
+      light:
+        candidate && typeof candidate.light === "string"
+          ? candidate.light
+          : fallback.light,
+      dark:
+        candidate && typeof candidate.dark === "string"
+          ? candidate.dark
+          : fallback.dark,
+    };
+    return acc;
+  }, {} as ColorTheme);
+};
 type IconEntryMode = "default" | "manual";
 type DrawerVariant = "short" | "long" | "all";
 type BottomVariant = "short" | "long";
@@ -488,13 +581,19 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
       isBold: false,
       isItalic: false,
       isLabel: false,
+      textColor: "$text",
+      labelColor: "$textHint",
     },
   },
   {
     id: "element-toggle",
     label: "Toggle Button",
     value: false,
-    styles: { position: "center" },
+    styles: {
+      position: "center",
+      activeColor: "$primary",
+      inactiveColor: "$border",
+    },
   },
   {
     id: "element-button",
@@ -502,7 +601,13 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
     buttonLabel: "Button",
     highlightOnHover: true,
     isGhost: false,
-    styles: { width: "full", alignment: "center" },
+    styles: {
+      width: "full",
+      alignment: "center",
+      textColor: "$text",
+      backgroundColor: "$button",
+      highlightColor: "$highlight",
+    },
   },
   {
     id: "element-select",
@@ -510,19 +615,37 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
     values: ["Value One", "Value Two"],
     showDefaultLabel: true,
     defaultLabel: "Please Select",
+    styles: {
+      textColor: "$text",
+      backgroundColor: "$secondary",
+      highlightColor: "$highlight",
+      borderColor: "$border",
+    },
   },
   {
     id: "element-text-input",
     label: "Text Input",
     textHint: "",
     value: "",
-    styles: { width: "full" },
+    styles: {
+      width: "full",
+      textColor: "$text",
+      borderColor: "$border",
+      backgroundColor: "$secondary",
+    },
   },
   {
     id: "element-icon",
     label: "Icon",
     value: "Home",
-    styles: { alignment: "center", size: 24 },
+    styles: {
+      alignment: "center",
+      size: 24,
+      color: "#111827",
+      borderWidth: 0,
+      borderColor: "#d1d5db",
+      borderRadius: 8,
+    },
   },
   {
     id: "element-image",
@@ -532,6 +655,11 @@ export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
       sizing: "contain",
       containerWidth: "auto",
       containerHeight: "auto",
+      backgroundColor: "#ffffff",
+      borderWidth: 0,
+      borderColor: "#d1d5db",
+      borderRadius: 8,
+      padding: 0,
     },
     src: "https://placehold.co/600x400",
   },
@@ -762,6 +890,25 @@ const clampContainerDimension = (value: unknown): number => {
   return Math.max(0, Math.min(4096, Math.round(parsed)));
 };
 
+const normalizeElementFlex = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed.length === 0 || trimmed === "none") return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(10, Math.round(parsed)));
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(10, Math.round(value)));
+  }
+
+  return null;
+};
+
+const DEFAULT_CONTAINER_MAX_DIMENSION = 4096;
+
 const normalizeAxisValue = (
   rawAxis: unknown,
   rawStart: unknown,
@@ -867,6 +1014,45 @@ const rgbaToHex = (
     : `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
 
+const isThemeRef = (color: string): boolean =>
+  color.startsWith("$") &&
+  THEME_VARIABLE_KEYS.includes(color.slice(1) as ThemeVariableKey);
+
+const normalizeThemeAwareColor = (value: unknown, fallback: string): string => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (isThemeRef(trimmed)) return trimmed;
+  return normalizeHexColor(trimmed, fallback);
+};
+
+export const resolveThemeColor = (
+  color: string,
+  theme: ColorTheme,
+  mode: ThemePreviewMode,
+): string => {
+  if (!isThemeRef(color)) return color;
+  const key = color.slice(1) as ThemeVariableKey;
+  return theme[key][mode];
+};
+
+const suggestDarkFromLight = (lightHex: string): string => {
+  const rgba = hexToRgba(lightHex);
+  if (!rgba) return "#1a1a2e";
+  const r = Math.min(255, Math.round(rgba.r * 0.35 + 10));
+  const g = Math.min(255, Math.round(rgba.g * 0.35 + 10));
+  const b = Math.min(255, Math.round(rgba.b * 0.35 + 20));
+  return rgbaToHex(r, g, b, rgba.a, rgba.a < 255);
+};
+
+const suggestLightFromDark = (darkHex: string): string => {
+  const rgba = hexToRgba(darkHex);
+  if (!rgba) return "#f0f4ff";
+  const r = Math.min(255, Math.round(rgba.r + (255 - rgba.r) * 0.72));
+  const g = Math.min(255, Math.round(rgba.g + (255 - rgba.g) * 0.72));
+  const b = Math.min(255, Math.round(rgba.b + (255 - rgba.b) * 0.72));
+  return rgbaToHex(r, g, b, rgba.a, rgba.a < 255);
+};
+
 const normalizeFlexJustifyContent = (
   value: unknown,
   fallback: FlexJustifyContent,
@@ -908,9 +1094,9 @@ const getDefaultComponentStyles = (): ComponentStyles => ({
   overflowScroll: false,
   gap: 0,
   minWidth: 0,
-  maxWidth: 0,
+  maxWidth: DEFAULT_CONTAINER_MAX_DIMENSION,
   minHeight: 0,
-  maxHeight: 0,
+  maxHeight: DEFAULT_CONTAINER_MAX_DIMENSION,
   paddingX: 0,
   paddingY: 0,
   marginX: 0,
@@ -923,8 +1109,8 @@ const getDefaultComponentStyles = (): ComponentStyles => ({
   marginBottom: 0,
   marginLeft: 0,
   marginRight: 0,
-  backgroundColor: "#ffffff00",
-  borderColor: "#d4d4d8",
+  backgroundColor: "$background",
+  borderColor: "$border",
   borderRadius: 8,
   borderWidth: 0,
 });
@@ -947,9 +1133,9 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
     overflowScroll: false,
     gap: clampFlexGap(styles?.gap),
     minWidth: 0,
-    maxWidth: 0,
+    maxWidth: DEFAULT_CONTAINER_MAX_DIMENSION,
     minHeight: 0,
-    maxHeight: 0,
+    maxHeight: DEFAULT_CONTAINER_MAX_DIMENSION,
     paddingTop: 0,
     paddingBottom: 0,
     paddingLeft: 0,
@@ -1006,6 +1192,7 @@ export const normalizeElementFromRaw = (
     typeof entry.instanceId === "string" && entry.instanceId.trim().length > 0
       ? entry.instanceId
       : crypto.randomUUID();
+  const elementFlex = normalizeElementFlex(entry.flex);
 
   switch (elementTypeId as ElementTypeId) {
     case "element-text": {
@@ -1017,6 +1204,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-text",
         value: typeof entry.value === "string" ? entry.value : "",
         styles: {
@@ -1054,6 +1242,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-toggle",
         defaultValue:
           typeof entry.defaultValue === "boolean"
@@ -1091,6 +1280,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-button",
         label:
           typeof entry.label === "string" && entry.label.trim().length > 0
@@ -1114,6 +1304,7 @@ export const normalizeElementFromRaw = (
     case "element-select":
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-select",
         values: normalizeSelectValues(entry.values),
       };
@@ -1126,6 +1317,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-text-input",
         textHint:
           typeof entry.textHint === "string" && entry.textHint.trim().length > 0
@@ -1157,6 +1349,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-icon",
         value:
           typeof entry.value === "string" && entry.value.trim().length > 0
@@ -1178,6 +1371,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId: "element-image",
         styles: {
           sizing:
@@ -1210,6 +1404,7 @@ export const normalizeElementFromRaw = (
 
       return {
         instanceId,
+        flex: elementFlex,
         elementTypeId,
         elements: Array.isArray(entry.elements)
           ? entry.elements
@@ -1391,11 +1586,11 @@ export const normalizeComponentFromRaw = (
       marginBottom: marginYValues.end,
       marginLeft: marginXValues.start,
       marginRight: marginXValues.end,
-      backgroundColor: normalizeHexColor(
+      backgroundColor: normalizeThemeAwareColor(
         rawStyles.backgroundColor,
         defaultStyles.backgroundColor,
       ),
-      borderColor: normalizeHexColor(
+      borderColor: normalizeThemeAwareColor(
         rawStyles.borderColor,
         defaultStyles.borderColor,
       ),
@@ -2381,11 +2576,11 @@ const normalizeConfig = (input: unknown): AppConfig => {
             marginBottom: marginYValues.end,
             marginLeft: marginXValues.start,
             marginRight: marginXValues.end,
-            backgroundColor: normalizeHexColor(
+            backgroundColor: normalizeThemeAwareColor(
               rawStyles.backgroundColor,
               defaultStyles.backgroundColor,
             ),
-            borderColor: normalizeHexColor(
+            borderColor: normalizeThemeAwareColor(
               rawStyles.borderColor,
               defaultStyles.borderColor,
             ),
@@ -2459,6 +2654,17 @@ function App() {
   const [colorDraftBlue, setColorDraftBlue] = useState(0);
   const [colorDraftAlpha, setColorDraftAlpha] = useState(255);
   const [activeTab, setActiveTab] = useState<ActiveTab>("navigation");
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
+    const persisted = localStorage.getItem("app-color-theme");
+    if (!persisted) return DEFAULT_COLOR_THEME;
+    try {
+      return normalizeColorTheme(JSON.parse(persisted));
+    } catch {
+      return DEFAULT_COLOR_THEME;
+    }
+  });
+  const [themePreviewMode, setThemePreviewMode] =
+    useState<ThemePreviewMode>("light");
   const [selectedPageId, setSelectedPageId] = useState("settings");
   const [showAddCustomPage, setShowAddCustomPage] = useState(false);
   const [newCustomPageTitle, setNewCustomPageTitle] = useState("");
@@ -2482,6 +2688,9 @@ function App() {
   );
   const [showAddCustomComponent, setShowAddCustomComponent] = useState(false);
   const [newCustomComponentLabel, setNewCustomComponentLabel] = useState("");
+  const [newCustomComponentMode, setNewCustomComponentMode] = useState<
+    "template" | "blank"
+  >("template");
   const [showImportPrebuilt, setShowImportPrebuilt] = useState(false);
   const [newComponentElementTypeId, setNewComponentElementTypeId] =
     useState<ElementTypeId>("element-text");
@@ -2492,10 +2701,21 @@ function App() {
     useState<Record<string, string>>({});
   const [activeElementEditorId, setActiveElementEditorId] =
     useState<string>("");
+  const [componentMaxWidthInput, setComponentMaxWidthInput] =
+    useState<string>("none");
+  const [componentMaxHeightInput, setComponentMaxHeightInput] =
+    useState<string>("none");
 
   useEffect(() => {
     localStorage.setItem("app-config", JSON.stringify(config));
   }, [config]);
+
+  useEffect(() => {
+    localStorage.setItem("app-color-theme", JSON.stringify(colorTheme));
+  }, [colorTheme]);
+
+  const resolveColor = (color: string): string =>
+    resolveThemeColor(color, colorTheme, themePreviewMode);
 
   useEffect(() => {
     setAppNameDraft(config.appName);
@@ -2552,7 +2772,12 @@ function App() {
     () => createDefaultComponent("Main Component"),
     [],
   );
-  const selectedComponent = customComponents[0] ?? fallbackComponent;
+  const selectedComponent =
+    customComponents.find(
+      (component) => component.id === selectedComponentId,
+    ) ??
+    customComponents[0] ??
+    null;
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
     components: safeConfig.components.map((component) => ({
       id: component.id,
@@ -2572,18 +2797,6 @@ function App() {
     elements: PREBUILT_ELEMENTS,
   };
 
-  const exportConfig: ExportConfig = {
-    id: safeConfig.id,
-    appName: safeConfig.appName,
-    navigation: safeConfig.navigation,
-    pages: safePages
-      .filter((page): page is CustomPage => page.kind === "custom")
-      .map((page) => ({
-        id: page.id,
-        title: page.title,
-      })),
-    components: selectedComponent ? [selectedComponent] : [],
-  };
   const getComponentTypeId = (type: SettingComponentType) =>
     safeConfig.components.find((component) => component.type === type)?.id ??
     DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)!.id;
@@ -2619,20 +2832,42 @@ function App() {
   }, [selectedPageId, pageTitleOptions]);
 
   useEffect(() => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-      const currentComponents = Array.isArray(base.customComponents)
-        ? base.customComponents
-        : [];
+    if (customComponents.length === 0) {
+      setSelectedComponentId(null);
+      return;
+    }
 
-      if (currentComponents.length === 1) return base;
+    const hasSelected = customComponents.some(
+      (component) => component.id === selectedComponentId,
+    );
 
-      return {
-        ...base,
-        customComponents: [currentComponents[0] ?? fallbackComponent],
-      };
-    });
-  }, [fallbackComponent]);
+    if (!hasSelected) {
+      setSelectedComponentId(customComponents[0].id);
+    }
+  }, [customComponents, selectedComponentId]);
+
+  useEffect(() => {
+    if (!selectedComponent) {
+      setComponentMaxWidthInput("none");
+      setComponentMaxHeightInput("none");
+      return;
+    }
+
+    setComponentMaxWidthInput(
+      selectedComponent.styles.maxWidth === 0
+        ? "none"
+        : String(selectedComponent.styles.maxWidth),
+    );
+    setComponentMaxHeightInput(
+      selectedComponent.styles.maxHeight === 0
+        ? "none"
+        : String(selectedComponent.styles.maxHeight),
+    );
+  }, [
+    selectedComponent?.id,
+    selectedComponent?.styles.maxWidth,
+    selectedComponent?.styles.maxHeight,
+  ]);
 
   const updateCustomComponents = (
     transform: (components: AppComponent[]) => AppComponent[],
@@ -2642,11 +2877,10 @@ function App() {
       const existing = Array.isArray(base.customComponents)
         ? base.customComponents
         : [];
-      const seed = existing[0] ?? fallbackComponent;
-      const transformed = transform([seed]);
+      const transformed = transform(existing);
       return {
         ...base,
-        customComponents: [transformed[0] ?? seed],
+        customComponents: transformed,
       };
     });
   };
@@ -2657,11 +2891,19 @@ function App() {
       return;
     }
 
-    const newComponent = createDefaultComponent(newCustomComponentLabel.trim());
+    const label = newCustomComponentLabel.trim();
+    const newComponent =
+      newCustomComponentMode === "blank"
+        ? {
+            ...createDefaultComponent(label),
+            elements: [],
+          }
+        : createDefaultComponent(label);
     updateCustomComponents((components) => [...components, newComponent]);
     setSelectedComponentId(newComponent.id);
     setShowAddCustomComponent(false);
     setNewCustomComponentLabel("");
+    setNewCustomComponentMode("template");
     toast.success("Component added");
   };
 
@@ -2797,6 +3039,14 @@ function App() {
     );
   };
 
+  const updateComponentLabel = (componentId: string, label: string) => {
+    updateCustomComponents((components) =>
+      components.map((comp) =>
+        comp.id !== componentId ? comp : { ...comp, label },
+      ),
+    );
+  };
+
   const getAxisInputValue = (start: number, end: number): string =>
     start === end ? String(start) : "";
 
@@ -2806,6 +3056,16 @@ function App() {
     const parsed = Number(trimmed);
     if (!Number.isFinite(parsed)) return null;
     return parsed;
+  };
+
+  const parseContainerDimensionOrNone = (value: string): number | null => {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed.length === 0) return null;
+    if (trimmed === "none") return 0;
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return null;
+    return clampContainerDimension(parsed);
   };
 
   const updateComponentPaddingAxis = (
@@ -3002,26 +3262,58 @@ function App() {
       colorDraftAlpha,
       colorDraftAlpha < 255,
     );
-    const normalized = normalizeHexColor(colorDraftHex, fallbackHex);
-    const parsed = hexToRgba(normalized) ?? {
-      r: colorDraftRed,
-      g: colorDraftGreen,
-      b: colorDraftBlue,
-      a: colorDraftAlpha,
-    };
-    const useHex8 = normalized.trim().length === 9 || parsed.a < 255;
-    const finalColor = rgbaToHex(
-      parsed.r,
-      parsed.g,
-      parsed.b,
-      parsed.a,
-      useHex8,
-    );
+    // If user selected a theme variable reference, store it as-is
+    const isRef = isThemeRef(colorDraftHex);
+    const normalized = isRef
+      ? colorDraftHex
+      : normalizeHexColor(colorDraftHex, fallbackHex);
+    const parsed = isRef
+      ? (hexToRgba(
+          resolveThemeColor(colorDraftHex, colorTheme, themePreviewMode),
+        ) ?? {
+          r: colorDraftRed,
+          g: colorDraftGreen,
+          b: colorDraftBlue,
+          a: colorDraftAlpha,
+        })
+      : (hexToRgba(normalized) ?? {
+          r: colorDraftRed,
+          g: colorDraftGreen,
+          b: colorDraftBlue,
+          a: colorDraftAlpha,
+        });
+    const useHex8 =
+      !isRef && (normalized.trim().length === 9 || parsed.a < 255);
+    const finalColor = isRef
+      ? normalized
+      : rgbaToHex(parsed.r, parsed.g, parsed.b, parsed.a, useHex8);
 
     if (colorEditTarget.scope === "component") {
       updateComponentStyles(colorEditTarget.componentId, {
         ...colorEditTarget.styles,
         [colorEditTarget.field]: finalColor,
+      });
+    } else if (colorEditTarget.scope === "theme") {
+      const { variable, mode } = colorEditTarget;
+      setColorTheme((current) => {
+        const pair = { ...current[variable], [mode]: finalColor };
+        const suggested =
+          mode === "light"
+            ? suggestDarkFromLight(finalColor)
+            : suggestLightFromDark(finalColor);
+        const oppositeMode = mode === "light" ? "dark" : "light";
+        const oppositeIsDefault =
+          current[variable][oppositeMode] ===
+          DEFAULT_COLOR_THEME[variable][oppositeMode];
+        return {
+          ...current,
+          [variable]: {
+            ...pair,
+            [oppositeMode]: oppositeIsDefault
+              ? suggested
+              : current[variable][oppositeMode],
+          },
+        };
       });
     } else {
       updateComponentElementField(
@@ -3372,7 +3664,7 @@ function App() {
   const copyJsonToClipboard = () => {
     const json = JSON.stringify(
       {
-        config: exportConfig,
+        config: getExportConfig(),
         prebuilt: exportPrebuiltConfig,
       },
       null,
@@ -3612,6 +3904,7 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         value: element.value ?? "",
         styles: {
           alignment: element.styles.alignment ?? "center",
@@ -3621,6 +3914,8 @@ function App() {
           isBold: element.styles.isBold ?? false,
           isItalic: element.styles.isItalic ?? false,
           isLabel: element.styles.isLabel ?? false,
+          textColor: "$text",
+          labelColor: "$textHint",
         },
       };
     }
@@ -3629,9 +3924,12 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         defaultValue: element.defaultValue ?? false,
         styles: {
           position: element.styles.position ?? "center",
+          activeColor: "$primary",
+          inactiveColor: "$border",
         },
       };
     }
@@ -3640,11 +3938,16 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         label: element.label ?? "Button",
         highlightOnHover: element.highlightOnHover ?? true,
         isGhost: element.isGhost ?? false,
         styles: {
           width: element.styles.width ?? "full",
+          alignment: "center",
+          textColor: "$text",
+          backgroundColor: "$button",
+          highlightColor: "$highlight",
         },
       };
     }
@@ -3653,7 +3956,16 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         values: element.values ?? [],
+        showDefaultLabel: true,
+        defaultLabel: "Please Select",
+        styles: {
+          textColor: "$text",
+          backgroundColor: "$secondary",
+          highlightColor: "$highlight",
+          borderColor: "$border",
+        },
       };
     }
 
@@ -3661,11 +3973,15 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         textHint: element.textHint ?? "",
         value: element.value ?? "",
         styles: {
           alignment: element.styles.alignment ?? "center",
           width: element.styles.width ?? "full",
+          textColor: "$text",
+          borderColor: "$border",
+          backgroundColor: "$secondary",
         },
       };
     }
@@ -3674,9 +3990,15 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         value: element.value ?? "Home",
         styles: {
+          alignment: "center",
           size: element.styles.size ?? 24,
+          color: "$text",
+          borderWidth: 0,
+          borderColor: "$border",
+          borderRadius: 8,
         },
       };
     }
@@ -3685,9 +4007,18 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         src: element.src ?? "https://placehold.co/600x400",
         styles: {
+          alignment: "center",
           sizing: element.styles.sizing ?? "contain",
+          containerWidth: "auto",
+          containerHeight: "auto",
+          backgroundColor: "$background",
+          borderWidth: 0,
+          borderColor: "$border",
+          borderRadius: 8,
+          padding: 0,
           width: element.styles.width ?? "full",
           height: element.styles.height ?? "auto",
         },
@@ -3701,15 +4032,17 @@ function App() {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
+        flex: element.flex ?? "none",
         styles: {
           justifyContent: element.styles.justifyContent ?? "start",
           alignItems: element.styles.alignItems ?? "start",
           overflowScroll: element.styles.overflowScroll ?? false,
           gap: element.styles.gap ?? 0,
           minWidth: element.styles.minWidth ?? 0,
-          maxWidth: element.styles.maxWidth ?? 0,
+          maxWidth: element.styles.maxWidth ?? DEFAULT_CONTAINER_MAX_DIMENSION,
           minHeight: element.styles.minHeight ?? 0,
-          maxHeight: element.styles.maxHeight ?? 0,
+          maxHeight:
+            element.styles.maxHeight ?? DEFAULT_CONTAINER_MAX_DIMENSION,
           paddingTop: element.styles.paddingTop ?? 0,
           paddingBottom: element.styles.paddingBottom ?? 0,
           paddingLeft: element.styles.paddingLeft ?? 0,
@@ -3718,8 +4051,10 @@ function App() {
           marginBottom: element.styles.marginBottom ?? 0,
           marginLeft: element.styles.marginLeft ?? 0,
           marginRight: element.styles.marginRight ?? 0,
-          backgroundColor: element.styles.backgroundColor ?? "#ffffff00",
-          borderColor: element.styles.borderColor ?? "#d4d4d8",
+          backgroundColor: resolveColor(
+            element.styles.backgroundColor ?? "#ffffff00",
+          ),
+          borderColor: resolveColor(element.styles.borderColor ?? "#d4d4d8"),
           borderRadius: element.styles.borderRadius ?? 8,
           borderWidth: element.styles.borderWidth ?? 0,
         },
@@ -3744,9 +4079,9 @@ function App() {
       overflowScroll: component.styles.overflowScroll ?? false,
       gap: component.styles.gap ?? 0,
       minWidth: component.styles.minWidth ?? 0,
-      maxWidth: component.styles.maxWidth ?? 0,
+      maxWidth: component.styles.maxWidth ?? DEFAULT_CONTAINER_MAX_DIMENSION,
       minHeight: component.styles.minHeight ?? 0,
-      maxHeight: component.styles.maxHeight ?? 0,
+      maxHeight: component.styles.maxHeight ?? DEFAULT_CONTAINER_MAX_DIMENSION,
       paddingX: component.styles.paddingX ?? 0,
       paddingY: component.styles.paddingY ?? 0,
       marginX: component.styles.marginX ?? 0,
@@ -3759,14 +4094,32 @@ function App() {
       marginBottom: component.styles.marginBottom ?? 0,
       marginLeft: component.styles.marginLeft ?? 0,
       marginRight: component.styles.marginRight ?? 0,
-      backgroundColor: component.styles.backgroundColor ?? "#ffffff00",
-      borderColor: component.styles.borderColor ?? "#d4d4d8",
+      backgroundColor: resolveColor(
+        component.styles.backgroundColor ?? "#ffffff00",
+      ),
+      borderColor: resolveColor(component.styles.borderColor ?? "#d4d4d8"),
       borderRadius: component.styles.borderRadius ?? 8,
       borderWidth: component.styles.borderWidth ?? 0,
     },
     elements: component.elements.map((el) =>
       getExplicitComponentElementJson(el),
     ),
+  });
+
+  const getExportConfig = (): ExportConfig => ({
+    id: safeConfig.id,
+    appName: safeConfig.appName,
+    navigation: safeConfig.navigation,
+    pages: safePages
+      .filter((page): page is CustomPage => page.kind === "custom")
+      .map((page) => ({
+        id: page.id,
+        title: page.title,
+      })),
+    components: customComponents.map((component) =>
+      getExplicitComponentJson(component),
+    ),
+    colorTheme,
   });
 
   const getComponentPreviewCode = (component: AppComponent): string => {
@@ -3862,14 +4215,18 @@ function App() {
           : element.styles.alignment === "right"
             ? "text-right"
             : "text-center";
+      const textColor = resolveColor(
+        element.styles.isLabel ? "$textHint" : "$text",
+      );
 
       return (
         <p
-          className={`${alignClass} w-full ${element.styles.isLabel ? "text-muted-foreground" : "text-foreground"}`}
+          className={`${alignClass} w-full`}
           style={{
             fontSize,
             fontWeight: element.styles.isBold ? 700 : 400,
             fontStyle: element.styles.isItalic ? "italic" : "normal",
+            color: textColor,
           }}
         >
           {element.value || "Text"}
@@ -3884,10 +4241,33 @@ function App() {
           : element.styles.position === "right"
             ? "justify-end"
             : "justify-center";
+      const trackColor = resolveColor(
+        element.defaultValue ? "$primary" : "$border",
+      );
 
       return (
         <div className={`flex w-full ${positionClass}`}>
-          <Switch checked={element.defaultValue} disabled />
+          <div
+            className="inline-flex items-center"
+            style={{
+              width: "44px",
+              height: "24px",
+              borderRadius: "999px",
+              backgroundColor: trackColor,
+              padding: "2px",
+              justifyContent: element.defaultValue ? "flex-end" : "flex-start",
+            }}
+          >
+            <div
+              style={{
+                width: "20px",
+                height: "20px",
+                borderRadius: "999px",
+                backgroundColor: "#ffffff",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+              }}
+            />
+          </div>
         </div>
       );
     }
@@ -3899,11 +4279,23 @@ function App() {
           : element.styles.width === "auto"
             ? undefined
             : { width: `${element.styles.width}px` };
+      const backgroundColor = element.isGhost
+        ? "transparent"
+        : resolveColor("$button");
+      const textColor = resolveColor("$text");
+      const borderColor = element.isGhost ? resolveColor("$button") : undefined;
 
       return (
         <Button
           variant={element.isGhost ? "ghost" : "default"}
-          style={widthStyle}
+          style={{
+            ...widthStyle,
+            backgroundColor,
+            color: textColor,
+            borderColor,
+            borderWidth: element.isGhost ? "1px" : undefined,
+            borderStyle: element.isGhost ? "solid" : undefined,
+          }}
           className={element.styles.width === "full" ? "w-full" : "w-auto"}
         >
           {element.label}
@@ -3915,9 +4307,19 @@ function App() {
       const options = element.values.filter(
         (option) => option.trim().length > 0,
       );
+      const selectTextColor = resolveColor("$text");
+      const selectBackgroundColor = resolveColor("$secondary");
+      const selectBorderColor = resolveColor("$border");
       return (
         <Select defaultValue={options.length > 0 ? "0" : undefined}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger
+            className="w-44"
+            style={{
+              color: selectTextColor,
+              backgroundColor: selectBackgroundColor,
+              borderColor: selectBorderColor,
+            }}
+          >
             <SelectValue placeholder="Select..." />
           </SelectTrigger>
           <SelectContent>
@@ -3952,12 +4354,20 @@ function App() {
         element.styles.width === "full"
           ? { width: "100%" }
           : { width: `${element.styles.width}px` };
+      const inputTextColor = resolveColor("$text");
+      const inputBackgroundColor = resolveColor("$secondary");
+      const inputBorderColor = resolveColor("$border");
 
       return (
         <div className={`flex w-full ${alignmentClass}`}>
           <Input
             className={element.styles.width === "full" ? "w-full" : undefined}
-            style={widthStyle}
+            style={{
+              ...widthStyle,
+              color: inputTextColor,
+              backgroundColor: inputBackgroundColor,
+              borderColor: inputBorderColor,
+            }}
             value={element.value}
             placeholder={element.textHint}
             readOnly
@@ -3969,7 +4379,23 @@ function App() {
     if (element.elementTypeId === "element-icon") {
       const IconComponent = getLucideIconComponent(element.value) || Home;
       const size = 10 + element.styles.size * 2;
-      return <IconComponent size={size} className="text-foreground" />;
+      return (
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderColor: resolveColor("$border"),
+            borderWidth: "0px",
+            borderStyle: "solid",
+            borderRadius: "8px",
+            padding: "6px",
+            backgroundColor: resolveColor("$background"),
+          }}
+        >
+          <IconComponent size={size} color={resolveColor("$text")} />
+        </div>
+      );
     }
 
     if (isContainerElement(element)) {
@@ -4011,8 +4437,8 @@ function App() {
             marginRight: `${element.styles.marginRight}px`,
             overflowX: overflowStyle.overflowX,
             overflowY: overflowStyle.overflowY,
-            backgroundColor: element.styles.backgroundColor,
-            borderColor: element.styles.borderColor,
+            backgroundColor: resolveColor(element.styles.backgroundColor),
+            borderColor: resolveColor(element.styles.borderColor),
             borderRadius: `${element.styles.borderRadius}px`,
             borderWidth: `${element.styles.borderWidth}px`,
             borderStyle: element.styles.borderWidth > 0 ? "solid" : "none",
@@ -4020,7 +4446,17 @@ function App() {
         >
           {element.elements.length > 0 ? (
             element.elements.map((child) => (
-              <div key={child.instanceId} className="flex w-full">
+              <div
+                key={child.instanceId}
+                className={`min-w-0 ${isContainerElement(child) ? "flex self-stretch" : elementNeedsFullWidth(child) ? "w-full" : ""}`}
+                style={
+                  child.flex === null || child.flex === undefined
+                    ? undefined
+                    : child.flex === 0
+                      ? { flex: "0 0 auto" }
+                      : { flex: `${child.flex} ${child.flex} 0%` }
+                }
+              >
                 {renderComponentElementPreview(child)}
               </div>
             ))
@@ -4039,11 +4475,15 @@ function App() {
       <img
         src={element.src}
         alt="preview"
-        className="rounded border border-border bg-muted"
+        className="rounded"
         style={{
           width: toCssDimension(element.styles.width),
           height: toCssDimension(element.styles.height),
           objectFit,
+          backgroundColor: resolveColor("$background"),
+          borderColor: resolveColor("$border"),
+          borderWidth: "0px",
+          borderStyle: "solid",
         }}
       />
     );
@@ -5240,6 +5680,44 @@ function App() {
                 </Button>
               </div>
 
+              <div className="space-y-2">
+                <Label>Flex</Label>
+                <Select
+                  value={
+                    element.flex === null || element.flex === undefined
+                      ? "none"
+                      : String(element.flex)
+                  }
+                  onValueChange={(value) =>
+                    updateComponentElementField(
+                      componentId,
+                      element.instanceId,
+                      {
+                        flex: value === "none" ? null : Number(value),
+                      },
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">none</SelectItem>
+                    <SelectItem value="0">0</SelectItem>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="2">2</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="4">4</SelectItem>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="6">6</SelectItem>
+                    <SelectItem value="7">7</SelectItem>
+                    <SelectItem value="8">8</SelectItem>
+                    <SelectItem value="9">9</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {renderComponentElementFields(componentId, element)}
             </div>
           </AccordionContent>
@@ -5277,7 +5755,7 @@ function App() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Config</p>
                   <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[28vh]">
-                    {JSON.stringify(exportConfig, null, 2)}
+                    {JSON.stringify(getExportConfig(), null, 2)}
                   </pre>
                 </div>
                 <div className="space-y-2">
@@ -5307,6 +5785,52 @@ function App() {
                 <DialogTitle className="font-mono">Pick Color</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
+                {colorEditTarget?.scope !== "theme" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Theme Colors
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {THEME_VARIABLE_KEYS.map((variable) => (
+                        <Button
+                          key={variable}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-between gap-1 font-mono text-xs h-8"
+                          onClick={() => {
+                            const refColor = `$${variable}`;
+                            setColorDraftHex(refColor);
+                            const resolved =
+                              colorTheme[variable][themePreviewMode];
+                            const rgba = hexToRgba(resolved) ?? {
+                              r: 0,
+                              g: 0,
+                              b: 0,
+                              a: 255,
+                            };
+                            setColorDraftRed(rgba.r);
+                            setColorDraftGreen(rgba.g);
+                            setColorDraftBlue(rgba.b);
+                            setColorDraftAlpha(rgba.a);
+                          }}
+                        >
+                          <span className="truncate">
+                            {THEME_VARIABLE_LABELS[variable]}
+                          </span>
+                          <span
+                            className="h-3 w-3 rounded-sm border border-border shrink-0"
+                            style={{
+                              backgroundColor:
+                                colorTheme[variable][themePreviewMode],
+                            }}
+                          />
+                        </Button>
+                      ))}
+                    </div>
+                    <Separator />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="picker-native-color">Color Picker</Label>
                   <Input
@@ -5328,7 +5852,7 @@ function App() {
                     id="picker-hex"
                     value={colorDraftHex}
                     onChange={(e) => syncColorFromHex(e.target.value)}
-                    placeholder="#RRGGBB or #RRGGBBAA"
+                    placeholder="#RRGGBB or #RRGGBBAA or $variable"
                     className="font-mono"
                   />
                 </div>
@@ -5414,7 +5938,7 @@ function App() {
         </div>
 
         <div className="space-y-4">
-          <div className="grid w-full grid-cols-3 rounded-md bg-muted p-1">
+          <div className="grid w-full grid-cols-4 rounded-md bg-muted p-1">
             <Button
               type="button"
               variant={activeTab === "navigation" ? "default" : "ghost"}
@@ -5441,6 +5965,15 @@ function App() {
             >
               <Box size={16} />
               Components
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "theme" ? "default" : "ghost"}
+              onClick={() => setActiveTab("theme")}
+              className="gap-2"
+            >
+              <Palette size={16} />
+              Theme
             </Button>
           </div>
 
@@ -6176,6 +6709,108 @@ function App() {
             )}
           {activeTab === "components" && (
             <div className="space-y-4">
+              <Card className="p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="components-selector">Components</Label>
+                  <Select
+                    value={
+                      showAddCustomComponent
+                        ? "__add_custom_component__"
+                        : (selectedComponent?.id ?? "")
+                    }
+                    onValueChange={(value) => {
+                      if (value === "__add_custom_component__") {
+                        setShowAddCustomComponent(true);
+                        return;
+                      }
+
+                      setShowAddCustomComponent(false);
+                      setSelectedComponentId(value);
+                    }}
+                  >
+                    <SelectTrigger id="components-selector">
+                      <SelectValue placeholder="Select a component" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customComponents.map((component) => (
+                        <SelectItem key={component.id} value={component.id}>
+                          {component.label}
+                        </SelectItem>
+                      ))}
+                      <Separator className="my-1" />
+                      <SelectItem value="__add_custom_component__">
+                        Create new component
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {showAddCustomComponent && (
+                  <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
+                    <Label htmlFor="new-custom-component-label">
+                      Component Label
+                    </Label>
+                    <Input
+                      id="new-custom-component-label"
+                      placeholder="Profile Card"
+                      value={newCustomComponentLabel}
+                      onChange={(e) =>
+                        setNewCustomComponentLabel(e.target.value)
+                      }
+                    />
+
+                    <div className="space-y-2">
+                      <Label htmlFor="new-component-start-mode">
+                        Start With
+                      </Label>
+                      <Select
+                        value={newCustomComponentMode}
+                        onValueChange={(value: "template" | "blank") =>
+                          setNewCustomComponentMode(value)
+                        }
+                      >
+                        <SelectTrigger id="new-component-start-mode">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="template">
+                            Pre built template
+                          </SelectItem>
+                          <SelectItem value="blank">Blank component</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button
+                      type="button"
+                      onClick={addCustomComponent}
+                      className="w-full gap-2"
+                    >
+                      <Plus size={16} weight="bold" />
+                      Create Component
+                    </Button>
+                  </div>
+                )}
+
+                {!showAddCustomComponent && selectedComponent && (
+                  <div className="mt-4 space-y-2 rounded-lg border border-border p-3">
+                    <Label htmlFor="selected-component-label">
+                      Selected Component Label
+                    </Label>
+                    <Input
+                      id="selected-component-label"
+                      value={selectedComponent.label}
+                      onChange={(e) =>
+                        updateComponentLabel(
+                          selectedComponent.id,
+                          e.target.value,
+                        )
+                      }
+                    />
+                  </div>
+                )}
+              </Card>
+
               {selectedComponent && (
                 <div className="space-y-4">
                   {(() => {
@@ -6431,16 +7066,36 @@ function App() {
                         <Label htmlFor="comp-max-width">Max Width (px)</Label>
                         <Input
                           id="comp-max-width"
-                          type="number"
-                          min={0}
-                          max={4096}
-                          value={selectedComponent.styles.maxWidth}
+                          type="text"
+                          value={componentMaxWidthInput}
+                          placeholder="none"
                           onChange={(e) => {
-                            const parsed = parseStyleNumber(e.target.value);
+                            const nextValue = e.target.value;
+                            setComponentMaxWidthInput(nextValue);
+
+                            const parsed =
+                              parseContainerDimensionOrNone(nextValue);
                             if (parsed === null) return;
                             updateComponentStyles(selectedComponent.id, {
-                              maxWidth: clampContainerDimension(parsed),
+                              maxWidth: parsed,
                             });
+                          }}
+                          onBlur={() => {
+                            const parsed = parseContainerDimensionOrNone(
+                              componentMaxWidthInput,
+                            );
+                            if (parsed === null) {
+                              setComponentMaxWidthInput(
+                                selectedComponent.styles.maxWidth === 0
+                                  ? "none"
+                                  : String(selectedComponent.styles.maxWidth),
+                              );
+                              return;
+                            }
+
+                            setComponentMaxWidthInput(
+                              parsed === 0 ? "none" : String(parsed),
+                            );
                           }}
                         />
                       </div>
@@ -6465,16 +7120,36 @@ function App() {
                         <Label htmlFor="comp-max-height">Max Height (px)</Label>
                         <Input
                           id="comp-max-height"
-                          type="number"
-                          min={0}
-                          max={4096}
-                          value={selectedComponent.styles.maxHeight}
+                          type="text"
+                          value={componentMaxHeightInput}
+                          placeholder="none"
                           onChange={(e) => {
-                            const parsed = parseStyleNumber(e.target.value);
+                            const nextValue = e.target.value;
+                            setComponentMaxHeightInput(nextValue);
+
+                            const parsed =
+                              parseContainerDimensionOrNone(nextValue);
                             if (parsed === null) return;
                             updateComponentStyles(selectedComponent.id, {
-                              maxHeight: clampContainerDimension(parsed),
+                              maxHeight: parsed,
                             });
+                          }}
+                          onBlur={() => {
+                            const parsed = parseContainerDimensionOrNone(
+                              componentMaxHeightInput,
+                            );
+                            if (parsed === null) {
+                              setComponentMaxHeightInput(
+                                selectedComponent.styles.maxHeight === 0
+                                  ? "none"
+                                  : String(selectedComponent.styles.maxHeight),
+                              );
+                              return;
+                            }
+
+                            setComponentMaxHeightInput(
+                              parsed === 0 ? "none" : String(parsed),
+                            );
                           }}
                         />
                       </div>
@@ -6928,10 +7603,34 @@ function App() {
                   </Card>
 
                   <Card className="p-0 overflow-hidden">
-                    <div className="px-4 pt-4 pb-3 border-b border-border">
+                    <div className="px-4 pt-4 pb-3 border-b border-border flex items-center justify-between gap-3">
                       <h2 className="text-lg font-semibold font-mono">
                         Component Preview
                       </h2>
+                      <div className="flex items-center gap-2 rounded-md bg-muted p-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            themePreviewMode === "light" ? "default" : "ghost"
+                          }
+                          onClick={() => setThemePreviewMode("light")}
+                          className="gap-1 h-7 text-xs"
+                        >
+                          Light
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            themePreviewMode === "dark" ? "default" : "ghost"
+                          }
+                          onClick={() => setThemePreviewMode("dark")}
+                          className="gap-1 h-7 text-xs"
+                        >
+                          Dark
+                        </Button>
+                      </div>
                     </div>
                     {!selectedComponent ? (
                       <p className="text-sm text-muted-foreground p-4">
@@ -6979,9 +7678,12 @@ function App() {
                               marginBottom: `${selectedComponent.styles.marginBottom}px`,
                               overflowX: overflowStyle.overflowX,
                               overflowY: overflowStyle.overflowY,
-                              backgroundColor:
+                              backgroundColor: resolveColor(
                                 selectedComponent.styles.backgroundColor,
-                              borderColor: selectedComponent.styles.borderColor,
+                              ),
+                              borderColor: resolveColor(
+                                selectedComponent.styles.borderColor,
+                              ),
                               borderRadius: `${selectedComponent.styles.borderRadius}px`,
                               borderWidth: `${selectedComponent.styles.borderWidth}px`,
                               borderStyle:
@@ -6993,7 +7695,17 @@ function App() {
                             {selectedComponent.elements.map((element) => (
                               <div
                                 key={element.instanceId}
-                                className={`min-h-8 min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
+                                className={`min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
+                                style={
+                                  element.flex === null ||
+                                  element.flex === undefined
+                                    ? undefined
+                                    : element.flex === 0
+                                      ? { flex: "0 0 auto" }
+                                      : {
+                                          flex: `${element.flex} ${element.flex} 0%`,
+                                        }
+                                }
                               >
                                 {renderComponentElementPreview(element)}
                               </div>
@@ -7005,6 +7717,167 @@ function App() {
                   </Card>
                 </div>
               )}
+            </div>
+          )}
+          {activeTab === "theme" && (
+            <div className="space-y-6">
+              <Card className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold font-mono">
+                    Color Theme
+                  </h2>
+                  <div className="flex items-center gap-2 rounded-md bg-muted p-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        themePreviewMode === "light" ? "default" : "ghost"
+                      }
+                      onClick={() => setThemePreviewMode("light")}
+                      className="gap-1 h-7 text-xs"
+                    >
+                      Light
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        themePreviewMode === "dark" ? "default" : "ghost"
+                      }
+                      onClick={() => setThemePreviewMode("dark")}
+                      className="gap-1 h-7 text-xs"
+                    >
+                      Dark
+                    </Button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left font-semibold pb-2 w-28">
+                          Variable
+                        </th>
+                        <th className="text-center font-semibold pb-2 px-2">
+                          Light Mode
+                        </th>
+                        <th className="text-center font-semibold pb-2 px-2">
+                          Dark Mode
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {THEME_VARIABLE_KEYS.map((variable) => (
+                        <tr
+                          key={variable}
+                          className="border-b border-border last:border-0"
+                        >
+                          <td className="py-3 font-mono text-xs font-semibold text-muted-foreground">
+                            {THEME_VARIABLE_LABELS[variable]}
+                          </td>
+                          {(["light", "dark"] as ThemePreviewMode[]).map(
+                            (mode) => (
+                              <td key={mode} className="py-3 px-2 text-center">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-full justify-between font-mono text-xs gap-2"
+                                  onClick={() =>
+                                    openColorPicker(
+                                      {
+                                        scope: "theme",
+                                        variable,
+                                        mode,
+                                      },
+                                      colorTheme[variable][mode],
+                                    )
+                                  }
+                                >
+                                  <span className="truncate">
+                                    {colorTheme[variable][mode]}
+                                  </span>
+                                  <span
+                                    className="h-4 w-4 rounded border border-border shrink-0"
+                                    style={{
+                                      backgroundColor: normalizeHexColor(
+                                        colorTheme[variable][mode],
+                                        "#000000",
+                                      ),
+                                    }}
+                                  />
+                                </Button>
+                              </td>
+                            ),
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4 pt-4 border-t border-border">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setColorTheme(DEFAULT_COLOR_THEME)}
+                    className="text-xs"
+                  >
+                    Reset to Defaults
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="p-4">
+                <h2 className="text-lg font-semibold font-mono mb-3">
+                  Preview
+                </h2>
+                <div
+                  className="rounded-lg p-4 space-y-3"
+                  style={{
+                    backgroundColor: resolveColor(
+                      colorTheme.background[themePreviewMode],
+                    ),
+                    border: `1px solid ${resolveColor(colorTheme.border[themePreviewMode])}`,
+                  }}
+                >
+                  {THEME_VARIABLE_KEYS.map((variable) => (
+                    <div
+                      key={variable}
+                      className="flex items-center justify-between rounded-md px-3 py-2"
+                      style={{
+                        backgroundColor:
+                          variable === "background"
+                            ? "transparent"
+                            : colorTheme[variable][themePreviewMode],
+                        border: `1px solid ${colorTheme.border[themePreviewMode]}`,
+                      }}
+                    >
+                      <span
+                        className="text-xs font-mono font-semibold"
+                        style={{
+                          color:
+                            variable === "background"
+                              ? colorTheme.primary[themePreviewMode]
+                              : colorTheme.background[themePreviewMode],
+                        }}
+                      >
+                        {THEME_VARIABLE_LABELS[variable]}
+                      </span>
+                      <span
+                        className="text-xs font-mono opacity-80"
+                        style={{
+                          color:
+                            variable === "background"
+                              ? colorTheme.secondary[themePreviewMode]
+                              : colorTheme.background[themePreviewMode],
+                        }}
+                      >
+                        {colorTheme[variable][themePreviewMode]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
             </div>
           )}
         </div>

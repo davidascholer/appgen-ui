@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 
 export type PrebuiltElement = (typeof PREBUILT_ELEMENTS)[number];
 
@@ -114,7 +113,13 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
       fontSize: `${0.5 + (typeof element.styles?.size === "number" ? element.styles.size : 3) * 0.125}rem`,
       fontWeight,
       fontStyle: element.styles?.isItalic ? "italic" : "normal",
-      color: element.styles?.isLabel ? "#71717a" : undefined,
+      color: element.styles?.isLabel
+        ? typeof element.styles?.labelColor === "string"
+          ? element.styles.labelColor
+          : "#71717a"
+        : typeof element.styles?.textColor === "string"
+          ? element.styles.textColor
+          : undefined,
       width: "100%",
     };
 
@@ -135,9 +140,41 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
           ? "flex-end"
           : "center";
 
+    const isActive = Boolean(element.value);
+    const activeColor =
+      typeof element.styles?.activeColor === "string"
+        ? element.styles.activeColor
+        : "#2563eb";
+    const inactiveColor =
+      typeof element.styles?.inactiveColor === "string"
+        ? element.styles.inactiveColor
+        : "#d1d5db";
+
     return (
       <div style={{ display: "flex", justifyContent, width: "100%" }}>
-        <Switch checked={Boolean(element.value)} disabled />
+        <div
+          style={{
+            width: "44px",
+            height: "24px",
+            borderRadius: "999px",
+            backgroundColor: isActive ? activeColor : inactiveColor,
+            padding: "2px",
+            display: "flex",
+            justifyContent: isActive ? "flex-end" : "flex-start",
+            alignItems: "center",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              width: "20px",
+              height: "20px",
+              borderRadius: "999px",
+              backgroundColor: "#ffffff",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -145,11 +182,32 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
   if (element.id === "element-button") {
     const width = toCssDimension(element.styles?.width);
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
+    const backgroundColor =
+      typeof element.styles?.backgroundColor === "string"
+        ? element.styles.backgroundColor
+        : undefined;
+    const color = element.isGhost
+      ? backgroundColor
+      : typeof element.styles?.textColor === "string"
+        ? element.styles.textColor
+        : undefined;
+    const highlightColor =
+      typeof element.styles?.highlightColor === "string"
+        ? element.styles.highlightColor
+        : undefined;
     return (
       <div style={{ display: "flex", justifyContent, width: "100%" }}>
         <Button
           variant={element.isGhost ? "ghost" : "default"}
-          style={{ width }}
+          style={{
+            width,
+            backgroundColor,
+            color,
+            boxShadow:
+              element.highlightOnHover && highlightColor
+                ? `0 0 0 1px ${highlightColor} inset`
+                : undefined,
+          }}
           className={element.styles?.width === "full" ? "w-full" : "w-auto"}
         >
           {element.buttonLabel || "Button"}
@@ -170,17 +228,46 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
         ? element.defaultLabel
         : "Please Select";
 
+    const triggerStyle: CSSProperties = {
+      backgroundColor:
+        typeof element.styles?.backgroundColor === "string"
+          ? element.styles.backgroundColor
+          : undefined,
+      color:
+        typeof element.styles?.textColor === "string"
+          ? element.styles.textColor
+          : undefined,
+      borderColor:
+        typeof element.styles?.borderColor === "string"
+          ? element.styles.borderColor
+          : undefined,
+    };
+    const itemStyle: CSSProperties = {
+      color:
+        typeof element.styles?.textColor === "string"
+          ? element.styles.textColor
+          : undefined,
+      backgroundColor:
+        typeof element.styles?.backgroundColor === "string"
+          ? element.styles.backgroundColor
+          : undefined,
+    };
+
     return (
       <Select
         key={showDefaultLabel ? "placeholder" : "first-option"}
         defaultValue={showDefaultLabel ? undefined : "0"}
       >
-        <SelectTrigger className="w-44">
+        <SelectTrigger className="w-44" style={triggerStyle}>
           <SelectValue placeholder={defaultLabel} />
         </SelectTrigger>
         <SelectContent>
           {options.map((option, index) => (
-            <SelectItem key={`${element.id}-${index}`} value={String(index)}>
+            <SelectItem
+              key={`${element.id}-${index}`}
+              value={String(index)}
+              style={itemStyle}
+            >
               {option}
             </SelectItem>
           ))}
@@ -195,7 +282,21 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
       <Input
         defaultValue={typeof element.value === "string" ? element.value : ""}
         placeholder={element.textHint || ""}
-        style={{ width }}
+        style={{
+          width,
+          color:
+            typeof element.styles?.textColor === "string"
+              ? element.styles.textColor
+              : undefined,
+          borderColor:
+            typeof element.styles?.borderColor === "string"
+              ? element.styles.borderColor
+              : undefined,
+          backgroundColor:
+            typeof element.styles?.backgroundColor === "string"
+              ? element.styles.backgroundColor
+              : undefined,
+        }}
         className={element.styles?.width === "full" ? "w-full" : undefined}
       />
     );
@@ -223,7 +324,42 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
 
     return (
       <div style={{ display: "flex", justifyContent, width: "100%" }}>
-        <Icon size={size} color={isRecognized ? undefined : "#dc2626"} />
+        <div
+          style={{
+            borderWidth:
+              typeof element.styles?.borderWidth === "number"
+                ? `${element.styles.borderWidth}px`
+                : undefined,
+            borderColor:
+              typeof element.styles?.borderColor === "string"
+                ? element.styles.borderColor
+                : undefined,
+            borderRadius:
+              typeof element.styles?.borderRadius === "number"
+                ? `${element.styles.borderRadius}px`
+                : undefined,
+            borderStyle:
+              typeof element.styles?.borderWidth === "number" &&
+              element.styles.borderWidth > 0
+                ? "solid"
+                : undefined,
+            padding: "6px",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon
+            size={size}
+            color={
+              isRecognized
+                ? typeof element.styles?.color === "string"
+                  ? element.styles.color
+                  : undefined
+                : "#dc2626"
+            }
+          />
+        </div>
       </div>
     );
   }
@@ -245,6 +381,32 @@ export const renderPrebuiltElement = (element: PrebuiltElement): ReactNode => {
               display: "block",
               width: "100%",
               height: "100%",
+              backgroundColor:
+                typeof element.styles?.backgroundColor === "string"
+                  ? element.styles.backgroundColor
+                  : undefined,
+              borderWidth:
+                typeof element.styles?.borderWidth === "number"
+                  ? `${element.styles.borderWidth}px`
+                  : undefined,
+              borderColor:
+                typeof element.styles?.borderColor === "string"
+                  ? element.styles.borderColor
+                  : undefined,
+              borderRadius:
+                typeof element.styles?.borderRadius === "number"
+                  ? `${element.styles.borderRadius}px`
+                  : undefined,
+              borderStyle:
+                typeof element.styles?.borderWidth === "number" &&
+                element.styles.borderWidth > 0
+                  ? "solid"
+                  : undefined,
+              padding:
+                typeof element.styles?.padding === "number"
+                  ? `${element.styles.padding}px`
+                  : undefined,
+              boxSizing: "border-box",
               objectFit:
                 element.styles?.sizing === "cover"
                   ? element.styles.sizing
@@ -310,7 +472,13 @@ export const renderElementCode = (element: PrebuiltElement): string => {
       fontSize: `${0.5 + (typeof element.styles?.size === "number" ? element.styles.size : 3) * 0.125}rem`,
       fontWeight,
       fontStyle: element.styles?.isItalic ? "italic" : "normal",
-      color: element.styles?.isLabel ? "#71717a" : undefined,
+      color: element.styles?.isLabel
+        ? typeof element.styles?.labelColor === "string"
+          ? element.styles.labelColor
+          : "#71717a"
+        : typeof element.styles?.textColor === "string"
+          ? element.styles.textColor
+          : undefined,
     });
     return `<p${style}>${typeof element.value === "string" && element.value ? element.value : "Text"}</p>`;
   }
@@ -322,12 +490,37 @@ export const renderElementCode = (element: PrebuiltElement): string => {
         : element.styles?.position === "right"
           ? "flex-end"
           : "center";
-    return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><Switch checked={${Boolean(element.value)}} disabled /></div>`;
+    const activeColor =
+      typeof element.styles?.activeColor === "string"
+        ? element.styles.activeColor
+        : "#2563eb";
+    const inactiveColor =
+      typeof element.styles?.inactiveColor === "string"
+        ? element.styles.inactiveColor
+        : "#d1d5db";
+    const isActive = Boolean(element.value);
+    return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><div style={{ width: "44px", height: "24px", borderRadius: "999px", backgroundColor: ${JSON.stringify(isActive ? activeColor : inactiveColor)}, padding: "2px", display: "flex", justifyContent: ${JSON.stringify(isActive ? "flex-end" : "flex-start")}, alignItems: "center", boxSizing: "border-box" }}><div style={{ width: "20px", height: "20px", borderRadius: "999px", backgroundColor: "#ffffff", boxShadow: "0 1px 2px rgba(0,0,0,0.25)" }} /></div></div>`;
   }
 
   if (element.id === "element-button") {
+    const backgroundColor =
+      typeof element.styles?.backgroundColor === "string"
+        ? element.styles.backgroundColor
+        : undefined;
+    const color = element.isGhost
+      ? backgroundColor
+      : typeof element.styles?.textColor === "string"
+        ? element.styles.textColor
+        : undefined;
     const style = formatStyleObject({
       width: toCssDimension(element.styles?.width),
+      color,
+      backgroundColor,
+      boxShadow:
+        element.highlightOnHover &&
+        typeof element.styles?.highlightColor === "string"
+          ? `0 0 0 1px ${element.styles.highlightColor} inset`
+          : undefined,
     });
     const variantProp = element.isGhost ? ' variant="ghost"' : "";
     const className =
@@ -353,15 +546,27 @@ export const renderElementCode = (element: PrebuiltElement): string => {
     const items = options
       .map(
         (option, index) =>
-          `    <SelectItem value=${JSON.stringify(String(index))}>${option}</SelectItem>`,
+          `    <SelectItem value=${JSON.stringify(String(index))} style={{ color: ${JSON.stringify(typeof element.styles?.textColor === "string" ? element.styles.textColor : undefined)}, backgroundColor: ${JSON.stringify(typeof element.styles?.backgroundColor === "string" ? element.styles.backgroundColor : undefined)} }}>${option}</SelectItem>`,
       )
       .join("\n");
-    return `<Select${defaultValue ? ` defaultValue=${JSON.stringify(defaultValue)}` : ""}>\n  <SelectTrigger className="w-44">\n    <SelectValue placeholder=${JSON.stringify(defaultLabel)} />\n  </SelectTrigger>\n  <SelectContent>\n${items}\n  </SelectContent>\n</Select>`;
+    return `<Select${defaultValue ? ` defaultValue=${JSON.stringify(defaultValue)}` : ""}>\n  <SelectTrigger className="w-44" style={{ backgroundColor: ${JSON.stringify(typeof element.styles?.backgroundColor === "string" ? element.styles.backgroundColor : undefined)}, color: ${JSON.stringify(typeof element.styles?.textColor === "string" ? element.styles.textColor : undefined)}, borderColor: ${JSON.stringify(typeof element.styles?.borderColor === "string" ? element.styles.borderColor : undefined)} }}>\n    <SelectValue placeholder=${JSON.stringify(defaultLabel)} />\n  </SelectTrigger>\n  <SelectContent>\n${items}\n  </SelectContent>\n</Select>`;
   }
 
   if (element.id === "element-text-input") {
     const style = formatStyleObject({
       width: toCssDimension(element.styles?.width),
+      color:
+        typeof element.styles?.textColor === "string"
+          ? element.styles.textColor
+          : undefined,
+      borderColor:
+        typeof element.styles?.borderColor === "string"
+          ? element.styles.borderColor
+          : undefined,
+      backgroundColor:
+        typeof element.styles?.backgroundColor === "string"
+          ? element.styles.backgroundColor
+          : undefined,
     });
     return `<Input defaultValue=${JSON.stringify(typeof element.value === "string" ? element.value : "")} placeholder=${JSON.stringify(element.textHint || "")} className=${JSON.stringify(element.styles?.width === "full" ? "w-full" : "")} ${style} />`;
   }
@@ -379,7 +584,15 @@ export const renderElementCode = (element: PrebuiltElement): string => {
       typeof element.styles?.size === "number" ? element.styles.size : 24;
     const size = Math.max(8, Math.min(96, Math.round(sizeRaw)));
     const justifyContent = toHorizontalJustify(element.styles?.alignment);
-    return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><${emittedIcon} size={${size}}${isRecognized ? "" : ' color="#dc2626"'} /></div>`;
+    const iconColor = isRecognized
+      ? typeof element.styles?.color === "string"
+        ? element.styles.color
+        : undefined
+      : "#dc2626";
+    const iconColorProp = iconColor
+      ? ` color=${JSON.stringify(iconColor)}`
+      : "";
+    return `<div style={{ display: "flex", justifyContent: ${JSON.stringify(justifyContent)}, width: "100%" }}><div style={{ borderWidth: ${JSON.stringify(typeof element.styles?.borderWidth === "number" ? `${element.styles.borderWidth}px` : undefined)}, borderColor: ${JSON.stringify(typeof element.styles?.borderColor === "string" ? element.styles.borderColor : undefined)}, borderRadius: ${JSON.stringify(typeof element.styles?.borderRadius === "number" ? `${element.styles.borderRadius}px` : undefined)}, borderStyle: ${JSON.stringify(typeof element.styles?.borderWidth === "number" && element.styles.borderWidth > 0 ? "solid" : undefined)}, padding: "6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><${emittedIcon} size={${size}}${iconColorProp} /></div></div>`;
   }
 
   if (element.id === "element-image") {
@@ -388,6 +601,32 @@ export const renderElementCode = (element: PrebuiltElement): string => {
       display: "block",
       width: "100%",
       height: "100%",
+      backgroundColor:
+        typeof element.styles?.backgroundColor === "string"
+          ? element.styles.backgroundColor
+          : undefined,
+      borderWidth:
+        typeof element.styles?.borderWidth === "number"
+          ? `${element.styles.borderWidth}px`
+          : undefined,
+      borderColor:
+        typeof element.styles?.borderColor === "string"
+          ? element.styles.borderColor
+          : undefined,
+      borderRadius:
+        typeof element.styles?.borderRadius === "number"
+          ? `${element.styles.borderRadius}px`
+          : undefined,
+      borderStyle:
+        typeof element.styles?.borderWidth === "number" &&
+        element.styles.borderWidth > 0
+          ? "solid"
+          : undefined,
+      padding:
+        typeof element.styles?.padding === "number"
+          ? `${element.styles.padding}px`
+          : undefined,
+      boxSizing: "border-box",
       objectFit:
         element.styles?.sizing === "cover" ? element.styles.sizing : "contain",
     });

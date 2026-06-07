@@ -6,6 +6,7 @@ import Components from "./Components.tsx";
 import ElementPlayground from "./ElementPlayground.tsx";
 import Elements from "./Elements.tsx";
 import Playground from "./Playground.tsx";
+import Summary from "./Summary.tsx";
 import { ErrorFallback } from "./ErrorFallback.tsx";
 
 import "./main.css";
@@ -16,6 +17,8 @@ createRoot(document.getElementById("root")!).render(
   <ErrorBoundary FallbackComponent={ErrorFallback}>
     {window.location.pathname === "/playground" ? (
       <Playground />
+    ) : window.location.pathname === "/summary" ? (
+      <Summary />
     ) : window.location.pathname === "/elements/playground" ||
       window.location.pathname === "/element/playground" ? (
       <ElementPlayground />
