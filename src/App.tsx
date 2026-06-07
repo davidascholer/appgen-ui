@@ -206,7 +206,7 @@ interface TextInputElementStyles {
 }
 
 interface ImageElementStyles {
-  sizing: "fit" | "contain";
+  sizing: "contain" | "cover";
   width: ButtonWidth;
   height: ElementDimension;
 }
@@ -334,6 +334,8 @@ interface PrebuiltElementDef {
   label: string;
   value?: string | boolean;
   values?: string[];
+  showDefaultLabel?: boolean;
+  defaultLabel?: string;
   styles?: {
     alignment?: "left" | "center" | "right";
     position?: "left" | "center" | "right";
@@ -344,16 +346,19 @@ interface PrebuiltElementDef {
     borderRadius?: number;
     borderWidth?: number;
     size?: number;
+    fontWeight?: number;
     isBold?: boolean;
     isItalic?: boolean;
     isLabel?: boolean;
-    sizing?: "fit" | "contain";
+    sizing?: "contain" | "cover";
     width?: ElementDimension;
     height?: ElementDimension;
+    containerWidth?: ElementDimension;
+    containerHeight?: ElementDimension;
     gap?: number;
   };
   textHint?: string;
-  sizing?: "fit" | "contain";
+  sizing?: "contain" | "cover";
   src?: string;
   buttonLabel?: string;
   highlightOnHover?: boolean;
@@ -434,7 +439,7 @@ const createDefaultHomePage = (): PrebuiltHomePage => ({
   ],
 });
 
-const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
+export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
   {
     id: "element-text",
     label: "Text",
@@ -442,6 +447,7 @@ const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
     styles: {
       alignment: "center",
       size: 3,
+      fontWeight: 400,
       isBold: false,
       isItalic: false,
       isLabel: false,
@@ -465,33 +471,31 @@ const PREBUILT_ELEMENTS: PrebuiltElementDef[] = [
     id: "element-select",
     label: "Select Dropdown",
     values: ["Value One", "Value Two"],
+    showDefaultLabel: true,
+    defaultLabel: "Please Select",
   },
   {
     id: "element-text-input",
     label: "Text Input",
     textHint: "",
     value: "",
-    styles: { alignment: "center", width: "full" },
+    styles: { width: "full" },
   },
-  { id: "element-icon", label: "Icon", value: "Home", styles: { size: 3 } },
+  {
+    id: "element-icon",
+    label: "Icon",
+    styles: { alignment: "center", size: 24 },
+  },
   {
     id: "element-image",
     label: "Image",
-    styles: { sizing: "fit", width: "full", height: "auto" },
-    src: "https://placehold.co/600x400",
-  },
-  {
-    id: "element-vertical-container",
-    label: "Vertical Container",
     styles: {
-      justifyContent: "start",
-      alignItems: "start",
-      gap: 8,
-      backgroundColor: "#ffffff00",
-      borderColor: "#d4d4d8",
-      borderRadius: 8,
-      borderWidth: 0,
+      alignment: "center",
+      sizing: "contain",
+      containerWidth: "auto",
+      containerHeight: "auto",
     },
+    src: "https://placehold.co/600x400",
   },
 ];
 
@@ -664,10 +668,13 @@ const getDefaultIconStyles = (): IconElementStyles => {
   };
 };
 
-const getDefaultImageSizing = (): "fit" | "contain" =>
-  getPrebuiltElementDef("element-image")?.styles?.sizing === "contain"
-    ? "contain"
-    : "fit";
+const getDefaultImageSizing = (): "contain" | "cover" => {
+  const sizing = getPrebuiltElementDef("element-image")?.styles?.sizing;
+  if (sizing === "cover" || sizing === "contain") {
+    return sizing;
+  }
+  return "contain";
+};
 
 const normalizeDimension = (
   value: unknown,
@@ -692,7 +699,11 @@ const normalizeDimension = (
 const getDefaultImageStyles = (): ImageElementStyles => {
   const styles = getPrebuiltElementDef("element-image")?.styles;
   return {
-    sizing: styles?.sizing === "contain" ? "contain" : "fit",
+    sizing:
+      styles?.sizing === "contain" ||
+      styles?.sizing === "cover"
+        ? styles.sizing
+        : "contain",
     width: normalizeImageWidth(styles?.width),
     height: normalizeDimension(styles?.height, "auto"),
   };
@@ -1069,9 +1080,11 @@ const normalizeElementFromRaw = (raw: unknown): ComponentElement | null => {
         elementTypeId: "element-image",
         styles: {
           sizing:
-            rawStyles.sizing === "contain" || rawStyles.sizing === "fit"
+            rawStyles.sizing === "contain" ||
+            rawStyles.sizing === "cover"
               ? rawStyles.sizing
-              : entry.sizing === "contain" || entry.sizing === "fit"
+              : entry.sizing === "contain" ||
+                  entry.sizing === "cover"
                 ? entry.sizing
                 : defaultStyles.sizing,
           width: normalizeImageWidth(
@@ -1978,7 +1991,6 @@ const normalizeConfig = (input: unknown): AppConfig => {
             borderRadius: clampContainerBorderRadius(
               rawStyles.borderRadius ?? defaultStyles.borderRadius,
             ),
-            gap: clampFlexGap(rawStyles.gap ?? defaultStyles.gap),
             borderWidth: clampContainerBorderWidth(
               rawStyles.borderWidth ?? defaultStyles.borderWidth,
             ),
@@ -2892,7 +2904,7 @@ function App() {
         [
           ["width", toCssDimension(element.styles.width)],
           ["height", toCssDimension(element.styles.height)],
-          ["objectFit", element.styles.sizing === "contain" ? "contain" : "cover"],
+          ["objectFit", element.styles.sizing],
         ],
         indent,
       );
@@ -3109,7 +3121,7 @@ function App() {
       );
     }
 
-    const objectFit = element.styles.sizing === "contain" ? "contain" : "cover";
+    const objectFit = element.styles.sizing;
 
     return (
       <img
@@ -3609,7 +3621,7 @@ function App() {
             <Label>Sizing</Label>
             <Select
               value={element.styles.sizing}
-              onValueChange={(value: "fit" | "contain") =>
+              onValueChange={(value: "contain" | "cover") =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
@@ -3622,8 +3634,8 @@ function App() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="fit">Fit</SelectItem>
                 <SelectItem value="contain">Contain</SelectItem>
+                <SelectItem value="cover">Cover</SelectItem>
               </SelectContent>
             </Select>
           </div>
