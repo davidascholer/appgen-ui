@@ -116,6 +116,8 @@ interface CustomPage {
   id: string;
   kind: "custom";
   title: string;
+  componentIds: string[];
+  styles: ComponentStyles;
 }
 
 type AppPage = PrebuiltSettingsPage | PrebuiltHomePage | CustomPage;
@@ -149,6 +151,8 @@ interface ExportedPrebuiltPage {
 interface ExportedCustomPage {
   id: string;
   title: string;
+  componentIds: string[];
+  styles: ComponentStyles;
 }
 
 interface ExportConfig {
@@ -376,6 +380,12 @@ type ColorEditTarget =
   | {
       scope: "component";
       componentId: string;
+      field: ContainerColorField;
+      styles: ComponentStyles;
+    }
+  | {
+      scope: "page";
+      pageId: string;
       field: ContainerColorField;
       styles: ComponentStyles;
     }
@@ -2611,9 +2621,24 @@ const normalizeConfig = (input: unknown): AppConfig => {
       id?: unknown;
       kind?: unknown;
       title?: unknown;
+      componentIds?: unknown;
+      styles?: unknown;
     };
 
     if (page.kind !== "custom") return undefined;
+
+    const defaultStyles = getDefaultComponentStyles();
+    const rawStyles =
+      page.styles && typeof page.styles === "object"
+        ? (page.styles as Record<string, unknown>)
+        : {};
+    const toNumberOr = (input: unknown, fallback: number): number => {
+      if (typeof input !== "number" || !Number.isFinite(input)) {
+        return fallback;
+      }
+
+      return input;
+    };
 
     return {
       id:
@@ -2625,6 +2650,76 @@ const normalizeConfig = (input: unknown): AppConfig => {
         typeof page.title === "string" && page.title.trim().length > 0
           ? page.title
           : "Untitled",
+      componentIds: Array.isArray(page.componentIds)
+        ? page.componentIds.filter(
+            (id): id is string =>
+              typeof id === "string" && id.trim().length > 0,
+          )
+        : [],
+      styles: {
+        direction:
+          rawStyles.direction === "vertical" ? "vertical" : "horizontal",
+        justifyContent: normalizeFlexJustifyContent(
+          rawStyles.justifyContent,
+          defaultStyles.justifyContent,
+        ),
+        alignItems: normalizeFlexAlignItems(
+          rawStyles.alignItems,
+          defaultStyles.alignItems,
+        ),
+        overflowScroll:
+          typeof rawStyles.overflowScroll === "boolean"
+            ? rawStyles.overflowScroll
+            : defaultStyles.overflowScroll,
+        gap: toNumberOr(rawStyles.gap, defaultStyles.gap),
+        minWidth: toNumberOr(rawStyles.minWidth, defaultStyles.minWidth),
+        maxWidth: toNumberOr(rawStyles.maxWidth, defaultStyles.maxWidth),
+        minHeight: toNumberOr(rawStyles.minHeight, defaultStyles.minHeight),
+        maxHeight: toNumberOr(rawStyles.maxHeight, defaultStyles.maxHeight),
+        paddingX: toNumberOr(rawStyles.paddingX, defaultStyles.paddingX),
+        paddingY: toNumberOr(rawStyles.paddingY, defaultStyles.paddingY),
+        marginX: toNumberOr(rawStyles.marginX, defaultStyles.marginX),
+        marginY: toNumberOr(rawStyles.marginY, defaultStyles.marginY),
+        paddingTop: toNumberOr(rawStyles.paddingTop, defaultStyles.paddingTop),
+        paddingBottom: toNumberOr(
+          rawStyles.paddingBottom,
+          defaultStyles.paddingBottom,
+        ),
+        paddingLeft: toNumberOr(
+          rawStyles.paddingLeft,
+          defaultStyles.paddingLeft,
+        ),
+        paddingRight: toNumberOr(
+          rawStyles.paddingRight,
+          defaultStyles.paddingRight,
+        ),
+        marginTop: toNumberOr(rawStyles.marginTop, defaultStyles.marginTop),
+        marginBottom: toNumberOr(
+          rawStyles.marginBottom,
+          defaultStyles.marginBottom,
+        ),
+        marginLeft: toNumberOr(rawStyles.marginLeft, defaultStyles.marginLeft),
+        marginRight: toNumberOr(
+          rawStyles.marginRight,
+          defaultStyles.marginRight,
+        ),
+        backgroundColor:
+          typeof rawStyles.backgroundColor === "string"
+            ? rawStyles.backgroundColor
+            : defaultStyles.backgroundColor,
+        borderColor:
+          typeof rawStyles.borderColor === "string"
+            ? rawStyles.borderColor
+            : defaultStyles.borderColor,
+        borderRadius: toNumberOr(
+          rawStyles.borderRadius,
+          defaultStyles.borderRadius,
+        ),
+        borderWidth: toNumberOr(
+          rawStyles.borderWidth,
+          defaultStyles.borderWidth,
+        ),
+      },
     };
   };
 
@@ -2659,15 +2754,32 @@ const normalizeConfig = (input: unknown): AppConfig => {
     rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
       ? Object.entries((rawPages as { custom?: unknown }).custom || {}).map(
           ([id, value]) => {
-            const item = value as { title?: unknown };
-            return {
+            const item = value as {
+              title?: unknown;
+              componentIds?: unknown;
+              styles?: unknown;
+            };
+
+            const parsed = parseCustomPage({
               id,
-              kind: "custom" as const,
+              kind: "custom",
               title:
                 typeof item?.title === "string" && item.title.trim().length > 0
                   ? item.title
                   : id,
-            };
+              componentIds: item?.componentIds,
+              styles: item?.styles,
+            });
+
+            return (
+              parsed ?? {
+                id,
+                kind: "custom" as const,
+                title: id,
+                componentIds: [],
+                styles: getDefaultComponentStyles(),
+              }
+            );
           },
         )
       : [];
@@ -2883,6 +2995,11 @@ function App() {
   const [selectedPageId, setSelectedPageId] = useState("settings");
   const [showAddCustomPage, setShowAddCustomPage] = useState(false);
   const [newCustomPageTitle, setNewCustomPageTitle] = useState("");
+  const [selectedPageTitleDraft, setSelectedPageTitleDraft] =
+    useState<string>("");
+  const [pageMaxWidthInput, setPageMaxWidthInput] = useState<string>("none");
+  const [pageMaxHeightInput, setPageMaxHeightInput] = useState<string>("none");
+  const [newPageComponentId, setNewPageComponentId] = useState<string>("");
   const [previewToggleValues, setPreviewToggleValues] = useState<
     Record<string, boolean>
   >({});
@@ -2909,6 +3026,9 @@ function App() {
     useState<string>("");
   const [newLibraryTemplateComponentId, setNewLibraryTemplateComponentId] =
     useState<string>("");
+  const [selectedComponentLabelDraft, setSelectedComponentLabelDraft] =
+    useState<string>("");
+  const [componentEditUnlocked, setComponentEditUnlocked] = useState(false);
   const [showImportPrebuilt, setShowImportPrebuilt] = useState(false);
   const [newComponentElementTypeId, setNewComponentElementTypeId] =
     useState<ElementTypeId>("element-text");
@@ -3001,6 +3121,20 @@ function App() {
     id: component.id,
     label: component.label,
   }));
+  const editablePages = safePages.filter(
+    (page): page is CustomPage => page.kind === "custom",
+  );
+  const selectedEditablePage =
+    editablePages.find((page) => page.id === selectedPageId) ??
+    editablePages[0] ??
+    null;
+  const selectedPageComponents =
+    selectedEditablePage?.componentIds
+      .map((componentId) =>
+        customComponents.find((component) => component.id === componentId),
+      )
+      .filter((component): component is AppComponent => Boolean(component)) ??
+    [];
   const libraryComponentTemplateOptions = prebuiltLibraryComponents.map(
     (component) => ({
       id: component.id,
@@ -3017,6 +3151,17 @@ function App() {
     ) ??
     customComponents[0] ??
     null;
+  const pagesUsingSelectedComponent = selectedComponent
+    ? editablePages.filter((page) =>
+        page.componentIds.includes(selectedComponent.id),
+      )
+    : [];
+  const isSelectedComponentUsedInPages = pagesUsingSelectedComponent.length > 0;
+  const isComponentEditorReadOnly =
+    !showAddCustomComponent &&
+    Boolean(selectedComponent) &&
+    isSelectedComponentUsedInPages &&
+    !componentEditUnlocked;
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
     components: DEFAULT_SETTING_COMPONENTS.map((component) => ({
       id: component.id,
@@ -3049,21 +3194,6 @@ function App() {
   }, [newLinkPageId, pageTitleOptions]);
 
   useEffect(() => {
-    if (pageTitleOptions.length === 0) {
-      setSelectedPageId("settings");
-      return;
-    }
-
-    const hasSelected = pageTitleOptions.some(
-      (option) => option.id === selectedPageId,
-    );
-
-    if (!hasSelected) {
-      setSelectedPageId(pageTitleOptions[0].id);
-    }
-  }, [selectedPageId, pageTitleOptions]);
-
-  useEffect(() => {
     if (customComponents.length === 0) {
       setSelectedComponentId(null);
       return;
@@ -3077,6 +3207,70 @@ function App() {
       setSelectedComponentId(customComponents[0].id);
     }
   }, [customComponents, selectedComponentId]);
+
+  useEffect(() => {
+    if (editablePages.length === 0) {
+      setSelectedPageId("");
+      return;
+    }
+
+    const hasSelected = editablePages.some(
+      (page) => page.id === selectedPageId,
+    );
+
+    if (!hasSelected) {
+      setSelectedPageId(editablePages[0].id);
+    }
+  }, [editablePages, selectedPageId]);
+
+  useEffect(() => {
+    if (activeTab !== "pages") return;
+    if (editablePages.length === 0) {
+      setShowAddCustomPage(true);
+    }
+  }, [activeTab, editablePages.length]);
+
+  useEffect(() => {
+    setSelectedPageTitleDraft(selectedEditablePage?.title ?? "");
+  }, [selectedEditablePage?.id, selectedEditablePage?.title]);
+
+  useEffect(() => {
+    if (!selectedEditablePage) {
+      setPageMaxWidthInput("none");
+      setPageMaxHeightInput("none");
+      return;
+    }
+
+    setPageMaxWidthInput(
+      selectedEditablePage.styles.maxWidth === 0
+        ? "none"
+        : String(selectedEditablePage.styles.maxWidth),
+    );
+    setPageMaxHeightInput(
+      selectedEditablePage.styles.maxHeight === 0
+        ? "none"
+        : String(selectedEditablePage.styles.maxHeight),
+    );
+  }, [
+    selectedEditablePage?.id,
+    selectedEditablePage?.styles.maxWidth,
+    selectedEditablePage?.styles.maxHeight,
+  ]);
+
+  useEffect(() => {
+    if (customComponents.length === 0) {
+      setNewPageComponentId("");
+      return;
+    }
+
+    const hasSelected = customComponents.some(
+      (component) => component.id === newPageComponentId,
+    );
+
+    if (!hasSelected) {
+      setNewPageComponentId(customComponents[0].id);
+    }
+  }, [customComponents, newPageComponentId]);
 
   useEffect(() => {
     if (projectComponentTemplateOptions.length === 0) {
@@ -3110,11 +3304,14 @@ function App() {
 
   useEffect(() => {
     if (!selectedComponent) {
+      setSelectedComponentLabelDraft("");
       setComponentMaxWidthInput("none");
       setComponentMaxHeightInput("none");
+      setComponentEditUnlocked(false);
       return;
     }
 
+    setSelectedComponentLabelDraft(selectedComponent.label);
     setComponentMaxWidthInput(
       selectedComponent.styles.maxWidth === 0
         ? "none"
@@ -3125,6 +3322,7 @@ function App() {
         ? "none"
         : String(selectedComponent.styles.maxHeight),
     );
+    setComponentEditUnlocked(false);
   }, [
     selectedComponent?.id,
     selectedComponent?.styles.maxWidth,
@@ -3176,15 +3374,54 @@ function App() {
     styles: { ...template.styles },
   });
 
+  const pendingNewComponentLabel = newCustomComponentLabel.trim();
+  const normalizedPendingNewComponentLabel =
+    pendingNewComponentLabel.toLowerCase();
+  const isPendingNewComponentLabelBlank =
+    normalizedPendingNewComponentLabel.length === 0;
+  const isPendingNewComponentLabelAvailable =
+    !isPendingNewComponentLabelBlank &&
+    ![
+      ...customComponents.map((component) => component.label),
+      ...prebuiltLibraryComponents.map((component) => component.label),
+    ].some(
+      (label) =>
+        label.trim().toLowerCase() === normalizedPendingNewComponentLabel,
+    );
+
+  const normalizedSelectedComponentLabelDraft = selectedComponentLabelDraft
+    .trim()
+    .toLowerCase();
+  const isSelectedComponentLabelBlank =
+    normalizedSelectedComponentLabelDraft.length === 0;
+  const isSelectedComponentLabelAvailable =
+    !isSelectedComponentLabelBlank &&
+    ![
+      ...customComponents
+        .filter((component) => component.id !== selectedComponent?.id)
+        .map((component) => component.label),
+      ...prebuiltLibraryComponents.map((component) => component.label),
+    ].some(
+      (label) =>
+        label.trim().toLowerCase() === normalizedSelectedComponentLabelDraft,
+    );
+
   const addCustomComponent = () => {
-    if (!newCustomComponentLabel.trim()) {
+    const resolvedLabel = newCustomComponentLabel.trim();
+
+    if (!resolvedLabel) {
       toast.error("Please enter a component label");
       return;
     }
 
-    const label = newCustomComponentLabel.trim();
+    if (!isPendingNewComponentLabelAvailable) {
+      toast.error("That component label is not available");
+      return;
+    }
+
     const newComponent = (() => {
       if (newCustomComponentMode === "blank-component") {
+        const label = resolvedLabel;
         return {
           ...createDefaultComponent(label),
           elements: [],
@@ -3201,6 +3438,7 @@ function App() {
           return null;
         }
 
+        const label = resolvedLabel;
         return cloneComponentTemplate(template, label);
       }
 
@@ -3213,6 +3451,7 @@ function App() {
         return null;
       }
 
+      const label = resolvedLabel;
       return cloneComponentTemplate(template, label);
     })();
 
@@ -3364,6 +3603,57 @@ function App() {
         comp.id !== componentId ? comp : { ...comp, label },
       ),
     );
+  };
+
+  const handleSelectedComponentLabelChange = (
+    componentId: string,
+    label: string,
+  ) => {
+    setSelectedComponentLabelDraft(label);
+
+    const normalizedLabel = label.trim().toLowerCase();
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const isAvailable = ![
+      ...customComponents
+        .filter((component) => component.id !== componentId)
+        .map((component) => component.label),
+      ...prebuiltLibraryComponents.map((component) => component.label),
+    ].some(
+      (existingLabel) => existingLabel.trim().toLowerCase() === normalizedLabel,
+    );
+
+    if (!isAvailable) {
+      return;
+    }
+
+    updateComponentLabel(componentId, label);
+  };
+
+  const enableSelectedComponentEditing = () => {
+    if (!selectedComponent) return;
+
+    if (!isSelectedComponentUsedInPages) {
+      setComponentEditUnlocked(true);
+      return;
+    }
+
+    const usedByPages = pagesUsingSelectedComponent
+      .map((page) => page.title.trim())
+      .filter((title) => title.length > 0)
+      .join(", ");
+    const confirmMessage =
+      usedByPages.length > 0
+        ? `This component is used on page(s): ${usedByPages}.\n\nEditing it will update those pages. Continue?`
+        : "This component is used on one or more pages. Editing it will update those pages. Continue?";
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setComponentEditUnlocked(true);
   };
 
   const getAxisInputValue = (start: number, end: number): string =>
@@ -4066,6 +4356,14 @@ function App() {
         ...colorEditTarget.styles,
         [colorEditTarget.field]: finalColor,
       });
+    } else if (colorEditTarget.scope === "page") {
+      updateCustomPageById(colorEditTarget.pageId, (page) => ({
+        ...page,
+        styles: {
+          ...page.styles,
+          [colorEditTarget.field]: finalColor,
+        },
+      }));
     } else if (colorEditTarget.scope === "theme") {
       const { variable, mode } = colorEditTarget;
       setColorTheme((current) => {
@@ -4152,6 +4450,8 @@ function App() {
       id: crypto.randomUUID(),
       kind: "custom",
       title: newCustomPageTitle.trim(),
+      componentIds: [],
+      styles: getDefaultComponentStyles(),
     };
 
     setConfig((current) => {
@@ -4170,6 +4470,209 @@ function App() {
     setShowAddCustomPage(false);
     setNewCustomPageTitle("");
     toast.success("Custom page added");
+  };
+
+  const updateCustomPageById = (
+    pageId: string,
+    transform: (page: CustomPage) => CustomPage,
+  ) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const pages = Array.isArray(base.pages) ? base.pages : [];
+
+      return {
+        ...base,
+        pages: pages.map((page) =>
+          page.kind === "custom" && page.id === pageId ? transform(page) : page,
+        ),
+      };
+    });
+  };
+
+  const updateSelectedPageTitle = (title: string) => {
+    if (!selectedEditablePage) return;
+    setSelectedPageTitleDraft(title);
+
+    if (!title.trim()) {
+      return;
+    }
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      title,
+    }));
+  };
+
+  const updateSelectedPageStyles = (styles: Partial<ComponentStyles>) => {
+    if (!selectedEditablePage) return;
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      styles: {
+        ...page.styles,
+        ...styles,
+      },
+    }));
+  };
+
+  const updateSelectedPagePaddingAxis = (axis: "x" | "y", value: string) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateSelectedPageStyles({
+        paddingX: next,
+        paddingLeft: next,
+        paddingRight: next,
+      });
+      return;
+    }
+
+    updateSelectedPageStyles({
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+    });
+  };
+
+  const updateSelectedPagePaddingAll = (value: string) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateSelectedPageStyles({
+      paddingX: next,
+      paddingY: next,
+      paddingTop: next,
+      paddingBottom: next,
+      paddingLeft: next,
+      paddingRight: next,
+    });
+  };
+
+  const updateSelectedPageMarginAxis = (axis: "x" | "y", value: string) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    if (axis === "x") {
+      updateSelectedPageStyles({
+        marginX: next,
+        marginLeft: next,
+        marginRight: next,
+      });
+      return;
+    }
+
+    updateSelectedPageStyles({
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+    });
+  };
+
+  const updateSelectedPageMarginAll = (value: string) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+
+    updateSelectedPageStyles({
+      marginX: next,
+      marginY: next,
+      marginTop: next,
+      marginBottom: next,
+      marginLeft: next,
+      marginRight: next,
+    });
+  };
+
+  const updateSelectedPagePaddingSide = (
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const currentStyles = selectedEditablePage.styles;
+    const nextTop = side === "top" ? next : currentStyles.paddingTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.paddingBottom;
+    const nextLeft = side === "left" ? next : currentStyles.paddingLeft;
+    const nextRight = side === "right" ? next : currentStyles.paddingRight;
+
+    updateSelectedPageStyles({
+      paddingTop: nextTop,
+      paddingBottom: nextBottom,
+      paddingLeft: nextLeft,
+      paddingRight: nextRight,
+      paddingY: nextTop === nextBottom ? nextTop : currentStyles.paddingY,
+      paddingX: nextLeft === nextRight ? nextLeft : currentStyles.paddingX,
+    });
+  };
+
+  const updateSelectedPageMarginSide = (
+    side: "top" | "bottom" | "left" | "right",
+    value: string,
+  ) => {
+    if (!selectedEditablePage) return;
+    const parsed = parseStyleNumber(value);
+    if (parsed === null) return;
+    const next = clampComponentSpacing(parsed);
+    const currentStyles = selectedEditablePage.styles;
+    const nextTop = side === "top" ? next : currentStyles.marginTop;
+    const nextBottom = side === "bottom" ? next : currentStyles.marginBottom;
+    const nextLeft = side === "left" ? next : currentStyles.marginLeft;
+    const nextRight = side === "right" ? next : currentStyles.marginRight;
+
+    updateSelectedPageStyles({
+      marginTop: nextTop,
+      marginBottom: nextBottom,
+      marginLeft: nextLeft,
+      marginRight: nextRight,
+      marginY: nextTop === nextBottom ? nextTop : currentStyles.marginY,
+      marginX: nextLeft === nextRight ? nextLeft : currentStyles.marginX,
+    });
+  };
+
+  const addComponentToPage = (pageId: string, componentId: string) => {
+    if (!componentId) return;
+    updateCustomPageById(pageId, (page) => ({
+      ...page,
+      componentIds: [...page.componentIds, componentId],
+    }));
+  };
+
+  const removePageComponent = (pageId: string, index: number) => {
+    updateCustomPageById(pageId, (page) => ({
+      ...page,
+      componentIds: page.componentIds.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const reorderPageComponent = (
+    pageId: string,
+    index: number,
+    direction: "up" | "down",
+  ) => {
+    updateCustomPageById(pageId, (page) => {
+      const nextIndex = direction === "up" ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= page.componentIds.length) {
+        return page;
+      }
+
+      const next = [...page.componentIds];
+      const [moved] = next.splice(index, 1);
+      next.splice(nextIndex, 0, moved);
+      return {
+        ...page,
+        componentIds: next,
+      };
+    });
   };
 
   const navigationIsDirty =
@@ -4902,6 +5405,8 @@ function App() {
       .map((page) => ({
         id: page.id,
         title: page.title,
+        componentIds: page.componentIds,
+        styles: page.styles,
       })),
     components: customComponents.map((component) =>
       getExplicitComponentJson(component),
@@ -4991,6 +5496,79 @@ function App() {
         : "  {/* Add elements here */}";
 
     return `<div\n  className=${JSON.stringify(className)}${styleBlock}\n>\n${children}\n</div>`;
+  };
+
+  const renderAppComponentPreview = (component: AppComponent) => {
+    const justifyClass = getEffectiveFlexJustifyClass(
+      component.styles.justifyContent,
+      component.elements.length,
+    );
+    const overflowStyle = getFlexOverflowStyle(
+      component.styles.direction,
+      component.styles.overflowScroll,
+    );
+
+    return (
+      <div
+        className={`flex w-full ${component.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${component.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(component.styles.alignItems)} ${justifyClass}`}
+        style={{
+          gap: `${component.styles.gap}px`,
+          minWidth:
+            component.styles.minWidth > 0
+              ? `${component.styles.minWidth}px`
+              : undefined,
+          maxWidth:
+            component.styles.maxWidth > 0
+              ? `${component.styles.maxWidth}px`
+              : undefined,
+          minHeight:
+            component.styles.minHeight > 0
+              ? `${component.styles.minHeight}px`
+              : undefined,
+          maxHeight:
+            component.styles.maxHeight > 0
+              ? `${component.styles.maxHeight}px`
+              : undefined,
+          paddingLeft: `${component.styles.paddingLeft}px`,
+          paddingRight: `${component.styles.paddingRight}px`,
+          paddingTop: `${component.styles.paddingTop}px`,
+          paddingBottom: `${component.styles.paddingBottom}px`,
+          marginLeft: `${component.styles.marginLeft}px`,
+          marginRight: `${component.styles.marginRight}px`,
+          marginTop: `${component.styles.marginTop}px`,
+          marginBottom: `${component.styles.marginBottom}px`,
+          overflowX: overflowStyle.overflowX,
+          overflowY: overflowStyle.overflowY,
+          backgroundColor: resolveColor(component.styles.backgroundColor),
+          borderColor: resolveColor(component.styles.borderColor),
+          borderRadius: `${component.styles.borderRadius}px`,
+          borderWidth: `${component.styles.borderWidth}px`,
+          borderStyle: component.styles.borderWidth > 0 ? "solid" : "none",
+        }}
+      >
+        {component.elements.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Empty component</p>
+        ) : (
+          component.elements.map((element) => (
+            <div
+              key={element.instanceId}
+              className={`min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
+              style={
+                element.flex === null || element.flex === undefined
+                  ? undefined
+                  : element.flex === 0
+                    ? { flex: "0 0 auto" }
+                    : {
+                        flex: `${element.flex} ${element.flex} 0%`,
+                      }
+              }
+            >
+              {renderComponentElementPreview(element)}
+            </div>
+          ))
+        )}
+      </div>
+    );
   };
 
   const renderComponentElementPreview = (element: ComponentElement) => {
@@ -6823,11 +7401,14 @@ function App() {
                   <Label htmlFor="pages-selector">Pages</Label>
                   <Select
                     value={
-                      showAddCustomPage ? "__add_custom__" : selectedPageId
+                      showAddCustomPage || !selectedEditablePage
+                        ? "__add_custom__"
+                        : selectedEditablePage.id
                     }
                     onValueChange={(value) => {
                       if (value === "__add_custom__") {
                         setShowAddCustomPage(true);
+                        setNewCustomPageTitle("");
                         return;
                       }
 
@@ -6839,14 +7420,14 @@ function App() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {pageTitleOptions.map((page) => (
+                      {editablePages.map((page) => (
                         <SelectItem key={page.id} value={page.id}>
                           {page.title}
                         </SelectItem>
                       ))}
                       <Separator className="my-1" />
                       <SelectItem value="__add_custom__">
-                        Add custom page
+                        Create new page
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -6854,9 +7435,7 @@ function App() {
 
                 {showAddCustomPage && (
                   <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
-                    <Label htmlFor="new-custom-page-title">
-                      Custom Page Title
-                    </Label>
+                    <Label htmlFor="new-custom-page-title">Page Label</Label>
                     <Input
                       id="new-custom-page-title"
                       placeholder="Profile"
@@ -6867,30 +7446,912 @@ function App() {
                       type="button"
                       onClick={addCustomPage}
                       className="w-full gap-2"
+                      disabled={!newCustomPageTitle.trim()}
                     >
                       <Plus size={16} weight="bold" />
-                      Save Custom Page
+                      Create Page
                     </Button>
                   </div>
                 )}
 
-                {!showAddCustomPage && (
-                  <div className="mt-4 rounded-lg bg-secondary p-3">
-                    {selectedPage.kind === "custom" ? (
-                      <div className="min-h-[220px] rounded-md border border-border bg-background p-4">
-                        <p className="text-center text-sm text-muted-foreground">
-                          Empty page
-                        </p>
-                        <p className="mt-2 text-center font-medium">
-                          {selectedPage.title}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="min-h-[220px] rounded-md border border-border bg-background p-4" />
+                {!showAddCustomPage && selectedEditablePage && (
+                  <div className="mt-4 space-y-2 rounded-lg border border-border p-3">
+                    <Label htmlFor="selected-page-label">
+                      Selected Page Label
+                    </Label>
+                    <Input
+                      id="selected-page-label"
+                      value={selectedPageTitleDraft}
+                      onChange={(e) => updateSelectedPageTitle(e.target.value)}
+                    />
+                    {!selectedPageTitleDraft.trim() && (
+                      <p className="text-xs text-destructive">
+                        The label cannot be blank.
+                      </p>
                     )}
                   </div>
                 )}
               </Card>
+
+              {!showAddCustomPage && selectedEditablePage && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-4">
+                    <Card className="p-4">
+                      <h2 className="text-lg font-semibold mb-4 font-mono">
+                        Page Editor
+                      </h2>
+                      <div className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <Select
+                            value={newPageComponentId}
+                            onValueChange={setNewPageComponentId}
+                          >
+                            <SelectTrigger id="page-component-selector">
+                              <SelectValue placeholder="Select component" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {customComponents.map((component) => (
+                                <SelectItem
+                                  key={component.id}
+                                  value={component.id}
+                                >
+                                  {component.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            onClick={() =>
+                              addComponentToPage(
+                                selectedEditablePage.id,
+                                newPageComponentId,
+                              )
+                            }
+                            disabled={!newPageComponentId}
+                            className="gap-2"
+                          >
+                            <Plus size={16} weight="bold" />
+                            Add
+                          </Button>
+                        </div>
+
+                        {selectedPageComponents.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            No components in this page yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {selectedPageComponents.map((component, index) => (
+                              <div
+                                key={`${selectedEditablePage.id}-${component.id}-${index}`}
+                                className="flex items-center justify-between rounded-lg bg-secondary p-3"
+                              >
+                                <p className="text-sm font-medium truncate pr-3">
+                                  {component.label}
+                                </p>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      reorderPageComponent(
+                                        selectedEditablePage.id,
+                                        index,
+                                        "up",
+                                      )
+                                    }
+                                    disabled={index === 0}
+                                  >
+                                    <ArrowUp size={16} />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      reorderPageComponent(
+                                        selectedEditablePage.id,
+                                        index,
+                                        "down",
+                                      )
+                                    }
+                                    disabled={
+                                      index ===
+                                      selectedPageComponents.length - 1
+                                    }
+                                  >
+                                    <ArrowDown size={16} />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() =>
+                                      removePageComponent(
+                                        selectedEditablePage.id,
+                                        index,
+                                      )
+                                    }
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+
+                    <Card className="p-4">
+                      <h2 className="text-lg font-semibold mb-4 font-mono">
+                        Page Styles
+                      </h2>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="page-direction">Orientation</Label>
+                          <Select
+                            value={selectedEditablePage.styles.direction}
+                            onValueChange={(value: ComponentDirection) =>
+                              updateSelectedPageStyles({ direction: value })
+                            }
+                          >
+                            <SelectTrigger id="page-direction">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="horizontal">
+                                Horizontal
+                              </SelectItem>
+                              <SelectItem value="vertical">Vertical</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-justify-content">
+                            Justify Content
+                          </Label>
+                          <Select
+                            value={selectedEditablePage.styles.justifyContent}
+                            onValueChange={(
+                              value: ComponentStyles["justifyContent"],
+                            ) =>
+                              updateSelectedPageStyles({
+                                justifyContent: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger id="page-justify-content">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="start">Start</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="space-between">
+                                Space Between
+                              </SelectItem>
+                              <SelectItem value="space-around">
+                                Space Around
+                              </SelectItem>
+                              <SelectItem value="space-evenly">
+                                Space Evenly
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-align-items">Align Items</Label>
+                          <Select
+                            value={selectedEditablePage.styles.alignItems}
+                            onValueChange={(
+                              value: ComponentStyles["alignItems"],
+                            ) =>
+                              updateSelectedPageStyles({ alignItems: value })
+                            }
+                          >
+                            <SelectTrigger id="page-align-items">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="start">Start</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="stretch">Stretch</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-gap">Gap (px)</Label>
+                          <Input
+                            id="page-gap"
+                            type="number"
+                            min={0}
+                            max={50}
+                            value={selectedEditablePage.styles.gap}
+                            onChange={(e) =>
+                              updateSelectedPageStyles({
+                                gap: clampFlexGap(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
+                          <Label htmlFor="page-overflow-scroll">
+                            Overflow Scroll
+                          </Label>
+                          <Switch
+                            id="page-overflow-scroll"
+                            checked={selectedEditablePage.styles.overflowScroll}
+                            onCheckedChange={(checked) =>
+                              updateSelectedPageStyles({
+                                overflowScroll: checked,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-min-width">Min Width (px)</Label>
+                          <Input
+                            id="page-min-width"
+                            type="number"
+                            min={0}
+                            max={4096}
+                            value={selectedEditablePage.styles.minWidth}
+                            onChange={(e) => {
+                              const parsed = parseStyleNumber(e.target.value);
+                              if (parsed === null) return;
+                              updateSelectedPageStyles({
+                                minWidth: clampContainerDimension(parsed),
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-max-width">Max Width (px)</Label>
+                          <Input
+                            id="page-max-width"
+                            type="text"
+                            value={pageMaxWidthInput}
+                            placeholder="none"
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setPageMaxWidthInput(nextValue);
+                              const parsed =
+                                parseContainerDimensionOrNone(nextValue);
+                              if (parsed === null) return;
+                              updateSelectedPageStyles({ maxWidth: parsed });
+                            }}
+                            onBlur={() => {
+                              const parsed =
+                                parseContainerDimensionOrNone(
+                                  pageMaxWidthInput,
+                                );
+                              if (parsed === null) {
+                                setPageMaxWidthInput(
+                                  selectedEditablePage.styles.maxWidth === 0
+                                    ? "none"
+                                    : String(
+                                        selectedEditablePage.styles.maxWidth,
+                                      ),
+                                );
+                                return;
+                              }
+
+                              setPageMaxWidthInput(
+                                parsed === 0 ? "none" : String(parsed),
+                              );
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-min-height">
+                            Min Height (px)
+                          </Label>
+                          <Input
+                            id="page-min-height"
+                            type="number"
+                            min={0}
+                            max={4096}
+                            value={selectedEditablePage.styles.minHeight}
+                            onChange={(e) => {
+                              const parsed = parseStyleNumber(e.target.value);
+                              if (parsed === null) return;
+                              updateSelectedPageStyles({
+                                minHeight: clampContainerDimension(parsed),
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-max-height">
+                            Max Height (px)
+                          </Label>
+                          <Input
+                            id="page-max-height"
+                            type="text"
+                            value={pageMaxHeightInput}
+                            placeholder="none"
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setPageMaxHeightInput(nextValue);
+                              const parsed =
+                                parseContainerDimensionOrNone(nextValue);
+                              if (parsed === null) return;
+                              updateSelectedPageStyles({ maxHeight: parsed });
+                            }}
+                            onBlur={() => {
+                              const parsed =
+                                parseContainerDimensionOrNone(
+                                  pageMaxHeightInput,
+                                );
+                              if (parsed === null) {
+                                setPageMaxHeightInput(
+                                  selectedEditablePage.styles.maxHeight === 0
+                                    ? "none"
+                                    : String(
+                                        selectedEditablePage.styles.maxHeight,
+                                      ),
+                                );
+                                return;
+                              }
+
+                              setPageMaxHeightInput(
+                                parsed === 0 ? "none" : String(parsed),
+                              );
+                            }}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Accordion type="single" collapsible>
+                            <AccordionItem value="page-padding">
+                              <AccordionTrigger className="font-mono text-sm">
+                                Padding
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-all">
+                                      Padding (All Sides)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-all"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles
+                                          .paddingTop ===
+                                          selectedEditablePage.styles
+                                            .paddingBottom &&
+                                        selectedEditablePage.styles
+                                          .paddingTop ===
+                                          selectedEditablePage.styles
+                                            .paddingLeft &&
+                                        selectedEditablePage.styles
+                                          .paddingTop ===
+                                          selectedEditablePage.styles
+                                            .paddingRight
+                                          ? String(
+                                              selectedEditablePage.styles
+                                                .paddingTop,
+                                            )
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingAll(
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-x">
+                                      Horizontal Padding (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-x"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedEditablePage.styles.paddingLeft,
+                                        selectedEditablePage.styles
+                                          .paddingRight,
+                                      )}
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingAxis(
+                                          "x",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-y">
+                                      Vertical Padding (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-y"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedEditablePage.styles.paddingTop,
+                                        selectedEditablePage.styles
+                                          .paddingBottom,
+                                      )}
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingAxis(
+                                          "y",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-top">
+                                      Padding Top (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-top"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.paddingTop
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingSide(
+                                          "top",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-bottom">
+                                      Padding Bottom (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-bottom"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles
+                                          .paddingBottom
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingSide(
+                                          "bottom",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-left">
+                                      Padding Left (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-left"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.paddingLeft
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingSide(
+                                          "left",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-padding-right">
+                                      Padding Right (px)
+                                    </Label>
+                                    <Input
+                                      id="page-padding-right"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.paddingRight
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPagePaddingSide(
+                                          "right",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Accordion type="single" collapsible>
+                            <AccordionItem value="page-margin">
+                              <AccordionTrigger className="font-mono text-sm">
+                                Margin
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-all">
+                                      Margin (All Sides)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-all"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles
+                                          .marginTop ===
+                                          selectedEditablePage.styles
+                                            .marginBottom &&
+                                        selectedEditablePage.styles
+                                          .marginTop ===
+                                          selectedEditablePage.styles
+                                            .marginLeft &&
+                                        selectedEditablePage.styles
+                                          .marginTop ===
+                                          selectedEditablePage.styles
+                                            .marginRight
+                                          ? String(
+                                              selectedEditablePage.styles
+                                                .marginTop,
+                                            )
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginAll(
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-x">
+                                      Horizontal Margin (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-x"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedEditablePage.styles.marginLeft,
+                                        selectedEditablePage.styles.marginRight,
+                                      )}
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginAxis(
+                                          "x",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-y">
+                                      Vertical Margin (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-y"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedEditablePage.styles.marginTop,
+                                        selectedEditablePage.styles
+                                          .marginBottom,
+                                      )}
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginAxis(
+                                          "y",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-top">
+                                      Margin Top (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-top"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.marginTop
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginSide(
+                                          "top",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-bottom">
+                                      Margin Bottom (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-bottom"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.marginBottom
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginSide(
+                                          "bottom",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-left">
+                                      Margin Left (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-left"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.marginLeft
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginSide(
+                                          "left",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="page-margin-right">
+                                      Margin Right (px)
+                                    </Label>
+                                    <Input
+                                      id="page-margin-right"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedEditablePage.styles.marginRight
+                                      }
+                                      onChange={(e) =>
+                                        updateSelectedPageMarginSide(
+                                          "right",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-background-color">
+                            Background Color
+                          </Label>
+                          <Button
+                            id="page-background-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
+                            onClick={() =>
+                              openColorPicker(
+                                {
+                                  scope: "page",
+                                  pageId: selectedEditablePage.id,
+                                  field: "backgroundColor",
+                                  styles: selectedEditablePage.styles,
+                                },
+                                selectedEditablePage.styles.backgroundColor,
+                              )
+                            }
+                          >
+                            <span>
+                              {selectedEditablePage.styles.backgroundColor}
+                            </span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedEditablePage.styles.backgroundColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-border-color">
+                            Border Color
+                          </Label>
+                          <Button
+                            id="page-border-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
+                            onClick={() =>
+                              openColorPicker(
+                                {
+                                  scope: "page",
+                                  pageId: selectedEditablePage.id,
+                                  field: "borderColor",
+                                  styles: selectedEditablePage.styles,
+                                },
+                                selectedEditablePage.styles.borderColor,
+                              )
+                            }
+                          >
+                            <span>
+                              {selectedEditablePage.styles.borderColor}
+                            </span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedEditablePage.styles.borderColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-border-radius">
+                            Border Radius
+                          </Label>
+                          <Input
+                            id="page-border-radius"
+                            type="range"
+                            min={0}
+                            max={64}
+                            value={selectedEditablePage.styles.borderRadius}
+                            onChange={(e) =>
+                              updateSelectedPageStyles({
+                                borderRadius: clampContainerBorderRadius(
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {selectedEditablePage.styles.borderRadius}px
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="page-border-width">
+                            Border Width (px)
+                          </Label>
+                          <Input
+                            id="page-border-width"
+                            type="number"
+                            min={0}
+                            max={16}
+                            value={selectedEditablePage.styles.borderWidth}
+                            onChange={(e) =>
+                              updateSelectedPageStyles({
+                                borderWidth: clampContainerBorderWidth(
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+
+                  <Card className="p-4">
+                    <h2 className="text-lg font-semibold mb-4 font-mono">
+                      Live Preview
+                    </h2>
+                    <div className="border-2 border-border rounded-lg bg-card min-h-[420px]">
+                      <ScrollArea className="h-[420px]">
+                        <div className="p-4">
+                          {selectedPageComponents.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              Add components to preview this page.
+                            </p>
+                          ) : (
+                            (() => {
+                              const pageStyles = selectedEditablePage.styles;
+                              const justifyClass = getEffectiveFlexJustifyClass(
+                                pageStyles.justifyContent,
+                                selectedPageComponents.length,
+                              );
+                              const overflowStyle = getFlexOverflowStyle(
+                                pageStyles.direction,
+                                pageStyles.overflowScroll,
+                              );
+
+                              return (
+                                <div
+                                  className={`flex w-full ${pageStyles.direction === "vertical" ? "flex-col" : "flex-row"} ${pageStyles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(pageStyles.alignItems)} ${justifyClass}`}
+                                  style={{
+                                    gap: `${pageStyles.gap}px`,
+                                    minWidth:
+                                      pageStyles.minWidth > 0
+                                        ? `${pageStyles.minWidth}px`
+                                        : undefined,
+                                    maxWidth:
+                                      pageStyles.maxWidth > 0
+                                        ? `${pageStyles.maxWidth}px`
+                                        : undefined,
+                                    minHeight:
+                                      pageStyles.minHeight > 0
+                                        ? `${pageStyles.minHeight}px`
+                                        : undefined,
+                                    maxHeight:
+                                      pageStyles.maxHeight > 0
+                                        ? `${pageStyles.maxHeight}px`
+                                        : undefined,
+                                    paddingLeft: `${pageStyles.paddingLeft}px`,
+                                    paddingRight: `${pageStyles.paddingRight}px`,
+                                    paddingTop: `${pageStyles.paddingTop}px`,
+                                    paddingBottom: `${pageStyles.paddingBottom}px`,
+                                    marginLeft: `${pageStyles.marginLeft}px`,
+                                    marginRight: `${pageStyles.marginRight}px`,
+                                    marginTop: `${pageStyles.marginTop}px`,
+                                    marginBottom: `${pageStyles.marginBottom}px`,
+                                    overflowX: overflowStyle.overflowX,
+                                    overflowY: overflowStyle.overflowY,
+                                    backgroundColor: resolveColor(
+                                      pageStyles.backgroundColor,
+                                    ),
+                                    borderColor: resolveColor(
+                                      pageStyles.borderColor,
+                                    ),
+                                    borderRadius: `${pageStyles.borderRadius}px`,
+                                    borderWidth: `${pageStyles.borderWidth}px`,
+                                    borderStyle:
+                                      pageStyles.borderWidth > 0
+                                        ? "solid"
+                                        : "none",
+                                  }}
+                                >
+                                  {selectedPageComponents.map(
+                                    (component, index) => (
+                                      <div
+                                        key={`${selectedEditablePage.id}-preview-${component.id}-${index}`}
+                                        className="min-w-0"
+                                      >
+                                        {renderAppComponentPreview(component)}
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              );
+                            })()
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </Card>
+                </div>
+              )}
             </div>
           )}
 
@@ -7296,256 +8757,6 @@ function App() {
             </div>
           )}
 
-          {activeTab === "pages" &&
-            !showAddCustomPage &&
-            selectedPage.kind === "prebuilt" &&
-            selectedPage.id === "settings" && (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Card className="p-4">
-                  <h2 className="text-lg font-semibold mb-4 font-mono">
-                    Settings Items
-                  </h2>
-
-                  <div className="space-y-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="setting-label">Label</Label>
-                        <Input
-                          id="setting-label"
-                          placeholder="Enable notifications"
-                          value={newSettingLabel}
-                          onChange={(e) => setNewSettingLabel(e.target.value)}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && addSettingItem()
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="setting-type">Type</Label>
-                        <Select
-                          value={newSettingType}
-                          onValueChange={(
-                            value: "toggle" | "input" | "select",
-                          ) => setNewSettingType(value)}
-                        >
-                          <SelectTrigger id="setting-type">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="toggle">Toggle</SelectItem>
-                            <SelectItem value="input">Input</SelectItem>
-                            <SelectItem value="select">Select</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <Button onClick={addSettingItem} className="w-full gap-2">
-                      <Plus size={18} weight="bold" />
-                      Add Setting
-                    </Button>
-
-                    {settingsPage.items.length > 0 && (
-                      <>
-                        <Separator />
-                        <div className="space-y-2">
-                          {settingsPage.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="p-3 bg-secondary rounded-lg space-y-3"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                  <ToggleLeft
-                                    size={20}
-                                    className="text-muted-foreground flex-shrink-0"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="font-medium truncate">
-                                      {item.label}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground truncate capitalize">
-                                      {item.type}
-                                    </p>
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => removeSettingItem(item.id)}
-                                  className="flex-shrink-0 text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 size={18} />
-                                </Button>
-                              </div>
-
-                              {item.type === "select" && (
-                                <div className="space-y-2">
-                                  <Label>Dropdown Options</Label>
-                                  <div className="space-y-2">
-                                    {item.value.map((option, optionIndex) => (
-                                      <div
-                                        key={`${item.id}-option-${optionIndex}`}
-                                        className="flex items-center gap-2"
-                                      >
-                                        <Input
-                                          placeholder={`Option ${optionIndex + 1}`}
-                                          value={option}
-                                          onChange={(e) =>
-                                            updateSelectSettingOption(
-                                              item.id,
-                                              optionIndex,
-                                              e.target.value,
-                                            )
-                                          }
-                                        />
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() =>
-                                            removeSelectSettingOption(
-                                              item.id,
-                                              optionIndex,
-                                            )
-                                          }
-                                          className="text-destructive hover:text-destructive"
-                                          aria-label="Delete option"
-                                        >
-                                          <Trash2 size={18} />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="gap-2"
-                                    onClick={() =>
-                                      addSelectSettingOption(item.id)
-                                    }
-                                  >
-                                    <Plus size={16} weight="bold" />
-                                    Add Option
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </Card>
-
-                <Card className="p-6">
-                  <h2 className="text-lg font-semibold mb-4 font-mono">
-                    Settings Preview
-                  </h2>
-                  <div className="border-2 border-border rounded-lg overflow-hidden bg-card min-h-[400px]">
-                    <div className="bg-secondary border-b border-border p-4">
-                      <h3 className="font-semibold text-lg">Settings</h3>
-                    </div>
-
-                    <ScrollArea className="h-[340px]">
-                      <div className="p-6 space-y-4">
-                        {settingsPage.items.length === 0 ? (
-                          <div className="text-center py-12 text-muted-foreground">
-                            <p>No settings added yet</p>
-                          </div>
-                        ) : (
-                          settingsPage.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-4 bg-secondary rounded-lg"
-                            >
-                              <div>
-                                <p className="font-medium">{item.label}</p>
-                                <p className="text-sm text-muted-foreground capitalize">
-                                  {item.type}
-                                </p>
-                              </div>
-                              {item.type === "toggle" && (
-                                <Switch
-                                  checked={
-                                    previewToggleValues[item.id] ?? item.value
-                                  }
-                                  onCheckedChange={(checked) =>
-                                    setPreviewToggleValues((current) => ({
-                                      ...current,
-                                      [item.id]: checked,
-                                    }))
-                                  }
-                                />
-                              )}
-                              {item.type === "input" && (
-                                <Input
-                                  className="w-32"
-                                  placeholder="Value"
-                                  value={
-                                    previewInputValues[item.id] ?? item.value
-                                  }
-                                  onChange={(e) =>
-                                    setPreviewInputValues((current) => ({
-                                      ...current,
-                                      [item.id]: e.target.value,
-                                    }))
-                                  }
-                                />
-                              )}
-                              {item.type === "select" &&
-                                (() => {
-                                  const previewOptions = item.value.filter(
-                                    (option) => option.trim().length > 0,
-                                  );
-
-                                  return (
-                                    <Select
-                                      defaultValue={
-                                        previewOptions.length > 0
-                                          ? "0"
-                                          : undefined
-                                      }
-                                      disabled={previewOptions.length === 0}
-                                    >
-                                      <SelectTrigger className="w-40">
-                                        <SelectValue placeholder="Select..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {previewOptions.length === 0 ? (
-                                          <SelectItem
-                                            value="no-options"
-                                            disabled
-                                          >
-                                            No options available
-                                          </SelectItem>
-                                        ) : (
-                                          previewOptions.map(
-                                            (option, index) => (
-                                              <SelectItem
-                                                key={`${item.id}-preview-option-${index}`}
-                                                value={String(index)}
-                                              >
-                                                {option}
-                                              </SelectItem>
-                                            ),
-                                          )
-                                        )}
-                                      </SelectContent>
-                                    </Select>
-                                  );
-                                })()}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                </Card>
-              </div>
-            )}
           {activeTab === "components" && (
             <div className="space-y-4">
               <Card className="p-4">
@@ -7597,11 +8808,15 @@ function App() {
                         setNewCustomComponentLabel(e.target.value)
                       }
                     />
+                    {!isPendingNewComponentLabelBlank &&
+                      !isPendingNewComponentLabelAvailable && (
+                        <p className="text-xs text-destructive">
+                          &quot;{pendingNewComponentLabel}&quot; is not
+                          available.
+                        </p>
+                      )}
 
                     <div className="space-y-2">
-                      <Label htmlFor="new-component-start-mode">
-                        Start With
-                      </Label>
                       <Select
                         value={newCustomComponentMode}
                         onValueChange={(value: NewCustomComponentMode) =>
@@ -7628,7 +8843,7 @@ function App() {
                     {newCustomComponentMode === "project-components" && (
                       <div className="space-y-2">
                         <Label htmlFor="project-component-template">
-                          Project Component
+                          Copy From Project Component
                         </Label>
                         <Select
                           value={newProjectTemplateComponentId}
@@ -7661,7 +8876,7 @@ function App() {
                     {newCustomComponentMode === "component-library" && (
                       <div className="space-y-2">
                         <Label htmlFor="library-component-template">
-                          Library Component
+                          Copy From Component Library
                         </Label>
                         <Select
                           value={newLibraryTemplateComponentId}
@@ -7696,6 +8911,7 @@ function App() {
                       type="button"
                       onClick={addCustomComponent}
                       className="w-full gap-2"
+                      disabled={isPendingNewComponentLabelBlank}
                     >
                       <Plus size={16} weight="bold" />
                       Create Component
@@ -7710,808 +8926,872 @@ function App() {
                     </Label>
                     <Input
                       id="selected-component-label"
-                      value={selectedComponent.label}
+                      value={selectedComponentLabelDraft}
+                      disabled={isComponentEditorReadOnly}
                       onChange={(e) =>
-                        updateComponentLabel(
+                        handleSelectedComponentLabelChange(
                           selectedComponent.id,
                           e.target.value,
                         )
                       }
                     />
+                    {isSelectedComponentUsedInPages && (
+                      <p className="text-xs text-muted-foreground">
+                        Used in:{" "}
+                        {pagesUsingSelectedComponent
+                          .map((page) => page.title)
+                          .join(", ")}
+                      </p>
+                    )}
+                    {isComponentEditorReadOnly && (
+                      <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+                        <p className="text-xs text-muted-foreground">
+                          This component is read-only because it belongs to one
+                          or more pages.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={enableSelectedComponentEditing}
+                        >
+                          Edit Component
+                        </Button>
+                      </div>
+                    )}
+                    {isSelectedComponentLabelBlank ? (
+                      <p className="text-xs text-destructive">
+                        The label cannot be blank.
+                      </p>
+                    ) : !isSelectedComponentLabelAvailable ? (
+                      <p className="text-xs text-destructive">
+                        &quot;{selectedComponentLabelDraft.trim()}&quot; is not
+                        available.
+                      </p>
+                    ) : null}
                   </div>
                 )}
               </Card>
 
               {!showAddCustomComponent && selectedComponent && (
                 <div className="space-y-4">
-                  {(() => {
-                    const topLevelElementOptions = getAllowedElementOptions(
-                      selectedComponent.styles.direction,
-                    );
-                    const selectedElementType = topLevelElementOptions.some(
-                      (option) => option.id === newComponentElementTypeId,
-                    )
-                      ? newComponentElementTypeId
-                      : (topLevelElementOptions[0]?.id ?? "element-text");
+                  <div
+                    className={
+                      isComponentEditorReadOnly
+                        ? "space-y-4 opacity-60 pointer-events-none"
+                        : "space-y-4"
+                    }
+                  >
+                    {(() => {
+                      const topLevelElementOptions = getAllowedElementOptions(
+                        selectedComponent.styles.direction,
+                      );
+                      const selectedElementType = topLevelElementOptions.some(
+                        (option) => option.id === newComponentElementTypeId,
+                      )
+                        ? newComponentElementTypeId
+                        : (topLevelElementOptions[0]?.id ?? "element-text");
 
-                    return (
-                      <Card className="p-4">
-                        <div className="flex items-center justify-between gap-3 mb-4">
-                          <h2 className="text-lg font-semibold font-mono">
-                            Component Items
-                          </h2>
-                          <div className="flex items-center gap-2">
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  JSON
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
-                                <DialogHeader className="shrink-0">
-                                  <DialogTitle className="font-mono">
-                                    Component JSON
-                                  </DialogTitle>
-                                </DialogHeader>
-                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
-                                  {JSON.stringify(
-                                    getExplicitComponentJson(selectedComponent),
-                                    null,
-                                    2,
-                                  )}
-                                </pre>
-                              </DialogContent>
-                            </Dialog>
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  Code
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
-                                <DialogHeader className="shrink-0">
-                                  <DialogTitle className="font-mono">
-                                    Component React Code
-                                  </DialogTitle>
-                                </DialogHeader>
-                                <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
-                                  {getComponentPreviewCode(selectedComponent)}
-                                </pre>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label htmlFor="component-element-type">
-                                Element Type
-                              </Label>
-                              <Select
-                                value={selectedElementType}
-                                onValueChange={(value: ElementTypeId) =>
-                                  setNewComponentElementTypeId(value)
-                                }
-                              >
-                                <SelectTrigger id="component-element-type">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {topLevelElementOptions.map((option) => (
-                                    <SelectItem
-                                      key={option.id}
-                                      value={option.id}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                      return (
+                        <Card className="p-4">
+                          <div className="flex items-center justify-between gap-3 mb-4">
+                            <h2 className="text-lg font-semibold font-mono">
+                              Component Items
+                            </h2>
+                            <div className="flex items-center gap-2">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                  >
+                                    JSON
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                                  <DialogHeader className="shrink-0">
+                                    <DialogTitle className="font-mono">
+                                      Component JSON
+                                    </DialogTitle>
+                                  </DialogHeader>
+                                  <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                    {JSON.stringify(
+                                      getExplicitComponentJson(
+                                        selectedComponent,
+                                      ),
+                                      null,
+                                      2,
+                                    )}
+                                  </pre>
+                                </DialogContent>
+                              </Dialog>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                  >
+                                    Code
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                                  <DialogHeader className="shrink-0">
+                                    <DialogTitle className="font-mono">
+                                      Component React Code
+                                    </DialogTitle>
+                                  </DialogHeader>
+                                  <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                    {getComponentPreviewCode(selectedComponent)}
+                                  </pre>
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           </div>
+                          <div className="space-y-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label htmlFor="component-element-type">
+                                  Element Type
+                                </Label>
+                                <Select
+                                  value={selectedElementType}
+                                  onValueChange={(value: ElementTypeId) =>
+                                    setNewComponentElementTypeId(value)
+                                  }
+                                >
+                                  <SelectTrigger id="component-element-type">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {topLevelElementOptions.map((option) => (
+                                      <SelectItem
+                                        key={option.id}
+                                        value={option.id}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
 
+                            <Button
+                              onClick={() =>
+                                addComponentElement(
+                                  selectedComponent.id,
+                                  selectedElementType,
+                                )
+                              }
+                              className="w-full gap-2"
+                            >
+                              <Plus size={18} />
+                              Add Element
+                            </Button>
+
+                            {selectedComponent.elements.length > 0 && (
+                              <>
+                                <Separator />
+                                {renderComponentElementEditors(
+                                  selectedComponent.id,
+                                  selectedComponent.elements,
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </Card>
+                      );
+                    })()}
+
+                    <Card className="p-4">
+                      <h2 className="text-lg font-semibold mb-4 font-mono">
+                        Component Styles
+                      </h2>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-direction">Orientation</Label>
+                          <Select
+                            value={selectedComponent.styles.direction}
+                            onValueChange={(value: ComponentDirection) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                direction: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger id="comp-direction">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="horizontal">
+                                Horizontal
+                              </SelectItem>
+                              <SelectItem value="vertical">Vertical</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-justify-content">
+                            Justify Content
+                          </Label>
+                          <Select
+                            value={selectedComponent.styles.justifyContent}
+                            onValueChange={(
+                              value: ComponentStyles["justifyContent"],
+                            ) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                justifyContent: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger id="comp-justify-content">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="start">Start</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="space-between">
+                                Space Between
+                              </SelectItem>
+                              <SelectItem value="space-around">
+                                Space Around
+                              </SelectItem>
+                              <SelectItem value="space-evenly">
+                                Space Evenly
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-align-items">Align Items</Label>
+                          <Select
+                            value={selectedComponent.styles.alignItems}
+                            onValueChange={(
+                              value: ComponentStyles["alignItems"],
+                            ) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                alignItems: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger id="comp-align-items">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="start">Start</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="end">End</SelectItem>
+                              <SelectItem value="stretch">Stretch</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-gap">Gap (px)</Label>
+                          <Input
+                            id="comp-gap"
+                            type="number"
+                            min={0}
+                            max={50}
+                            value={selectedComponent.styles.gap}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                gap: clampFlexGap(e.target.value),
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
+                          <Label htmlFor="comp-overflow-scroll">
+                            Overflow Scroll
+                          </Label>
+                          <Switch
+                            id="comp-overflow-scroll"
+                            checked={selectedComponent.styles.overflowScroll}
+                            onCheckedChange={(checked) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                overflowScroll: checked,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-min-width">Min Width (px)</Label>
+                          <Input
+                            id="comp-min-width"
+                            type="number"
+                            min={0}
+                            max={4096}
+                            value={selectedComponent.styles.minWidth}
+                            onChange={(e) => {
+                              const parsed = parseStyleNumber(e.target.value);
+                              if (parsed === null) return;
+                              updateComponentStyles(selectedComponent.id, {
+                                minWidth: clampContainerDimension(parsed),
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-max-width">Max Width (px)</Label>
+                          <Input
+                            id="comp-max-width"
+                            type="text"
+                            value={componentMaxWidthInput}
+                            placeholder="none"
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setComponentMaxWidthInput(nextValue);
+
+                              const parsed =
+                                parseContainerDimensionOrNone(nextValue);
+                              if (parsed === null) return;
+                              updateComponentStyles(selectedComponent.id, {
+                                maxWidth: parsed,
+                              });
+                            }}
+                            onBlur={() => {
+                              const parsed = parseContainerDimensionOrNone(
+                                componentMaxWidthInput,
+                              );
+                              if (parsed === null) {
+                                setComponentMaxWidthInput(
+                                  selectedComponent.styles.maxWidth === 0
+                                    ? "none"
+                                    : String(selectedComponent.styles.maxWidth),
+                                );
+                                return;
+                              }
+
+                              setComponentMaxWidthInput(
+                                parsed === 0 ? "none" : String(parsed),
+                              );
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-min-height">
+                            Min Height (px)
+                          </Label>
+                          <Input
+                            id="comp-min-height"
+                            type="number"
+                            min={0}
+                            max={4096}
+                            value={selectedComponent.styles.minHeight}
+                            onChange={(e) => {
+                              const parsed = parseStyleNumber(e.target.value);
+                              if (parsed === null) return;
+                              updateComponentStyles(selectedComponent.id, {
+                                minHeight: clampContainerDimension(parsed),
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-max-height">
+                            Max Height (px)
+                          </Label>
+                          <Input
+                            id="comp-max-height"
+                            type="text"
+                            value={componentMaxHeightInput}
+                            placeholder="none"
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setComponentMaxHeightInput(nextValue);
+
+                              const parsed =
+                                parseContainerDimensionOrNone(nextValue);
+                              if (parsed === null) return;
+                              updateComponentStyles(selectedComponent.id, {
+                                maxHeight: parsed,
+                              });
+                            }}
+                            onBlur={() => {
+                              const parsed = parseContainerDimensionOrNone(
+                                componentMaxHeightInput,
+                              );
+                              if (parsed === null) {
+                                setComponentMaxHeightInput(
+                                  selectedComponent.styles.maxHeight === 0
+                                    ? "none"
+                                    : String(
+                                        selectedComponent.styles.maxHeight,
+                                      ),
+                                );
+                                return;
+                              }
+
+                              setComponentMaxHeightInput(
+                                parsed === 0 ? "none" : String(parsed),
+                              );
+                            }}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Accordion type="single" collapsible>
+                            <AccordionItem value="component-padding">
+                              <AccordionTrigger className="font-mono text-sm">
+                                Padding
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-all">
+                                      Padding (All Sides)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-all"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.paddingTop ===
+                                          selectedComponent.styles
+                                            .paddingBottom &&
+                                        selectedComponent.styles.paddingTop ===
+                                          selectedComponent.styles
+                                            .paddingLeft &&
+                                        selectedComponent.styles.paddingTop ===
+                                          selectedComponent.styles.paddingRight
+                                          ? String(
+                                              selectedComponent.styles
+                                                .paddingTop,
+                                            )
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentPaddingAll(
+                                          selectedComponent.id,
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-x">
+                                      Horizontal Padding (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-x"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedComponent.styles.paddingLeft,
+                                        selectedComponent.styles.paddingRight,
+                                      )}
+                                      onChange={(e) =>
+                                        updateComponentPaddingAxis(
+                                          selectedComponent.id,
+                                          "x",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-y">
+                                      Vertical Padding (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-y"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedComponent.styles.paddingTop,
+                                        selectedComponent.styles.paddingBottom,
+                                      )}
+                                      onChange={(e) =>
+                                        updateComponentPaddingAxis(
+                                          selectedComponent.id,
+                                          "y",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-top">
+                                      Padding Top (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-top"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.paddingTop
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentPaddingSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "top",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-bottom">
+                                      Padding Bottom (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-bottom"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.paddingBottom
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentPaddingSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "bottom",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-left">
+                                      Padding Left (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-left"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.paddingLeft
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentPaddingSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "left",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-padding-right">
+                                      Padding Right (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-padding-right"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.paddingRight
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentPaddingSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "right",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Accordion type="single" collapsible>
+                            <AccordionItem value="component-margin">
+                              <AccordionTrigger className="font-mono text-sm">
+                                Margin
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-all">
+                                      Margin (All Sides)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-all"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.marginTop ===
+                                          selectedComponent.styles
+                                            .marginBottom &&
+                                        selectedComponent.styles.marginTop ===
+                                          selectedComponent.styles.marginLeft &&
+                                        selectedComponent.styles.marginTop ===
+                                          selectedComponent.styles.marginRight
+                                          ? String(
+                                              selectedComponent.styles
+                                                .marginTop,
+                                            )
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentMarginAll(
+                                          selectedComponent.id,
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-x">
+                                      Horizontal Margin (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-x"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedComponent.styles.marginLeft,
+                                        selectedComponent.styles.marginRight,
+                                      )}
+                                      onChange={(e) =>
+                                        updateComponentMarginAxis(
+                                          selectedComponent.id,
+                                          "x",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-y">
+                                      Vertical Margin (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-y"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={getAxisInputValue(
+                                        selectedComponent.styles.marginTop,
+                                        selectedComponent.styles.marginBottom,
+                                      )}
+                                      onChange={(e) =>
+                                        updateComponentMarginAxis(
+                                          selectedComponent.id,
+                                          "y",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-top">
+                                      Margin Top (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-top"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={selectedComponent.styles.marginTop}
+                                      onChange={(e) =>
+                                        updateComponentMarginSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "top",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-bottom">
+                                      Margin Bottom (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-bottom"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.marginBottom
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentMarginSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "bottom",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-left">
+                                      Margin Left (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-left"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.marginLeft
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentMarginSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "left",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="comp-margin-right">
+                                      Margin Right (px)
+                                    </Label>
+                                    <Input
+                                      id="comp-margin-right"
+                                      type="number"
+                                      min={0}
+                                      max={200}
+                                      value={
+                                        selectedComponent.styles.marginRight
+                                      }
+                                      onChange={(e) =>
+                                        updateComponentMarginSide(
+                                          selectedComponent.id,
+                                          selectedComponent.styles,
+                                          "right",
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-background-color">
+                            Background Color
+                          </Label>
                           <Button
+                            id="comp-background-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
                             onClick={() =>
-                              addComponentElement(
-                                selectedComponent.id,
-                                selectedElementType,
+                              openColorPicker(
+                                {
+                                  scope: "component",
+                                  componentId: selectedComponent.id,
+                                  field: "backgroundColor",
+                                  styles: selectedComponent.styles,
+                                },
+                                selectedComponent.styles.backgroundColor,
                               )
                             }
-                            className="w-full gap-2"
                           >
-                            <Plus size={18} />
-                            Add Element
+                            <span>
+                              {selectedComponent.styles.backgroundColor}
+                            </span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedComponent.styles.backgroundColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
                           </Button>
-
-                          {selectedComponent.elements.length > 0 && (
-                            <>
-                              <Separator />
-                              {renderComponentElementEditors(
-                                selectedComponent.id,
-                                selectedComponent.elements,
-                              )}
-                            </>
-                          )}
                         </div>
-                      </Card>
-                    );
-                  })()}
-
-                  <Card className="p-4">
-                    <h2 className="text-lg font-semibold mb-4 font-mono">
-                      Component Styles
-                    </h2>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-direction">Orientation</Label>
-                        <Select
-                          value={selectedComponent.styles.direction}
-                          onValueChange={(value: ComponentDirection) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              direction: value,
-                            })
-                          }
-                        >
-                          <SelectTrigger id="comp-direction">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="horizontal">
-                              Horizontal
-                            </SelectItem>
-                            <SelectItem value="vertical">Vertical</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-justify-content">
-                          Justify Content
-                        </Label>
-                        <Select
-                          value={selectedComponent.styles.justifyContent}
-                          onValueChange={(
-                            value: ComponentStyles["justifyContent"],
-                          ) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              justifyContent: value,
-                            })
-                          }
-                        >
-                          <SelectTrigger id="comp-justify-content">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="start">Start</SelectItem>
-                            <SelectItem value="center">Center</SelectItem>
-                            <SelectItem value="end">End</SelectItem>
-                            <SelectItem value="space-between">
-                              Space Between
-                            </SelectItem>
-                            <SelectItem value="space-around">
-                              Space Around
-                            </SelectItem>
-                            <SelectItem value="space-evenly">
-                              Space Evenly
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-align-items">Align Items</Label>
-                        <Select
-                          value={selectedComponent.styles.alignItems}
-                          onValueChange={(
-                            value: ComponentStyles["alignItems"],
-                          ) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              alignItems: value,
-                            })
-                          }
-                        >
-                          <SelectTrigger id="comp-align-items">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="start">Start</SelectItem>
-                            <SelectItem value="center">Center</SelectItem>
-                            <SelectItem value="end">End</SelectItem>
-                            <SelectItem value="stretch">Stretch</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-gap">Gap (px)</Label>
-                        <Input
-                          id="comp-gap"
-                          type="number"
-                          min={0}
-                          max={50}
-                          value={selectedComponent.styles.gap}
-                          onChange={(e) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              gap: clampFlexGap(e.target.value),
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
-                        <Label htmlFor="comp-overflow-scroll">
-                          Overflow Scroll
-                        </Label>
-                        <Switch
-                          id="comp-overflow-scroll"
-                          checked={selectedComponent.styles.overflowScroll}
-                          onCheckedChange={(checked) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              overflowScroll: checked,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-min-width">Min Width (px)</Label>
-                        <Input
-                          id="comp-min-width"
-                          type="number"
-                          min={0}
-                          max={4096}
-                          value={selectedComponent.styles.minWidth}
-                          onChange={(e) => {
-                            const parsed = parseStyleNumber(e.target.value);
-                            if (parsed === null) return;
-                            updateComponentStyles(selectedComponent.id, {
-                              minWidth: clampContainerDimension(parsed),
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-max-width">Max Width (px)</Label>
-                        <Input
-                          id="comp-max-width"
-                          type="text"
-                          value={componentMaxWidthInput}
-                          placeholder="none"
-                          onChange={(e) => {
-                            const nextValue = e.target.value;
-                            setComponentMaxWidthInput(nextValue);
-
-                            const parsed =
-                              parseContainerDimensionOrNone(nextValue);
-                            if (parsed === null) return;
-                            updateComponentStyles(selectedComponent.id, {
-                              maxWidth: parsed,
-                            });
-                          }}
-                          onBlur={() => {
-                            const parsed = parseContainerDimensionOrNone(
-                              componentMaxWidthInput,
-                            );
-                            if (parsed === null) {
-                              setComponentMaxWidthInput(
-                                selectedComponent.styles.maxWidth === 0
-                                  ? "none"
-                                  : String(selectedComponent.styles.maxWidth),
-                              );
-                              return;
-                            }
-
-                            setComponentMaxWidthInput(
-                              parsed === 0 ? "none" : String(parsed),
-                            );
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-min-height">Min Height (px)</Label>
-                        <Input
-                          id="comp-min-height"
-                          type="number"
-                          min={0}
-                          max={4096}
-                          value={selectedComponent.styles.minHeight}
-                          onChange={(e) => {
-                            const parsed = parseStyleNumber(e.target.value);
-                            if (parsed === null) return;
-                            updateComponentStyles(selectedComponent.id, {
-                              minHeight: clampContainerDimension(parsed),
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-max-height">Max Height (px)</Label>
-                        <Input
-                          id="comp-max-height"
-                          type="text"
-                          value={componentMaxHeightInput}
-                          placeholder="none"
-                          onChange={(e) => {
-                            const nextValue = e.target.value;
-                            setComponentMaxHeightInput(nextValue);
-
-                            const parsed =
-                              parseContainerDimensionOrNone(nextValue);
-                            if (parsed === null) return;
-                            updateComponentStyles(selectedComponent.id, {
-                              maxHeight: parsed,
-                            });
-                          }}
-                          onBlur={() => {
-                            const parsed = parseContainerDimensionOrNone(
-                              componentMaxHeightInput,
-                            );
-                            if (parsed === null) {
-                              setComponentMaxHeightInput(
-                                selectedComponent.styles.maxHeight === 0
-                                  ? "none"
-                                  : String(selectedComponent.styles.maxHeight),
-                              );
-                              return;
-                            }
-
-                            setComponentMaxHeightInput(
-                              parsed === 0 ? "none" : String(parsed),
-                            );
-                          }}
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <Accordion type="single" collapsible>
-                          <AccordionItem value="component-padding">
-                            <AccordionTrigger className="font-mono text-sm">
-                              Padding
-                            </AccordionTrigger>
-                            <AccordionContent>
-                              <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-all">
-                                    Padding (All Sides)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-all"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={
-                                      selectedComponent.styles.paddingTop ===
-                                        selectedComponent.styles
-                                          .paddingBottom &&
-                                      selectedComponent.styles.paddingTop ===
-                                        selectedComponent.styles.paddingLeft &&
-                                      selectedComponent.styles.paddingTop ===
-                                        selectedComponent.styles.paddingRight
-                                        ? String(
-                                            selectedComponent.styles.paddingTop,
-                                          )
-                                        : ""
-                                    }
-                                    onChange={(e) =>
-                                      updateComponentPaddingAll(
-                                        selectedComponent.id,
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-x">
-                                    Horizontal Padding (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-x"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={getAxisInputValue(
-                                      selectedComponent.styles.paddingLeft,
-                                      selectedComponent.styles.paddingRight,
-                                    )}
-                                    onChange={(e) =>
-                                      updateComponentPaddingAxis(
-                                        selectedComponent.id,
-                                        "x",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-y">
-                                    Vertical Padding (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-y"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={getAxisInputValue(
-                                      selectedComponent.styles.paddingTop,
-                                      selectedComponent.styles.paddingBottom,
-                                    )}
-                                    onChange={(e) =>
-                                      updateComponentPaddingAxis(
-                                        selectedComponent.id,
-                                        "y",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-top">
-                                    Padding Top (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-top"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={selectedComponent.styles.paddingTop}
-                                    onChange={(e) =>
-                                      updateComponentPaddingSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "top",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-bottom">
-                                    Padding Bottom (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-bottom"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={
-                                      selectedComponent.styles.paddingBottom
-                                    }
-                                    onChange={(e) =>
-                                      updateComponentPaddingSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "bottom",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-left">
-                                    Padding Left (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-left"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={selectedComponent.styles.paddingLeft}
-                                    onChange={(e) =>
-                                      updateComponentPaddingSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "left",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-padding-right">
-                                    Padding Right (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-padding-right"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={
-                                      selectedComponent.styles.paddingRight
-                                    }
-                                    onChange={(e) =>
-                                      updateComponentPaddingSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "right",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-                        </Accordion>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <Accordion type="single" collapsible>
-                          <AccordionItem value="component-margin">
-                            <AccordionTrigger className="font-mono text-sm">
-                              Margin
-                            </AccordionTrigger>
-                            <AccordionContent>
-                              <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-all">
-                                    Margin (All Sides)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-all"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={
-                                      selectedComponent.styles.marginTop ===
-                                        selectedComponent.styles.marginBottom &&
-                                      selectedComponent.styles.marginTop ===
-                                        selectedComponent.styles.marginLeft &&
-                                      selectedComponent.styles.marginTop ===
-                                        selectedComponent.styles.marginRight
-                                        ? String(
-                                            selectedComponent.styles.marginTop,
-                                          )
-                                        : ""
-                                    }
-                                    onChange={(e) =>
-                                      updateComponentMarginAll(
-                                        selectedComponent.id,
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-x">
-                                    Horizontal Margin (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-x"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={getAxisInputValue(
-                                      selectedComponent.styles.marginLeft,
-                                      selectedComponent.styles.marginRight,
-                                    )}
-                                    onChange={(e) =>
-                                      updateComponentMarginAxis(
-                                        selectedComponent.id,
-                                        "x",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-y">
-                                    Vertical Margin (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-y"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={getAxisInputValue(
-                                      selectedComponent.styles.marginTop,
-                                      selectedComponent.styles.marginBottom,
-                                    )}
-                                    onChange={(e) =>
-                                      updateComponentMarginAxis(
-                                        selectedComponent.id,
-                                        "y",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-top">
-                                    Margin Top (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-top"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={selectedComponent.styles.marginTop}
-                                    onChange={(e) =>
-                                      updateComponentMarginSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "top",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-bottom">
-                                    Margin Bottom (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-bottom"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={
-                                      selectedComponent.styles.marginBottom
-                                    }
-                                    onChange={(e) =>
-                                      updateComponentMarginSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "bottom",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-left">
-                                    Margin Left (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-left"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={selectedComponent.styles.marginLeft}
-                                    onChange={(e) =>
-                                      updateComponentMarginSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "left",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="comp-margin-right">
-                                    Margin Right (px)
-                                  </Label>
-                                  <Input
-                                    id="comp-margin-right"
-                                    type="number"
-                                    min={0}
-                                    max={200}
-                                    value={selectedComponent.styles.marginRight}
-                                    onChange={(e) =>
-                                      updateComponentMarginSide(
-                                        selectedComponent.id,
-                                        selectedComponent.styles,
-                                        "right",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-                        </Accordion>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-background-color">
-                          Background Color
-                        </Label>
-                        <Button
-                          id="comp-background-color"
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-between font-mono"
-                          onClick={() =>
-                            openColorPicker(
-                              {
-                                scope: "component",
-                                componentId: selectedComponent.id,
-                                field: "backgroundColor",
-                                styles: selectedComponent.styles,
-                              },
-                              selectedComponent.styles.backgroundColor,
-                            )
-                          }
-                        >
-                          <span>
-                            {selectedComponent.styles.backgroundColor}
-                          </span>
-                          <span
-                            className="h-4 w-4 rounded border border-border"
-                            style={{
-                              backgroundColor: normalizeHexColor(
-                                selectedComponent.styles.backgroundColor,
-                                "#000000",
-                              ),
-                            }}
-                          />
-                        </Button>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-border-color">Border Color</Label>
-                        <Button
-                          id="comp-border-color"
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-between font-mono"
-                          onClick={() =>
-                            openColorPicker(
-                              {
-                                scope: "component",
-                                componentId: selectedComponent.id,
-                                field: "borderColor",
-                                styles: selectedComponent.styles,
-                              },
-                              selectedComponent.styles.borderColor,
-                            )
-                          }
-                        >
-                          <span>{selectedComponent.styles.borderColor}</span>
-                          <span
-                            className="h-4 w-4 rounded border border-border"
-                            style={{
-                              backgroundColor: normalizeHexColor(
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-color">
+                            Border Color
+                          </Label>
+                          <Button
+                            id="comp-border-color"
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between font-mono"
+                            onClick={() =>
+                              openColorPicker(
+                                {
+                                  scope: "component",
+                                  componentId: selectedComponent.id,
+                                  field: "borderColor",
+                                  styles: selectedComponent.styles,
+                                },
                                 selectedComponent.styles.borderColor,
-                                "#000000",
-                              ),
-                            }}
+                              )
+                            }
+                          >
+                            <span>{selectedComponent.styles.borderColor}</span>
+                            <span
+                              className="h-4 w-4 rounded border border-border"
+                              style={{
+                                backgroundColor: normalizeHexColor(
+                                  selectedComponent.styles.borderColor,
+                                  "#000000",
+                                ),
+                              }}
+                            />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-radius">
+                            Border Radius
+                          </Label>
+                          <Input
+                            id="comp-border-radius"
+                            type="range"
+                            min={0}
+                            max={64}
+                            value={selectedComponent.styles.borderRadius}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                borderRadius: clampContainerBorderRadius(
+                                  e.target.value,
+                                ),
+                              })
+                            }
                           />
-                        </Button>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedComponent.styles.borderRadius}px
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-border-width">
+                            Border Width (px)
+                          </Label>
+                          <Input
+                            id="comp-border-width"
+                            type="number"
+                            min={0}
+                            max={16}
+                            value={selectedComponent.styles.borderWidth}
+                            onChange={(e) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                borderWidth: clampContainerBorderWidth(
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-border-radius">
-                          Border Radius
-                        </Label>
-                        <Input
-                          id="comp-border-radius"
-                          type="range"
-                          min={0}
-                          max={64}
-                          value={selectedComponent.styles.borderRadius}
-                          onChange={(e) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              borderRadius: clampContainerBorderRadius(
-                                e.target.value,
-                              ),
-                            })
-                          }
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {selectedComponent.styles.borderRadius}px
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="comp-border-width">
-                          Border Width (px)
-                        </Label>
-                        <Input
-                          id="comp-border-width"
-                          type="number"
-                          min={0}
-                          max={16}
-                          value={selectedComponent.styles.borderWidth}
-                          onChange={(e) =>
-                            updateComponentStyles(selectedComponent.id, {
-                              borderWidth: clampContainerBorderWidth(
-                                e.target.value,
-                              ),
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </div>
 
                   <Card className="p-0 overflow-hidden">
                     <div className="px-4 pt-4 pb-3 border-b border-border flex items-center justify-between gap-3">

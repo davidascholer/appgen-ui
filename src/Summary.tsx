@@ -42,6 +42,8 @@ type SummaryPageItem = {
   id: string;
   title: string;
   source: "config" | "prebuilt";
+  kind: "custom" | "prebuilt";
+  componentIds: string[];
 };
 
 type SummaryThemeMode = "light" | "dark";
@@ -178,7 +180,14 @@ function parseProjectInput(raw: string): ParsedKind {
           ? page.title
           : id;
       if (!id) continue;
-      pages.push({ id, title, source: "config" });
+      const kind = page.kind === "custom" ? "custom" : "prebuilt";
+      const componentIds =
+        kind === "custom" && Array.isArray(page.componentIds)
+          ? page.componentIds.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : [];
+      pages.push({ id, title, source: "config", kind, componentIds });
     }
   }
 
@@ -192,7 +201,13 @@ function parseProjectInput(raw: string): ParsedKind {
           ? page.title
           : id;
       if (!id) continue;
-      pages.push({ id, title, source: "prebuilt" });
+      pages.push({
+        id,
+        title,
+        source: "prebuilt",
+        kind: "prebuilt",
+        componentIds: [],
+      });
     }
   }
 
@@ -693,7 +708,16 @@ function codeForComponent(comp: AppComponent): string {
 }
 
 export default function Summary() {
-  const [jsonText, setJsonText] = useState("");
+  const [jsonText, setJsonText] = useState(() => {
+    const persisted = localStorage.getItem("app-config");
+    if (!persisted) return "";
+    try {
+      const parsed = JSON.parse(persisted);
+      return JSON.stringify({ config: parsed }, null, 2);
+    } catch {
+      return "";
+    }
+  });
   const [activeTab, setActiveTab] = useState<SummaryTab>("components");
   const [selectedPageId, setSelectedPageId] = useState("");
   const [selectedComponentId, setSelectedComponentId] = useState("");
@@ -715,17 +739,7 @@ export default function Summary() {
     components[0] ??
     null;
 
-  const reactCode = useMemo(() => {
-    if (activeTab !== "components") return null;
-    if (!selectedComponent) return null;
-    return codeForComponent(selectedComponent);
-  }, [activeTab, selectedComponent, themeMode, colorTheme]);
-
-  const preview = useMemo((): ReactNode => {
-    if (activeTab === "pages") return null;
-    if (!selectedComponent) return null;
-
-    const comp = selectedComponent;
+  const renderComponentPreview = (comp: AppComponent): ReactNode => {
     const dir = comp.styles.direction === "vertical" ? "flex-col" : "flex-row";
     const justifyClass = getEffectiveFlexJustifyClass(
       comp.styles.justifyContent,
@@ -792,7 +806,90 @@ export default function Summary() {
         ))}
       </div>
     );
-  }, [activeTab, selectedComponent, themeMode, colorTheme]);
+  };
+
+  const reactCode = useMemo(() => {
+    if (activeTab === "components") {
+      if (!selectedComponent) return null;
+      return codeForComponent(selectedComponent);
+    }
+
+    if (!selectedPage) return null;
+    if (selectedPage.kind !== "custom") {
+      return `// ${selectedPage.title}\n// Prebuilt page preview code is not available.`;
+    }
+
+    const pageComponents = selectedPage.componentIds
+      .map((componentId) =>
+        components.find((component) => component.id === componentId),
+      )
+      .filter((component): component is AppComponent => Boolean(component));
+
+    if (pageComponents.length === 0) {
+      return `// ${selectedPage.title}\n<div>{/* No components assigned */}</div>`;
+    }
+
+    const parts = pageComponents.map(
+      (component) => `/* ${component.label} */\n${codeForComponent(component)}`,
+    );
+    return `<div className="flex flex-col gap-4">\n${parts
+      .map((part) => `  ${part.replace(/\n/g, "\n  ")}`)
+      .join("\n\n")}\n</div>`;
+  }, [activeTab, selectedComponent, selectedPage, components]);
+
+  const preview = useMemo((): ReactNode => {
+    if (activeTab === "components") {
+      if (!selectedComponent) return null;
+      return renderComponentPreview(selectedComponent);
+    }
+
+    if (!selectedPage) return null;
+    if (selectedPage.kind !== "custom") {
+      return (
+        <span style={{ color: "#a1a1aa", fontSize: "14px" }}>
+          Prebuilt page preview is not available.
+        </span>
+      );
+    }
+
+    const pageComponents = selectedPage.componentIds
+      .map((componentId) =>
+        components.find((component) => component.id === componentId),
+      )
+      .filter((component): component is AppComponent => Boolean(component));
+
+    if (pageComponents.length === 0) {
+      return (
+        <span style={{ color: "#a1a1aa", fontSize: "14px" }}>
+          This page has no components yet.
+        </span>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          width: "100%",
+        }}
+      >
+        {pageComponents.map((component, index) => (
+          <div key={`${selectedPage.id}-${component.id}-${index}`}>
+            {renderComponentPreview(component)}
+          </div>
+        ))}
+      </div>
+    );
+  }, [
+    activeTab,
+    selectedComponent,
+    selectedPage,
+    components,
+    themeMode,
+    colorTheme,
+  ]);
 
   return (
     <div style={{ padding: "16px", maxWidth: "1100px", margin: "0 auto" }}>
@@ -992,7 +1089,7 @@ export default function Summary() {
               <label style={{ fontWeight: 600, fontSize: "14px" }}>
                 React Code
               </label>
-              {activeTab === "components" && reactCode && (
+              {reactCode && (
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button type="button" variant="outline" size="sm">
@@ -1019,10 +1116,10 @@ export default function Summary() {
                 color: "#71717a",
               }}
             >
-              {activeTab === "pages"
-                ? "React code is only shown for components."
-                : reactCode
-                  ? "Click 'View React Code' to open the full popup."
+              {reactCode
+                ? "Click 'View React Code' to open the full popup."
+                : activeTab === "pages"
+                  ? "Select a page to view code..."
                   : "Select a component to view code..."}
             </p>
           </div>
@@ -1096,16 +1193,12 @@ export default function Summary() {
             color: resolveColor("$text"),
           }}
         >
-          {activeTab === "pages" ? (
+          {preview ?? (
             <span style={{ color: "#a1a1aa", fontSize: "14px" }}>
-              Page preview not implemented yet.
+              {activeTab === "pages"
+                ? "Select a page to preview..."
+                : "Select a component to preview..."}
             </span>
-          ) : (
-            (preview ?? (
-              <span style={{ color: "#a1a1aa", fontSize: "14px" }}>
-                Select a component to preview...
-              </span>
-            ))
           )}
         </div>
       </div>
