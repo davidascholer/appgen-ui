@@ -32,6 +32,8 @@ import {
   Plus,
   Download,
   List,
+  Menu,
+  ArrowLeft,
   Home,
   Trash2,
   ToggleLeft,
@@ -88,7 +90,6 @@ interface HeaderPrebuiltItem {
 }
 
 type SettingsItem = ToggleSettingItem | InputSettingItem | SelectSettingItem;
-type HomeItem = HeaderPrebuiltItem;
 type SettingComponentType = "toggle" | "input" | "select" | "header";
 
 interface SettingComponentDefinition {
@@ -98,29 +99,19 @@ interface SettingComponentDefinition {
   kind: "prebuilt";
 }
 
-interface PrebuiltSettingsPage {
-  id: string;
-  kind: "prebuilt";
-  title: string;
-  items: SettingsItem[];
-}
-
-interface PrebuiltHomePage {
-  id: "home";
-  kind: "prebuilt";
-  title: string;
-  items: HomeItem[];
-}
-
 interface CustomPage {
   id: string;
   kind: "custom";
   title: string;
+  url: string;
+  showNavigationHeader: boolean;
+  navigationHeaderComponentId: string | null;
+  parentPageId: string | null;
   componentIds: string[];
   styles: ComponentStyles;
 }
 
-type AppPage = PrebuiltSettingsPage | PrebuiltHomePage | CustomPage;
+type AppPage = CustomPage;
 
 interface AppConfig {
   id: string;
@@ -129,7 +120,10 @@ interface AppConfig {
   customComponents: AppComponent[];
   navigation: {
     shown: boolean;
-    navigationHeader: string;
+    navigationLabel: string;
+    showNavigationHeader: boolean;
+    headerMenuIconName: string;
+    headerBackIconName: string;
     navigationStyle: NavigationStyle;
     navigationPages: NavPage[];
   };
@@ -145,12 +139,16 @@ interface ExportedComponentDefinition {
 interface ExportedPrebuiltPage {
   id: string;
   title: string;
-  items: Array<SettingsItem | HomeItem>;
+  items: Array<SettingsItem | HeaderPrebuiltItem>;
 }
 
 interface ExportedCustomPage {
   id: string;
   title: string;
+  url: string;
+  showNavigationHeader: boolean;
+  navigationHeaderComponentId: string | null;
+  parentPageId: string | null;
   componentIds: string[];
   styles: ComponentStyles;
 }
@@ -344,6 +342,8 @@ interface ComponentStyles {
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
   overflowScroll: boolean;
+  overflowXScroll?: boolean;
+  overflowYScroll?: boolean;
   gap: number;
   minWidth: number;
   maxWidth: number;
@@ -529,7 +529,6 @@ const normalizeColorTheme = (raw: unknown): ColorTheme => {
     return acc;
   }, {} as ColorTheme);
 };
-type IconEntryMode = "default" | "manual";
 type DrawerVariant = "short" | "long" | "all";
 type BottomVariant = "short" | "long";
 
@@ -542,10 +541,6 @@ type NavigationStyle =
       type: "bottom";
       variant: BottomVariant;
     };
-
-const DEFAULT_NAV_ICON = {
-  name: "Home",
-} as const;
 
 const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
   type: "drawer",
@@ -604,66 +599,14 @@ const PREBUILT_SOURCE_PAGES: ExportedPrebuiltPage[] = Array.isArray(
           id: entry.id,
           title: entry.title,
           items: Array.isArray(entry.items)
-            ? (entry.items as Array<SettingsItem | HomeItem>)
+            ? (entry.items as Array<SettingsItem | HeaderPrebuiltItem>)
             : [],
         };
       })
       .filter((page): page is ExportedPrebuiltPage => page !== null)
   : [];
 
-const createDefaultSettingsPage = (): PrebuiltSettingsPage => ({
-  id: "settings",
-  kind: "prebuilt",
-  title: "Settings",
-  items: [],
-});
-
-const createDefaultHomePage = (): PrebuiltHomePage => ({
-  id: "home",
-  kind: "prebuilt",
-  title: "Home",
-  items: [
-    {
-      id: crypto.randomUUID(),
-      label: "Header 1",
-      type: "header",
-      componentTypeId: "component-type-header1",
-      value: "Home",
-    },
-  ],
-});
-
-const PREBUILT_PAGES_FROM_SOURCE: AppPage[] = PREBUILT_SOURCE_PAGES.flatMap(
-  (page) => {
-    if (page.id === "settings") {
-      return [
-        {
-          id: "settings",
-          kind: "prebuilt" as const,
-          title: page.title,
-          items: page.items.filter((item): item is SettingsItem =>
-            Boolean(item && typeof item === "object"),
-          ),
-        },
-      ];
-    }
-
-    if (page.id === "home") {
-      return [
-        {
-          id: "home",
-          kind: "prebuilt" as const,
-          title: page.title,
-          items: page.items.filter((item): item is HomeItem =>
-            Boolean(item && typeof item === "object"),
-          ),
-        },
-      ];
-    }
-
-    return [];
-  },
-);
+const PREBUILT_PAGES_FROM_SOURCE: AppPage[] = [];
 
 const getFallbackSettingComponent = (
   type: SettingComponentType,
@@ -1297,6 +1240,8 @@ const getDefaultComponentStyles = (): ComponentStyles => ({
   justifyContent: "space-between",
   alignItems: "start",
   overflowScroll: false,
+  overflowXScroll: false,
+  overflowYScroll: false,
   gap: 0,
   minWidth: 0,
   maxWidth: DEFAULT_CONTAINER_MAX_DIMENSION,
@@ -1319,6 +1264,50 @@ const getDefaultComponentStyles = (): ComponentStyles => ({
   borderRadius: 8,
   borderWidth: 0,
 });
+
+const getDefaultPageStyles = (): ComponentStyles => ({
+  ...getDefaultComponentStyles(),
+  direction: "vertical",
+  justifyContent: "start",
+  alignItems: "center",
+  overflowXScroll: false,
+  overflowYScroll: true,
+  gap: 8,
+  paddingX: 20,
+  paddingY: 20,
+  paddingTop: 20,
+  paddingBottom: 20,
+  paddingLeft: 20,
+  paddingRight: 20,
+  marginX: 0,
+  marginY: 0,
+  marginTop: 0,
+  marginBottom: 0,
+  marginLeft: 0,
+  marginRight: 0,
+});
+
+const toUrlSlug = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const normalizePageUrl = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+};
+
+const getDefaultPageUrl = (title: string, id: string): string => {
+  const slug = toUrlSlug(title);
+  if (slug.length > 0) {
+    return `/${slug}`;
+  }
+
+  return `/${id}`;
+};
 
 const getDefaultContainerStyles = (): ContainerElementStyles => {
   const styles = getPrebuiltElementDef("element-vertical-container")?.styles;
@@ -2200,11 +2189,14 @@ const DEFAULT_CONFIG: AppConfig = {
   customComponents: [],
   navigation: {
     shown: true,
-    navigationHeader: "",
+    navigationLabel: "",
+    showNavigationHeader: true,
+    headerMenuIconName: "Menu",
+    headerBackIconName: "ArrowLeft",
     navigationStyle: DEFAULT_NAVIGATION_STYLE,
     navigationPages: [],
   },
-  pages: PREBUILT_PAGES_FROM_SOURCE,
+  pages: [],
 };
 
 const normalizeConfig = (input: unknown): AppConfig => {
@@ -2216,6 +2208,10 @@ const normalizeConfig = (input: unknown): AppConfig => {
     pages?: unknown;
     navigation?: {
       shown?: unknown;
+      navigationLabel: navDraftLabel;
+      showNavigationHeader: navDraftShowHeader;
+      headerMenuIconName: navDraftHeaderMenuIconName;
+      headerBackIconName: navDraftHeaderBackIconName;
       navigationHeader?: unknown;
       navigationStyle?: unknown;
       navigationPages?: unknown;
@@ -2405,7 +2401,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
           icon?: unknown;
         };
 
-        let normalizedIcon = DEFAULT_NAV_ICON;
+        let normalizedIcon: NavPage["icon"] = { name: "Home" };
         if (typeof page.icon === "string") {
           normalizedIcon = {
             name: normalizeLucideIconName(page.icon),
@@ -2423,7 +2419,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
             name:
               typeof iconObj.name === "string" && iconObj.name.trim().length > 0
                 ? normalizeLucideIconName(iconObj.name)
-                : DEFAULT_NAV_ICON.name,
+                : "Home",
           };
         }
 
@@ -2434,185 +2430,11 @@ const normalizeConfig = (input: unknown): AppConfig => {
           pageId:
             typeof page.pageId === "string" && page.pageId.trim().length > 0
               ? page.pageId
-              : "settings",
+              : "",
           icon: normalizedIcon,
         };
       })
     : [];
-
-  const parseSettingsItems = (value: unknown): SettingsItem[] =>
-    Array.isArray(value)
-      ? value.map((entry) => {
-          const item = entry as Partial<SettingsItem> & {
-            value?: unknown;
-          };
-
-          if (item.type === "toggle") {
-            return {
-              id: item.id || crypto.randomUUID(),
-              label: typeof item.label === "string" ? item.label : "Setting",
-              type: "toggle",
-              componentTypeId:
-                typeof item.componentTypeId === "string" &&
-                item.componentTypeId.trim().length > 0
-                  ? item.componentTypeId
-                  : getComponentIdForType("toggle"),
-              value: Boolean(item.value),
-            };
-          }
-
-          if (item.type === "select") {
-            const normalizedOptions = Array.isArray(item.value)
-              ? item.value.filter((v): v is string => typeof v === "string")
-              : typeof item.value === "string" && item.value.length > 0
-                ? [item.value]
-                : [];
-
-            return {
-              id: item.id || crypto.randomUUID(),
-              label: typeof item.label === "string" ? item.label : "Setting",
-              type: "select",
-              componentTypeId:
-                typeof item.componentTypeId === "string" &&
-                item.componentTypeId.trim().length > 0
-                  ? item.componentTypeId
-                  : getComponentIdForType("select"),
-              value: normalizedOptions,
-            };
-          }
-
-          return {
-            id: item.id || crypto.randomUUID(),
-            label: typeof item.label === "string" ? item.label : "Setting",
-            type: "input",
-            componentTypeId:
-              typeof item.componentTypeId === "string" &&
-              item.componentTypeId.trim().length > 0
-                ? item.componentTypeId
-                : getComponentIdForType("input"),
-            value: typeof item.value === "string" ? item.value : "",
-          };
-        })
-      : [];
-
-  const legacySettingsItems = parseSettingsItems(
-    legacyComponentsObject?.settings?.items,
-  );
-
-  const parseSettingsPrebuiltPage = (
-    value: unknown,
-  ): PrebuiltSettingsPage | undefined => {
-    if (!value || typeof value !== "object") return undefined;
-
-    const page = value as {
-      id?: unknown;
-      kind?: unknown;
-      pageType?: unknown;
-      title?: unknown;
-      items?: unknown;
-    };
-
-    const hasExplicitId =
-      typeof page.id === "string" && page.id.trim().length > 0;
-    const isSettingsPage =
-      page.pageType === "settings" ||
-      page.id === "settings" ||
-      ((page.kind === "preset" || page.kind === "prebuilt") && !hasExplicitId);
-
-    if (!isSettingsPage) return undefined;
-
-    return {
-      id:
-        typeof page.id === "string" && page.id.trim().length > 0
-          ? page.id
-          : "settings",
-      kind: "prebuilt",
-      title:
-        typeof page.title === "string" && page.title.trim().length > 0
-          ? page.title
-          : "Settings",
-      items: parseSettingsItems(page.items),
-    };
-  };
-
-  const parseHomeItems = (value: unknown, pageTitle: string): HomeItem[] => {
-    if (!Array.isArray(value)) {
-      return [
-        {
-          id: crypto.randomUUID(),
-          label: "Header 1",
-          type: "header",
-          componentTypeId: getComponentIdForType("header"),
-          value: pageTitle,
-        },
-      ];
-    }
-
-    const parsed = value.flatMap((entry) => {
-      const item = entry as Partial<HomeItem> & { value?: unknown };
-      if (item.type !== "header") return [];
-
-      return [
-        {
-          id: item.id || crypto.randomUUID(),
-          label:
-            typeof item.label === "string" && item.label.trim().length > 0
-              ? item.label
-              : "Header 1",
-          type: "header" as const,
-          componentTypeId:
-            typeof item.componentTypeId === "string" &&
-            item.componentTypeId.trim().length > 0
-              ? item.componentTypeId
-              : getComponentIdForType("header"),
-          value:
-            typeof item.value === "string" && item.value.trim().length > 0
-              ? item.value
-              : pageTitle,
-        },
-      ];
-    });
-
-    if (parsed.length > 0) return parsed;
-
-    return [
-      {
-        id: crypto.randomUUID(),
-        label: "Header 1",
-        type: "header",
-        componentTypeId: getComponentIdForType("header"),
-        value: pageTitle,
-      },
-    ];
-  };
-
-  const parseHomePrebuiltPage = (
-    value: unknown,
-  ): PrebuiltHomePage | undefined => {
-    if (!value || typeof value !== "object") return undefined;
-
-    const page = value as {
-      id?: unknown;
-      pageType?: unknown;
-      title?: unknown;
-      items?: unknown;
-    };
-
-    const isHomePage = page.pageType === "home" || page.id === "home";
-    if (!isHomePage) return undefined;
-
-    const pageTitle =
-      typeof page.title === "string" && page.title.trim().length > 0
-        ? page.title
-        : "Home";
-
-    return {
-      id: "home",
-      kind: "prebuilt",
-      title: pageTitle,
-      items: parseHomeItems(page.items, pageTitle),
-    };
-  };
 
   const parseCustomPage = (value: unknown): CustomPage | undefined => {
     if (!value || typeof value !== "object") return undefined;
@@ -2621,13 +2443,22 @@ const normalizeConfig = (input: unknown): AppConfig => {
       id?: unknown;
       kind?: unknown;
       title?: unknown;
+      url?: unknown;
+      link?: unknown;
+      route?: unknown;
+      path?: unknown;
+      showNavigationHeader?: unknown;
+      navigationHeaderComponentId?: unknown;
+      headerComponentId?: unknown;
+      parentPageId?: unknown;
+      parentId?: unknown;
       componentIds?: unknown;
       styles?: unknown;
     };
 
     if (page.kind !== "custom") return undefined;
 
-    const defaultStyles = getDefaultComponentStyles();
+    const defaultStyles = getDefaultPageStyles();
     const rawStyles =
       page.styles && typeof page.styles === "object"
         ? (page.styles as Record<string, unknown>)
@@ -2640,16 +2471,52 @@ const normalizeConfig = (input: unknown): AppConfig => {
       return input;
     };
 
+    const pageId =
+      typeof page.id === "string" && page.id.trim().length > 0
+        ? page.id
+        : crypto.randomUUID();
+    const pageTitle =
+      typeof page.title === "string" && page.title.trim().length > 0
+        ? page.title
+        : "Untitled";
+    const resolvedUrl =
+      typeof page.url === "string"
+        ? page.url
+        : typeof page.link === "string"
+          ? page.link
+          : typeof page.route === "string"
+            ? page.route
+            : typeof page.path === "string"
+              ? page.path
+              : "";
+    const normalizedParentPageId =
+      typeof page.parentPageId === "string" &&
+      page.parentPageId.trim().length > 0
+        ? page.parentPageId.trim()
+        : typeof page.parentId === "string" && page.parentId.trim().length > 0
+          ? page.parentId.trim()
+          : null;
+    const normalizedNavigationHeaderComponentId =
+      typeof page.navigationHeaderComponentId === "string" &&
+      page.navigationHeaderComponentId.trim().length > 0
+        ? page.navigationHeaderComponentId.trim()
+        : typeof page.headerComponentId === "string" &&
+            page.headerComponentId.trim().length > 0
+          ? page.headerComponentId.trim()
+          : null;
+
     return {
-      id:
-        typeof page.id === "string" && page.id.trim().length > 0
-          ? page.id
-          : crypto.randomUUID(),
+      id: pageId,
       kind: "custom",
-      title:
-        typeof page.title === "string" && page.title.trim().length > 0
-          ? page.title
-          : "Untitled",
+      title: pageTitle,
+      url:
+        normalizePageUrl(resolvedUrl) || getDefaultPageUrl(pageTitle, pageId),
+      showNavigationHeader:
+        typeof page.showNavigationHeader === "boolean"
+          ? page.showNavigationHeader
+          : true,
+      navigationHeaderComponentId: normalizedNavigationHeaderComponentId,
+      parentPageId: normalizedParentPageId,
       componentIds: Array.isArray(page.componentIds)
         ? page.componentIds.filter(
             (id): id is string =>
@@ -2658,7 +2525,10 @@ const normalizeConfig = (input: unknown): AppConfig => {
         : [],
       styles: {
         direction:
-          rawStyles.direction === "vertical" ? "vertical" : "horizontal",
+          rawStyles.direction === "vertical" ||
+          rawStyles.direction === "horizontal"
+            ? rawStyles.direction
+            : defaultStyles.direction,
         justifyContent: normalizeFlexJustifyContent(
           rawStyles.justifyContent,
           defaultStyles.justifyContent,
@@ -2671,6 +2541,14 @@ const normalizeConfig = (input: unknown): AppConfig => {
           typeof rawStyles.overflowScroll === "boolean"
             ? rawStyles.overflowScroll
             : defaultStyles.overflowScroll,
+        overflowXScroll:
+          typeof rawStyles.overflowXScroll === "boolean"
+            ? rawStyles.overflowXScroll
+            : defaultStyles.overflowXScroll,
+        overflowYScroll:
+          typeof rawStyles.overflowYScroll === "boolean"
+            ? rawStyles.overflowYScroll
+            : defaultStyles.overflowYScroll,
         gap: toNumberOr(rawStyles.gap, defaultStyles.gap),
         minWidth: toNumberOr(rawStyles.minWidth, defaultStyles.minWidth),
         maxWidth: toNumberOr(rawStyles.maxWidth, defaultStyles.maxWidth),
@@ -2726,29 +2604,10 @@ const normalizeConfig = (input: unknown): AppConfig => {
   const rawPages = maybeConfig.pages;
   const arrayPages = Array.isArray(rawPages)
     ? rawPages.flatMap((entry) => {
-        const home = parseHomePrebuiltPage(entry);
-        if (home) return [home];
-
-        const prebuilt = parseSettingsPrebuiltPage(entry);
-        if (prebuilt) return [prebuilt];
-
         const custom = parseCustomPage(entry);
         return custom ? [custom] : [];
       })
     : [];
-
-  const objectPrebuilt =
-    rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
-      ? parseSettingsPrebuiltPage(
-          (rawPages as { prebuilt?: unknown; preset?: unknown }).prebuilt ??
-            (rawPages as { prebuilt?: unknown; preset?: unknown }).preset,
-        )
-      : undefined;
-
-  const objectHomePrebuilt =
-    rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
-      ? parseHomePrebuiltPage((rawPages as { home?: unknown }).home)
-      : undefined;
 
   const objectCustomPages =
     rawPages && typeof rawPages === "object" && !Array.isArray(rawPages)
@@ -2756,6 +2615,12 @@ const normalizeConfig = (input: unknown): AppConfig => {
           ([id, value]) => {
             const item = value as {
               title?: unknown;
+              url?: unknown;
+              showNavigationHeader?: unknown;
+              navigationHeaderComponentId?: unknown;
+              headerComponentId?: unknown;
+              parentPageId?: unknown;
+              parentId?: unknown;
               componentIds?: unknown;
               styles?: unknown;
             };
@@ -2767,6 +2632,12 @@ const normalizeConfig = (input: unknown): AppConfig => {
                 typeof item?.title === "string" && item.title.trim().length > 0
                   ? item.title
                   : id,
+              url: item?.url,
+              showNavigationHeader: item?.showNavigationHeader,
+              navigationHeaderComponentId: item?.navigationHeaderComponentId,
+              headerComponentId: item?.headerComponentId,
+              parentPageId: item?.parentPageId,
+              parentId: item?.parentId,
               componentIds: item?.componentIds,
               styles: item?.styles,
             });
@@ -2776,6 +2647,10 @@ const normalizeConfig = (input: unknown): AppConfig => {
                 id,
                 kind: "custom" as const,
                 title: id,
+                url: getDefaultPageUrl(id, id),
+                showNavigationHeader: true,
+                navigationHeaderComponentId: null,
+                parentPageId: null,
                 componentIds: [],
                 styles: getDefaultComponentStyles(),
               }
@@ -2784,30 +2659,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
         )
       : [];
 
-  const fallbackSettingsPage: PrebuiltSettingsPage = {
-    ...createDefaultSettingsPage(),
-    items: legacySettingsItems,
-  };
-
-  const fallbackHomePage: PrebuiltHomePage = createDefaultHomePage();
-
-  const hasSettings =
-    arrayPages.some(
-      (page) => page.kind === "prebuilt" && page.id === "settings",
-    ) || Boolean(objectPrebuilt);
-
-  const hasHome =
-    arrayPages.some((page) => page.kind === "prebuilt" && page.id === "home") ||
-    Boolean(objectHomePrebuilt);
-
-  const normalizedPages: AppPage[] = [
-    ...(hasSettings ? [] : [fallbackSettingsPage]),
-    ...(hasHome ? [] : [fallbackHomePage]),
-    ...arrayPages,
-    ...(objectHomePrebuilt ? [objectHomePrebuilt] : []),
-    ...(objectPrebuilt ? [objectPrebuilt] : []),
-    ...objectCustomPages,
-  ];
+  const normalizedPages: AppPage[] = [...arrayPages, ...objectCustomPages];
 
   const normalizeCustomComponents = (raw: unknown): AppComponent[] => {
     if (!Array.isArray(raw)) return [];
@@ -2930,21 +2782,50 @@ const normalizeConfig = (input: unknown): AppConfig => {
     customComponents: normalizeCustomComponents(maybeConfig.customComponents),
     navigation: {
       shown: typeof navRoot?.shown === "boolean" ? navRoot.shown : true,
-      navigationHeader:
-        typeof navRoot?.navigationHeader === "string"
-          ? navRoot.navigationHeader
-          : "",
+      navigationLabel:
+        typeof (navRoot as { navigationLabel?: unknown })?.navigationLabel ===
+        "string"
+          ? String((navRoot as { navigationLabel?: unknown }).navigationLabel)
+          : typeof navRoot?.navigationHeader === "string"
+            ? navRoot.navigationHeader
+            : "",
+      showNavigationHeader:
+        typeof (navRoot as { showNavigationHeader?: unknown })
+          ?.showNavigationHeader === "boolean"
+          ? Boolean(
+              (navRoot as { showNavigationHeader?: unknown })
+                .showNavigationHeader,
+            )
+          : true,
+      headerMenuIconName:
+        typeof (navRoot as { headerMenuIconName?: unknown })
+          ?.headerMenuIconName === "string" &&
+        String(
+          (navRoot as { headerMenuIconName?: unknown }).headerMenuIconName,
+        ).trim().length > 0
+          ? String(
+              (navRoot as { headerMenuIconName?: unknown }).headerMenuIconName,
+            )
+          : "Menu",
+      headerBackIconName:
+        typeof (navRoot as { headerBackIconName?: unknown })
+          ?.headerBackIconName === "string" &&
+        String(
+          (navRoot as { headerBackIconName?: unknown }).headerBackIconName,
+        ).trim().length > 0
+          ? String(
+              (navRoot as { headerBackIconName?: unknown }).headerBackIconName,
+            )
+          : "ArrowLeft",
       navigationStyle: normalizedNavStyle,
       navigationPages: navPages,
     },
-    pages:
-      normalizedPages.length > 0
-        ? normalizedPages
-        : [fallbackSettingsPage, fallbackHomePage],
+    pages: normalizedPages,
   };
 };
 
 function App() {
+  const NAVIGATION_RESET_STORAGE_KEY = "app-navigation-pages-reset-v1";
   const [config, setConfig] = useState<AppConfig>(() => {
     const persisted = localStorage.getItem("app-config");
     if (!persisted) return DEFAULT_CONFIG;
@@ -2955,16 +2836,39 @@ function App() {
       return DEFAULT_CONFIG;
     }
   });
+
+  useEffect(() => {
+    const hasAppliedReset =
+      localStorage.getItem(NAVIGATION_RESET_STORAGE_KEY) === "1";
+
+    if (hasAppliedReset) {
+      return;
+    }
+
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      if (base.navigation.navigationPages.length === 0) {
+        return base;
+      }
+
+      return {
+        ...base,
+        navigation: {
+          ...base.navigation,
+          navigationPages: [],
+        },
+      };
+    });
+
+    localStorage.setItem(NAVIGATION_RESET_STORAGE_KEY, "1");
+  }, [NAVIGATION_RESET_STORAGE_KEY]);
+
   const [appNameDraft, setAppNameDraft] = useState<string>(
     () => config.appName,
   );
   const [drawerState, setDrawerState] = useState<DrawerState>("closed");
-  const [newLinkTitle, setNewLinkTitle] = useState("");
-  const [newLinkUrl, setNewLinkUrl] = useState("");
-  const [newLinkPageId, setNewLinkPageId] = useState("settings");
-  const [newLinkIconMode, setNewLinkIconMode] =
-    useState<IconEntryMode>("default");
-  const [newLinkIconManual, setNewLinkIconManual] = useState("");
+  const [newLinkPageId, setNewLinkPageId] = useState("");
+  const [newLinkIconName, setNewLinkIconName] = useState("");
   const [newSettingLabel, setNewSettingLabel] = useState("");
   const [newSettingType, setNewSettingType] = useState<
     "toggle" | "input" | "select"
@@ -2992,13 +2896,18 @@ function App() {
   });
   const [themePreviewMode, setThemePreviewMode] =
     useState<ThemePreviewMode>("light");
-  const [selectedPageId, setSelectedPageId] = useState("settings");
+  const [selectedPageId, setSelectedPageId] = useState("");
+  const [navigationPreviewPageId, setNavigationPreviewPageId] = useState("");
+  const [navigationPreviewHistory, setNavigationPreviewHistory] = useState<
+    string[]
+  >([]);
   const [showAddCustomPage, setShowAddCustomPage] = useState(false);
   const [newCustomPageTitle, setNewCustomPageTitle] = useState("");
+  const [newCustomPageUrl, setNewCustomPageUrl] = useState("");
+  const [newCustomPageParentId, setNewCustomPageParentId] = useState("");
   const [selectedPageTitleDraft, setSelectedPageTitleDraft] =
     useState<string>("");
   const [pageMaxWidthInput, setPageMaxWidthInput] = useState<string>("none");
-  const [pageMaxHeightInput, setPageMaxHeightInput] = useState<string>("none");
   const [newPageComponentId, setNewPageComponentId] = useState<string>("");
   const [previewToggleValues, setPreviewToggleValues] = useState<
     Record<string, boolean>
@@ -3009,12 +2918,21 @@ function App() {
   const [navDraftPages, setNavDraftPages] = useState<NavPage[]>(
     () => config.navigation.navigationPages,
   );
-  const [navDraftHeader, setNavDraftHeader] = useState<string>(
-    () => config.navigation.navigationHeader,
+  const [navDraftLabel, setNavDraftLabel] = useState<string>(
+    () => config.navigation.navigationLabel,
   );
+  const [navDraftShowHeader, setNavDraftShowHeader] = useState<boolean>(
+    () => config.navigation.showNavigationHeader,
+  );
+  const [navDraftHeaderMenuIconName, setNavDraftHeaderMenuIconName] =
+    useState<string>(() => config.navigation.headerMenuIconName);
+  const [navDraftHeaderBackIconName, setNavDraftHeaderBackIconName] =
+    useState<string>(() => config.navigation.headerBackIconName);
   const [navDraftStyle, setNavDraftStyle] = useState<NavigationStyle>(
     () => config.navigation.navigationStyle,
   );
+  const [showAddNavigationPage, setShowAddNavigationPage] =
+    useState<boolean>(false);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(
     null,
   );
@@ -3080,29 +2998,36 @@ function App() {
   }, [config.navigation.navigationPages]);
 
   useEffect(() => {
-    setNavDraftHeader(config.navigation.navigationHeader);
-  }, [config.navigation.navigationHeader]);
+    setNavDraftLabel(config.navigation.navigationLabel);
+  }, [config.navigation.navigationLabel]);
+
+  useEffect(() => {
+    setNavDraftShowHeader(config.navigation.showNavigationHeader);
+  }, [config.navigation.showNavigationHeader]);
+
+  useEffect(() => {
+    setNavDraftHeaderMenuIconName(config.navigation.headerMenuIconName);
+  }, [config.navigation.headerMenuIconName]);
+
+  useEffect(() => {
+    setNavDraftHeaderBackIconName(config.navigation.headerBackIconName);
+  }, [config.navigation.headerBackIconName]);
 
   useEffect(() => {
     setNavDraftStyle(config.navigation.navigationStyle);
   }, [config.navigation.navigationStyle]);
 
   const safeConfig = config || DEFAULT_CONFIG;
-  const safePages = Array.isArray(safeConfig.pages)
-    ? safeConfig.pages
-    : [createDefaultSettingsPage(), createDefaultHomePage()];
-  const pageTitleOptions = safePages.map((page) => ({
-    id: page.id,
-    title: page.title,
-    kind: page.kind,
-  }));
-  const settingsPage =
-    safePages.find(
-      (page): page is PrebuiltSettingsPage =>
-        page.kind === "prebuilt" && page.id === "settings",
-    ) || createDefaultSettingsPage();
-  const selectedPage =
-    safePages.find((page) => page.id === selectedPageId) || settingsPage;
+  const safePages = Array.isArray(safeConfig.pages) ? safeConfig.pages : [];
+  const pageTitleOptions = safePages
+    .filter((page): page is CustomPage => page.kind === "custom")
+    .map((page) => ({
+      id: page.id,
+      title: page.title,
+      url: page.url,
+      parentPageId: page.parentPageId,
+      kind: page.kind,
+    }));
   const customComponents = Array.isArray(safeConfig.customComponents)
     ? safeConfig.customComponents
     : [];
@@ -3128,6 +3053,55 @@ function App() {
     editablePages.find((page) => page.id === selectedPageId) ??
     editablePages[0] ??
     null;
+  const pageParentOptions = editablePages.map((page) => ({
+    id: page.id,
+    title: page.title,
+  }));
+  const selectedPageParentOptions = selectedEditablePage
+    ? pageParentOptions.filter((page) => page.id !== selectedEditablePage.id)
+    : pageParentOptions;
+  const selectedPageParentExists = Boolean(
+    !selectedEditablePage?.parentPageId ||
+    editablePages.some((page) => page.id === selectedEditablePage.parentPageId),
+  );
+  const selectedPageParentValue = !selectedEditablePage?.parentPageId
+    ? "__root__"
+    : selectedPageParentExists
+      ? selectedEditablePage.parentPageId
+      : "__missing_parent__";
+  const selectedPageHeaderComponentValue =
+    selectedEditablePage?.navigationHeaderComponentId ?? "__none__";
+  const selectedPageShownInNavigation = Boolean(
+    selectedEditablePage &&
+    navDraftPages.some((page) => page.pageId === selectedEditablePage.id),
+  );
+  const selectedLinkPageOption = pageTitleOptions.find(
+    (option) => option.id === newLinkPageId,
+  );
+  const selectedLinkPageIsNonRoot = Boolean(
+    selectedLinkPageOption?.parentPageId,
+  );
+  const navigationPreviewPage =
+    editablePages.find((page) => page.id === navigationPreviewPageId) ??
+    selectedEditablePage;
+  const navigationPreviewParentPage = navigationPreviewPage?.parentPageId
+    ? (editablePages.find(
+        (page) => page.id === navigationPreviewPage.parentPageId,
+      ) ?? null)
+    : null;
+  const navigationPreviewHasParent = Boolean(navigationPreviewParentPage);
+  const navigationPreviewShowsHeader = Boolean(
+    navigationPreviewPage?.showNavigationHeader,
+  );
+  const navigationPreviewHeaderComponent =
+    navigationPreviewPage?.navigationHeaderComponentId
+      ? (customComponents.find(
+          (component) =>
+            component.id === navigationPreviewPage.navigationHeaderComponentId,
+        ) ?? null)
+      : null;
+  const navigationPreviewHeaderHeight =
+    safeConfig.navigation.shown && navigationPreviewShowsHeader ? 56 : 0;
   const selectedPageComponents =
     selectedEditablePage?.componentIds
       .map((componentId) =>
@@ -3180,7 +3154,7 @@ function App() {
 
   useEffect(() => {
     if (pageTitleOptions.length === 0) {
-      setNewLinkPageId("settings");
+      setNewLinkPageId("");
       return;
     }
 
@@ -3224,6 +3198,17 @@ function App() {
   }, [editablePages, selectedPageId]);
 
   useEffect(() => {
+    if (!selectedEditablePage) {
+      setNavigationPreviewPageId("");
+      setNavigationPreviewHistory([]);
+      return;
+    }
+
+    setNavigationPreviewPageId(selectedEditablePage.id);
+    setNavigationPreviewHistory([selectedEditablePage.id]);
+  }, [selectedEditablePage?.id]);
+
+  useEffect(() => {
     if (activeTab !== "pages") return;
     if (editablePages.length === 0) {
       setShowAddCustomPage(true);
@@ -3237,7 +3222,6 @@ function App() {
   useEffect(() => {
     if (!selectedEditablePage) {
       setPageMaxWidthInput("none");
-      setPageMaxHeightInput("none");
       return;
     }
 
@@ -3246,16 +3230,7 @@ function App() {
         ? "none"
         : String(selectedEditablePage.styles.maxWidth),
     );
-    setPageMaxHeightInput(
-      selectedEditablePage.styles.maxHeight === 0
-        ? "none"
-        : String(selectedEditablePage.styles.maxHeight),
-    );
-  }, [
-    selectedEditablePage?.id,
-    selectedEditablePage?.styles.maxWidth,
-    selectedEditablePage?.styles.maxHeight,
-  ]);
+  }, [selectedEditablePage?.id, selectedEditablePage?.styles.maxWidth]);
 
   useEffect(() => {
     if (customComponents.length === 0) {
@@ -4406,38 +4381,7 @@ function App() {
   const updateSettingsItems = (
     transform: (items: SettingsItem[]) => SettingsItem[],
   ) => {
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-      const pages = Array.isArray(base.pages)
-        ? base.pages
-        : [createDefaultSettingsPage()];
-
-      let foundSettings = false;
-      const nextPages = pages.map((page) => {
-        if (page.kind === "prebuilt" && page.id === "settings") {
-          foundSettings = true;
-          return {
-            ...page,
-            items: transform(page.items),
-          };
-        }
-
-        return page;
-      });
-
-      if (!foundSettings) {
-        const fallback = createDefaultSettingsPage();
-        nextPages.push({
-          ...fallback,
-          items: transform(fallback.items),
-        });
-      }
-
-      return {
-        ...base,
-        pages: nextPages,
-      };
-    });
+    void transform;
   };
 
   const addCustomPage = () => {
@@ -4446,19 +4390,28 @@ function App() {
       return;
     }
 
+    const nextPageId = crypto.randomUUID();
+    const normalizedUrl = normalizePageUrl(newCustomPageUrl);
+    const normalizedParentPageId =
+      newCustomPageParentId.trim().length > 0 ? newCustomPageParentId : null;
+
     const newCustomPage: CustomPage = {
-      id: crypto.randomUUID(),
+      id: nextPageId,
       kind: "custom",
       title: newCustomPageTitle.trim(),
+      url:
+        normalizedUrl ||
+        getDefaultPageUrl(newCustomPageTitle.trim(), nextPageId),
+      showNavigationHeader: true,
+      navigationHeaderComponentId: null,
+      parentPageId: normalizedParentPageId,
       componentIds: [],
-      styles: getDefaultComponentStyles(),
+      styles: getDefaultPageStyles(),
     };
 
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
-      const pages = Array.isArray(base.pages)
-        ? base.pages
-        : [createDefaultSettingsPage()];
+      const pages = Array.isArray(base.pages) ? base.pages : [];
 
       return {
         ...base,
@@ -4469,6 +4422,8 @@ function App() {
     setSelectedPageId(newCustomPage.id);
     setShowAddCustomPage(false);
     setNewCustomPageTitle("");
+    setNewCustomPageUrl("");
+    setNewCustomPageParentId("");
     toast.success("Custom page added");
   };
 
@@ -4500,6 +4455,91 @@ function App() {
     updateCustomPageById(selectedEditablePage.id, (page) => ({
       ...page,
       title,
+    }));
+
+    setNavDraftPages((current) =>
+      current.map((page) =>
+        page.pageId === selectedEditablePage.id ? { ...page, title } : page,
+      ),
+    );
+  };
+
+  const updateSelectedPageUrl = (url: string) => {
+    if (!selectedEditablePage) return;
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      url,
+    }));
+
+    const normalizedUrl = normalizePageUrl(url);
+    if (!normalizedUrl) {
+      return;
+    }
+
+    setNavDraftPages((current) =>
+      current.map((page) =>
+        page.pageId === selectedEditablePage.id
+          ? { ...page, link: normalizedUrl }
+          : page,
+      ),
+    );
+  };
+
+  const updateSelectedPageShowNavigationHeader = (shown: boolean) => {
+    if (!selectedEditablePage) return;
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      showNavigationHeader: shown,
+    }));
+  };
+
+  const updateSelectedPageNavigationHeaderComponent = (
+    componentId: string | null,
+  ) => {
+    if (!selectedEditablePage) return;
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      navigationHeaderComponentId: componentId,
+    }));
+  };
+
+  const updateSelectedPageShowInNavigation = (shown: boolean) => {
+    if (!selectedEditablePage) return;
+
+    if (!shown) {
+      setNavDraftPages((current) =>
+        current.filter((page) => page.pageId !== selectedEditablePage.id),
+      );
+      return;
+    }
+
+    setNavDraftPages((current) => {
+      if (current.some((page) => page.pageId === selectedEditablePage.id)) {
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          title: selectedEditablePage.title,
+          link: selectedEditablePage.url,
+          pageId: selectedEditablePage.id,
+          icon: { name: "Home" },
+        },
+      ];
+    });
+  };
+
+  const updateSelectedPageParent = (parentPageId: string | null) => {
+    if (!selectedEditablePage) return;
+
+    updateCustomPageById(selectedEditablePage.id, (page) => ({
+      ...page,
+      parentPageId,
     }));
   };
 
@@ -4553,44 +4593,6 @@ function App() {
     });
   };
 
-  const updateSelectedPageMarginAxis = (axis: "x" | "y", value: string) => {
-    if (!selectedEditablePage) return;
-    const parsed = parseStyleNumber(value);
-    if (parsed === null) return;
-    const next = clampComponentSpacing(parsed);
-
-    if (axis === "x") {
-      updateSelectedPageStyles({
-        marginX: next,
-        marginLeft: next,
-        marginRight: next,
-      });
-      return;
-    }
-
-    updateSelectedPageStyles({
-      marginY: next,
-      marginTop: next,
-      marginBottom: next,
-    });
-  };
-
-  const updateSelectedPageMarginAll = (value: string) => {
-    if (!selectedEditablePage) return;
-    const parsed = parseStyleNumber(value);
-    if (parsed === null) return;
-    const next = clampComponentSpacing(parsed);
-
-    updateSelectedPageStyles({
-      marginX: next,
-      marginY: next,
-      marginTop: next,
-      marginBottom: next,
-      marginLeft: next,
-      marginRight: next,
-    });
-  };
-
   const updateSelectedPagePaddingSide = (
     side: "top" | "bottom" | "left" | "right",
     value: string,
@@ -4612,30 +4614,6 @@ function App() {
       paddingRight: nextRight,
       paddingY: nextTop === nextBottom ? nextTop : currentStyles.paddingY,
       paddingX: nextLeft === nextRight ? nextLeft : currentStyles.paddingX,
-    });
-  };
-
-  const updateSelectedPageMarginSide = (
-    side: "top" | "bottom" | "left" | "right",
-    value: string,
-  ) => {
-    if (!selectedEditablePage) return;
-    const parsed = parseStyleNumber(value);
-    if (parsed === null) return;
-    const next = clampComponentSpacing(parsed);
-    const currentStyles = selectedEditablePage.styles;
-    const nextTop = side === "top" ? next : currentStyles.marginTop;
-    const nextBottom = side === "bottom" ? next : currentStyles.marginBottom;
-    const nextLeft = side === "left" ? next : currentStyles.marginLeft;
-    const nextRight = side === "right" ? next : currentStyles.marginRight;
-
-    updateSelectedPageStyles({
-      marginTop: nextTop,
-      marginBottom: nextBottom,
-      marginLeft: nextLeft,
-      marginRight: nextRight,
-      marginY: nextTop === nextBottom ? nextTop : currentStyles.marginY,
-      marginX: nextLeft === nextRight ? nextLeft : currentStyles.marginX,
     });
   };
 
@@ -4675,27 +4653,71 @@ function App() {
     });
   };
 
-  const navigationIsDirty =
+  const navigationHasUnsavedChanges =
     JSON.stringify(navDraftPages) !==
-    JSON.stringify(safeConfig.navigation.navigationPages);
-  const navigationFormDirty =
-    newLinkTitle.trim().length > 0 ||
-    newLinkUrl.trim().length > 0 ||
-    newLinkIconMode !== "default" ||
-    newLinkIconManual.trim().length > 0;
-  const navigationHasUnsavedChanges = navigationIsDirty || navigationFormDirty;
-  const iconFormDirty =
-    newLinkIconMode !== "default" || newLinkIconManual.trim().length > 0;
+      JSON.stringify(safeConfig.navigation.navigationPages) ||
+    navDraftLabel !== safeConfig.navigation.navigationLabel ||
+    navDraftShowHeader !== safeConfig.navigation.showNavigationHeader ||
+    navDraftHeaderMenuIconName !== safeConfig.navigation.headerMenuIconName ||
+    navDraftHeaderBackIconName !== safeConfig.navigation.headerBackIconName;
+  const normalizedPendingNavIconName = normalizeLucideIconName(
+    newLinkIconName.trim(),
+  );
+  const isPendingNavIconValid =
+    normalizedPendingNavIconName.length > 0 &&
+    Boolean(getLucideIconComponent(normalizedPendingNavIconName));
 
-  const updateNavigationHeader = (value: string) => {
-    setNavDraftHeader(value);
+  const updateNavigationLabel = (value: string) => {
+    setNavDraftLabel(value);
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
       return {
         ...base,
         navigation: {
           ...base.navigation,
-          navigationHeader: value,
+          navigationLabel: value,
+        },
+      };
+    });
+  };
+
+  const updateNavigationShowHeader = (shown: boolean) => {
+    setNavDraftShowHeader(shown);
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      return {
+        ...base,
+        navigation: {
+          ...base.navigation,
+          showNavigationHeader: shown,
+        },
+      };
+    });
+  };
+
+  const updateNavigationHeaderMenuIconName = (iconName: string) => {
+    setNavDraftHeaderMenuIconName(iconName);
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      return {
+        ...base,
+        navigation: {
+          ...base.navigation,
+          headerMenuIconName: iconName,
+        },
+      };
+    });
+  };
+
+  const updateNavigationHeaderBackIconName = (iconName: string) => {
+    setNavDraftHeaderBackIconName(iconName);
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      return {
+        ...base,
+        navigation: {
+          ...base.navigation,
+          headerBackIconName: iconName,
         },
       };
     });
@@ -4741,35 +4763,44 @@ function App() {
     }
   }, [navDraftStyle, drawerState]);
 
-  const buildNavigationIconFromForm = (): NavPage["icon"] =>
-    newLinkIconMode === "manual"
-      ? {
-          name:
-            normalizeLucideIconName(newLinkIconManual.trim()) ||
-            DEFAULT_NAV_ICON.name,
-        }
-      : DEFAULT_NAV_ICON;
-
-  const buildNavigationPageFromForm = (): NavPage => ({
-    id: crypto.randomUUID(),
-    title: newLinkTitle.trim(),
-    link: newLinkUrl.trim() || "#",
-    pageId: newLinkPageId,
-    icon: buildNavigationIconFromForm(),
+  const buildNavigationIconFromForm = (): NavPage["icon"] => ({
+    name: normalizedPendingNavIconName,
   });
 
+  const buildNavigationPageFromForm = (): NavPage | null => {
+    const selectedPageOption = pageTitleOptions.find(
+      (option) => option.id === newLinkPageId,
+    );
+
+    if (!selectedPageOption) {
+      return null;
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      title: selectedPageOption.title,
+      link: selectedPageOption.url,
+      pageId: selectedPageOption.id,
+      icon: buildNavigationIconFromForm(),
+    };
+  };
+
   const addNavigationPage = () => {
-    if (!newLinkTitle.trim()) {
-      toast.error("Please enter a title");
+    if (!isPendingNavIconValid) {
+      toast.error("Enter a valid Lucide icon name");
       return;
     }
 
-    const newPage: NavPage = buildNavigationPageFromForm();
+    const newPage = buildNavigationPageFromForm();
+    if (!newPage) {
+      toast.error("Select a page first");
+      return;
+    }
 
     setNavDraftPages((current) => [...current, newPage]);
 
-    setNewLinkTitle("");
-    setNewLinkUrl("");
+    setNewLinkIconName("");
+    setShowAddNavigationPage(false);
     toast.success("Link added");
   };
 
@@ -4781,40 +4812,43 @@ function App() {
   const saveNavigationChanges = () => {
     if (!navigationHasUnsavedChanges) return;
 
-    let nextPages = navDraftPages;
-    if (navigationFormDirty) {
-      if (newLinkTitle.trim()) {
-        nextPages = [...nextPages, buildNavigationPageFromForm()];
-      } else if (iconFormDirty && nextPages.length > 0) {
-        const lastIndex = nextPages.length - 1;
-        const updatedLastPage = {
-          ...nextPages[lastIndex],
-          icon: buildNavigationIconFromForm(),
-        };
-
-        nextPages = [...nextPages.slice(0, lastIndex), updatedLastPage];
-      } else if (iconFormDirty && nextPages.length === 0) {
-        toast.error("Add a page title first, then save your icon changes");
-        return;
-      }
-
-      setNavDraftPages(nextPages);
-      setNewLinkTitle("");
-      setNewLinkUrl("");
-    }
-
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
       return {
         ...base,
         navigation: {
           ...base.navigation,
-          navigationPages: nextPages,
+          navigationLabel: navDraftLabel,
+          showNavigationHeader: navDraftShowHeader,
+          headerMenuIconName: navDraftHeaderMenuIconName,
+          headerBackIconName: navDraftHeaderBackIconName,
+          navigationPages: navDraftPages,
         },
       };
     });
 
     toast.success("Navigation changes saved");
+  };
+
+  const getNavigationPreviewCode = (): string => {
+    const items = navDraftPages
+      .map(
+        (page) =>
+          `  { id: ${JSON.stringify(page.id)}, title: ${JSON.stringify(page.title)}, link: ${JSON.stringify(page.link)}, pageId: ${JSON.stringify(page.pageId)}, icon: ${JSON.stringify(page.icon.name)} },`,
+      )
+      .join("\n");
+
+    return `const navigation = {
+  shown: ${safeConfig.navigation.shown},
+  navigationLabel: ${JSON.stringify(navDraftLabel)},
+  showNavigationHeader: ${JSON.stringify(navDraftShowHeader)},
+  headerMenuIconName: ${JSON.stringify(navDraftHeaderMenuIconName)},
+  headerBackIconName: ${JSON.stringify(navDraftHeaderBackIconName)},
+  navigationStyle: ${JSON.stringify(navDraftStyle, null, 2)},
+  navigationPages: [
+${items}
+  ],
+};`;
   };
 
   const addSettingItem = () => {
@@ -4935,6 +4969,51 @@ function App() {
     } else {
       setDrawerState("closed");
     }
+  };
+
+  const openNavigationMenu = () => {
+    if (navDraftStyle.type !== "drawer") {
+      return;
+    }
+
+    if (navDraftStyle.variant === "short") {
+      setDrawerState("icons-only");
+      return;
+    }
+
+    setDrawerState("open");
+  };
+
+  const navigateNavigationPreview = (
+    pageId: string,
+    options?: { replace?: boolean },
+  ) => {
+    if (!pageId.trim()) {
+      return;
+    }
+
+    const destinationExists = editablePages.some((page) => page.id === pageId);
+    if (!destinationExists) {
+      return;
+    }
+
+    setNavigationPreviewPageId(pageId);
+    setNavigationPreviewHistory((current) => {
+      if (options?.replace) {
+        if (current.length === 0) {
+          return [pageId];
+        }
+        const next = [...current];
+        next[next.length - 1] = pageId;
+        return next;
+      }
+
+      if (current[current.length - 1] === pageId) {
+        return current;
+      }
+
+      return [...current, pageId];
+    });
   };
 
   const copyJsonToClipboard = () => {
@@ -5405,6 +5484,10 @@ function App() {
       .map((page) => ({
         id: page.id,
         title: page.title,
+        url: page.url,
+        showNavigationHeader: page.showNavigationHeader,
+        navigationHeaderComponentId: page.navigationHeaderComponentId,
+        parentPageId: page.parentPageId,
         componentIds: page.componentIds,
         styles: page.styles,
       })),
@@ -7367,6 +7450,15 @@ function App() {
             </Button>
             <Button
               type="button"
+              variant={activeTab === "theme" ? "default" : "ghost"}
+              onClick={() => setActiveTab("theme")}
+              className="gap-2"
+            >
+              <Palette size={16} />
+              Theme
+            </Button>
+            <Button
+              type="button"
               variant={activeTab === "pages" ? "default" : "ghost"}
               onClick={() => setActiveTab("pages")}
               className="gap-2"
@@ -7382,15 +7474,6 @@ function App() {
             >
               <Box size={16} />
               Components
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === "theme" ? "default" : "ghost"}
-              onClick={() => setActiveTab("theme")}
-              className="gap-2"
-            >
-              <Palette size={16} />
-              Theme
             </Button>
           </div>
 
@@ -7409,6 +7492,8 @@ function App() {
                       if (value === "__add_custom__") {
                         setShowAddCustomPage(true);
                         setNewCustomPageTitle("");
+                        setNewCustomPageUrl("");
+                        setNewCustomPageParentId("");
                         return;
                       }
 
@@ -7442,6 +7527,34 @@ function App() {
                       value={newCustomPageTitle}
                       onChange={(e) => setNewCustomPageTitle(e.target.value)}
                     />
+                    <Label htmlFor="new-custom-page-url">URL</Label>
+                    <Input
+                      id="new-custom-page-url"
+                      placeholder="/profile"
+                      value={newCustomPageUrl}
+                      onChange={(e) => setNewCustomPageUrl(e.target.value)}
+                    />
+                    <Label htmlFor="new-custom-page-parent">Parent</Label>
+                    <Select
+                      value={newCustomPageParentId || "__root__"}
+                      onValueChange={(value) =>
+                        setNewCustomPageParentId(
+                          value === "__root__" ? "" : value,
+                        )
+                      }
+                    >
+                      <SelectTrigger id="new-custom-page-parent">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__root__">Root</SelectItem>
+                        {pageParentOptions.map((page) => (
+                          <SelectItem key={page.id} value={page.id}>
+                            {page.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
                       type="button"
                       onClick={addCustomPage}
@@ -7455,20 +7568,54 @@ function App() {
                 )}
 
                 {!showAddCustomPage && selectedEditablePage && (
-                  <div className="mt-4 space-y-2 rounded-lg border border-border p-3">
-                    <Label htmlFor="selected-page-label">
-                      Selected Page Label
-                    </Label>
+                  <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
+                    <Label htmlFor="selected-page-url">URL</Label>
                     <Input
-                      id="selected-page-label"
-                      value={selectedPageTitleDraft}
-                      onChange={(e) => updateSelectedPageTitle(e.target.value)}
+                      id="selected-page-url"
+                      placeholder="/profile"
+                      value={selectedEditablePage.url}
+                      onChange={(e) => updateSelectedPageUrl(e.target.value)}
                     />
-                    {!selectedPageTitleDraft.trim() && (
-                      <p className="text-xs text-destructive">
-                        The label cannot be blank.
-                      </p>
-                    )}
+
+                    <Label htmlFor="selected-page-parent">Parent</Label>
+                    <Select
+                      value={selectedPageParentValue}
+                      onValueChange={(value) => {
+                        if (value === "__missing_parent__") {
+                          return;
+                        }
+
+                        updateSelectedPageParent(
+                          value === "__root__" ? null : value,
+                        );
+                      }}
+                    >
+                      <SelectTrigger id="selected-page-parent">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__root__">Root</SelectItem>
+                        {selectedPageParentOptions.map((page) => (
+                          <SelectItem key={page.id} value={page.id}>
+                            {page.title}
+                          </SelectItem>
+                        ))}
+                        {!selectedPageParentExists &&
+                          selectedEditablePage.parentPageId && (
+                            <SelectItem value="__missing_parent__">
+                              Missing parent (
+                              {selectedEditablePage.parentPageId})
+                            </SelectItem>
+                          )}
+                      </SelectContent>
+                    </Select>
+                    {!selectedPageParentExists &&
+                      selectedEditablePage.parentPageId && (
+                        <p className="text-xs text-destructive">
+                          Parent page does not exist:{" "}
+                          {selectedEditablePage.parentPageId}
+                        </p>
+                      )}
                   </div>
                 )}
               </Card>
@@ -7679,16 +7826,32 @@ function App() {
                             }
                           />
                         </div>
-                        <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
-                          <Label htmlFor="page-overflow-scroll">
-                            Overflow Scroll
-                          </Label>
+                        <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                          <Label htmlFor="page-overflow-y">Overflow Y</Label>
                           <Switch
-                            id="page-overflow-scroll"
-                            checked={selectedEditablePage.styles.overflowScroll}
+                            id="page-overflow-y"
+                            checked={
+                              selectedEditablePage.styles.overflowYScroll ===
+                              true
+                            }
                             onCheckedChange={(checked) =>
                               updateSelectedPageStyles({
-                                overflowScroll: checked,
+                                overflowYScroll: checked,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                          <Label htmlFor="page-overflow-x">Overflow X</Label>
+                          <Switch
+                            id="page-overflow-x"
+                            checked={
+                              selectedEditablePage.styles.overflowXScroll ===
+                              true
+                            }
+                            onCheckedChange={(checked) =>
+                              updateSelectedPageStyles({
+                                overflowXScroll: checked,
                               })
                             }
                           />
@@ -7742,64 +7905,6 @@ function App() {
                               }
 
                               setPageMaxWidthInput(
-                                parsed === 0 ? "none" : String(parsed),
-                              );
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="page-min-height">
-                            Min Height (px)
-                          </Label>
-                          <Input
-                            id="page-min-height"
-                            type="number"
-                            min={0}
-                            max={4096}
-                            value={selectedEditablePage.styles.minHeight}
-                            onChange={(e) => {
-                              const parsed = parseStyleNumber(e.target.value);
-                              if (parsed === null) return;
-                              updateSelectedPageStyles({
-                                minHeight: clampContainerDimension(parsed),
-                              });
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="page-max-height">
-                            Max Height (px)
-                          </Label>
-                          <Input
-                            id="page-max-height"
-                            type="text"
-                            value={pageMaxHeightInput}
-                            placeholder="none"
-                            onChange={(e) => {
-                              const nextValue = e.target.value;
-                              setPageMaxHeightInput(nextValue);
-                              const parsed =
-                                parseContainerDimensionOrNone(nextValue);
-                              if (parsed === null) return;
-                              updateSelectedPageStyles({ maxHeight: parsed });
-                            }}
-                            onBlur={() => {
-                              const parsed =
-                                parseContainerDimensionOrNone(
-                                  pageMaxHeightInput,
-                                );
-                              if (parsed === null) {
-                                setPageMaxHeightInput(
-                                  selectedEditablePage.styles.maxHeight === 0
-                                    ? "none"
-                                    : String(
-                                        selectedEditablePage.styles.maxHeight,
-                                      ),
-                                );
-                                return;
-                              }
-
-                              setPageMaxHeightInput(
                                 parsed === 0 ? "none" : String(parsed),
                               );
                             }}
@@ -7978,177 +8083,6 @@ function App() {
                             </AccordionItem>
                           </Accordion>
                         </div>
-                        <div className="sm:col-span-2">
-                          <Accordion type="single" collapsible>
-                            <AccordionItem value="page-margin">
-                              <AccordionTrigger className="font-mono text-sm">
-                                Margin
-                              </AccordionTrigger>
-                              <AccordionContent>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-all">
-                                      Margin (All Sides)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-all"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={
-                                        selectedEditablePage.styles
-                                          .marginTop ===
-                                          selectedEditablePage.styles
-                                            .marginBottom &&
-                                        selectedEditablePage.styles
-                                          .marginTop ===
-                                          selectedEditablePage.styles
-                                            .marginLeft &&
-                                        selectedEditablePage.styles
-                                          .marginTop ===
-                                          selectedEditablePage.styles
-                                            .marginRight
-                                          ? String(
-                                              selectedEditablePage.styles
-                                                .marginTop,
-                                            )
-                                          : ""
-                                      }
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginAll(
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-x">
-                                      Horizontal Margin (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-x"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={getAxisInputValue(
-                                        selectedEditablePage.styles.marginLeft,
-                                        selectedEditablePage.styles.marginRight,
-                                      )}
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginAxis(
-                                          "x",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-y">
-                                      Vertical Margin (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-y"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={getAxisInputValue(
-                                        selectedEditablePage.styles.marginTop,
-                                        selectedEditablePage.styles
-                                          .marginBottom,
-                                      )}
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginAxis(
-                                          "y",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-top">
-                                      Margin Top (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-top"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={
-                                        selectedEditablePage.styles.marginTop
-                                      }
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginSide(
-                                          "top",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-bottom">
-                                      Margin Bottom (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-bottom"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={
-                                        selectedEditablePage.styles.marginBottom
-                                      }
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginSide(
-                                          "bottom",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-left">
-                                      Margin Left (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-left"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={
-                                        selectedEditablePage.styles.marginLeft
-                                      }
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginSide(
-                                          "left",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="page-margin-right">
-                                      Margin Right (px)
-                                    </Label>
-                                    <Input
-                                      id="page-margin-right"
-                                      type="number"
-                                      min={0}
-                                      max={200}
-                                      value={
-                                        selectedEditablePage.styles.marginRight
-                                      }
-                                      onChange={(e) =>
-                                        updateSelectedPageMarginSide(
-                                          "right",
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="page-background-color">
                             Background Color
@@ -8282,14 +8216,10 @@ function App() {
                                 pageStyles.justifyContent,
                                 selectedPageComponents.length,
                               );
-                              const overflowStyle = getFlexOverflowStyle(
-                                pageStyles.direction,
-                                pageStyles.overflowScroll,
-                              );
 
                               return (
                                 <div
-                                  className={`flex w-full ${pageStyles.direction === "vertical" ? "flex-col" : "flex-row"} ${pageStyles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(pageStyles.alignItems)} ${justifyClass}`}
+                                  className={`flex w-full ${pageStyles.direction === "vertical" ? "flex-col" : "flex-row"} ${getFlexAlignItemsClass(pageStyles.alignItems)} ${justifyClass}`}
                                   style={{
                                     gap: `${pageStyles.gap}px`,
                                     minWidth:
@@ -8300,24 +8230,18 @@ function App() {
                                       pageStyles.maxWidth > 0
                                         ? `${pageStyles.maxWidth}px`
                                         : undefined,
-                                    minHeight:
-                                      pageStyles.minHeight > 0
-                                        ? `${pageStyles.minHeight}px`
-                                        : undefined,
-                                    maxHeight:
-                                      pageStyles.maxHeight > 0
-                                        ? `${pageStyles.maxHeight}px`
-                                        : undefined,
                                     paddingLeft: `${pageStyles.paddingLeft}px`,
                                     paddingRight: `${pageStyles.paddingRight}px`,
                                     paddingTop: `${pageStyles.paddingTop}px`,
                                     paddingBottom: `${pageStyles.paddingBottom}px`,
-                                    marginLeft: `${pageStyles.marginLeft}px`,
-                                    marginRight: `${pageStyles.marginRight}px`,
-                                    marginTop: `${pageStyles.marginTop}px`,
-                                    marginBottom: `${pageStyles.marginBottom}px`,
-                                    overflowX: overflowStyle.overflowX,
-                                    overflowY: overflowStyle.overflowY,
+                                    overflowX:
+                                      pageStyles.overflowXScroll === true
+                                        ? "auto"
+                                        : "hidden",
+                                    overflowY:
+                                      pageStyles.overflowYScroll === true
+                                        ? "auto"
+                                        : "hidden",
                                     backgroundColor: resolveColor(
                                       pageStyles.backgroundColor,
                                     ),
@@ -8368,13 +8292,57 @@ function App() {
                 </div>
 
                 <div className="mb-4 space-y-2">
-                  <Label htmlFor="navigation-header">Navigation Header</Label>
+                  <Label htmlFor="navigation-label">Navigation Label</Label>
                   <Input
-                    id="navigation-header"
+                    id="navigation-label"
                     placeholder="none"
-                    value={navDraftHeader}
-                    onChange={(e) => updateNavigationHeader(e.target.value)}
+                    value={navDraftLabel}
+                    onChange={(e) => updateNavigationLabel(e.target.value)}
                   />
+                </div>
+
+                <div className="mb-4 space-y-3 rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="navigation-show-header">
+                      Show Navigation Header
+                    </Label>
+                    <Switch
+                      id="navigation-show-header"
+                      checked={navDraftShowHeader}
+                      onCheckedChange={updateNavigationShowHeader}
+                    />
+                  </div>
+
+                  {navDraftShowHeader && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="navigation-header-menu-icon">
+                          Menu Icon
+                        </Label>
+                        <Input
+                          id="navigation-header-menu-icon"
+                          value={navDraftHeaderMenuIconName}
+                          onChange={(e) =>
+                            updateNavigationHeaderMenuIconName(e.target.value)
+                          }
+                          placeholder="Menu"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="navigation-header-back-icon">
+                          Back Icon
+                        </Label>
+                        <Input
+                          id="navigation-header-back-icon"
+                          value={navDraftHeaderBackIconName}
+                          onChange={(e) =>
+                            updateNavigationHeaderBackIconName(e.target.value)
+                          }
+                          placeholder="ArrowLeft"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mb-4 space-y-2">
@@ -8463,60 +8431,23 @@ function App() {
                   )}
                 </div>
 
-                <div className="mb-4 flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold font-mono">
-                    Navigation Links
-                  </h2>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={saveNavigationChanges}
-                    disabled={!navigationHasUnsavedChanges}
-                  >
-                    Save
-                  </Button>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="link-title">Title</Label>
-                      <Input
-                        id="link-title"
-                        placeholder="Home"
-                        value={newLinkTitle}
-                        onChange={(e) => setNewLinkTitle(e.target.value)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && addNavigationPage()
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="link-url">Link</Label>
-                      <Input
-                        id="link-url"
-                        placeholder="/home"
-                        value={newLinkUrl}
-                        onChange={(e) => setNewLinkUrl(e.target.value)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && addNavigationPage()
-                        }
-                      />
-                    </div>
+                {selectedEditablePage && (
+                  <div className="mb-4 space-y-3 rounded-md border border-border p-3">
+                    <p className="text-sm font-semibold">Page Navigation</p>
 
                     <div className="space-y-2">
-                      <Label htmlFor="link-page-id">Page</Label>
+                      <Label htmlFor="navigation-selected-page">Page</Label>
                       <Select
-                        value={newLinkPageId}
-                        onValueChange={setNewLinkPageId}
+                        value={selectedEditablePage.id}
+                        onValueChange={setSelectedPageId}
                       >
-                        <SelectTrigger id="link-page-id">
+                        <SelectTrigger id="navigation-selected-page">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {pageTitleOptions.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>
-                              {option.title}
+                          {editablePages.map((page) => (
+                            <SelectItem key={page.id} value={page.id}>
+                              {page.title}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -8524,66 +8455,227 @@ function App() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="link-icon-mode">Icon</Label>
-
-                      <Select
-                        value={newLinkIconMode}
-                        onValueChange={(value: IconEntryMode) =>
-                          setNewLinkIconMode(value)
-                        }
-                      >
-                        <SelectTrigger id="link-icon-mode">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="default">
-                            Use default icon
-                          </SelectItem>
-                          <SelectItem value="manual">
-                            Enter icon manually
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {newLinkIconMode === "default" ? (
-                    <div className="space-y-2">
-                      <Label>Default Icon</Label>
-                      <div className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
-                        <Home size={20} className="text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">
-                            {DEFAULT_NAV_ICON.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Lucide icon
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label htmlFor="link-icon-manual">Icon Name</Label>
+                      <Label htmlFor="selected-page-label">
+                        Selected Page Label
+                      </Label>
                       <Input
-                        id="link-icon-manual"
-                        placeholder="Home"
-                        value={newLinkIconManual}
-                        onChange={(e) => setNewLinkIconManual(e.target.value)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && addNavigationPage()
+                        id="selected-page-label"
+                        value={selectedPageTitleDraft}
+                        onChange={(e) =>
+                          updateSelectedPageTitle(e.target.value)
                         }
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Lucide only
-                      </p>
+                      {!selectedPageTitleDraft.trim() && (
+                        <p className="text-xs text-destructive">
+                          The label cannot be blank.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                      <Label htmlFor="selected-page-show-navigation-header">
+                        Show navigation header
+                      </Label>
+                      <Switch
+                        id="selected-page-show-navigation-header"
+                        checked={selectedEditablePage.showNavigationHeader}
+                        onCheckedChange={updateSelectedPageShowNavigationHeader}
+                      />
+                    </div>
+
+                    {selectedEditablePage.showNavigationHeader && (
+                      <div className="space-y-2">
+                        <Label htmlFor="selected-page-header-component">
+                          Header Component
+                        </Label>
+                        <Select
+                          value={selectedPageHeaderComponentValue}
+                          onValueChange={(value) =>
+                            updateSelectedPageNavigationHeaderComponent(
+                              value === "__none__" ? null : value,
+                            )
+                          }
+                        >
+                          <SelectTrigger id="selected-page-header-component">
+                            <SelectValue placeholder="Select component" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {customComponents.map((component) => (
+                              <SelectItem
+                                key={component.id}
+                                value={component.id}
+                              >
+                                {component.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                      <Label htmlFor="selected-page-show-in-navigation">
+                        Show in navigation
+                      </Label>
+                      <Switch
+                        id="selected-page-show-in-navigation"
+                        checked={selectedPageShownInNavigation}
+                        onCheckedChange={updateSelectedPageShowInNavigation}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-4 flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold font-mono">
+                    Navigation Pages
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button type="button" variant="outline" size="sm">
+                          JSON
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                        <DialogHeader className="shrink-0">
+                          <DialogTitle className="font-mono">
+                            Navigation JSON
+                          </DialogTitle>
+                        </DialogHeader>
+                        <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                          {JSON.stringify(
+                            {
+                              shown: safeConfig.navigation.shown,
+                              navigationLabel: navDraftLabel,
+                              showNavigationHeader: navDraftShowHeader,
+                              headerMenuIconName: navDraftHeaderMenuIconName,
+                              headerBackIconName: navDraftHeaderBackIconName,
+                              navigationStyle: navDraftStyle,
+                              navigationPages: navDraftPages,
+                            },
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button type="button" variant="outline" size="sm">
+                          Code
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                        <DialogHeader className="shrink-0">
+                          <DialogTitle className="font-mono">
+                            Navigation React Code
+                          </DialogTitle>
+                        </DialogHeader>
+                        <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                          {getNavigationPreviewCode()}
+                        </pre>
+                      </DialogContent>
+                    </Dialog>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={saveNavigationChanges}
+                      disabled={!navigationHasUnsavedChanges}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {!showAddNavigationPage ? (
+                    <Button
+                      onClick={() => setShowAddNavigationPage(true)}
+                      className="w-full gap-2"
+                      disabled={pageTitleOptions.length === 0}
+                    >
+                      <Plus size={18} weight="bold" />
+                      Add Page
+                    </Button>
+                  ) : (
+                    <div className="space-y-4 rounded-lg border border-border p-3">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="link-page-id">Page</Label>
+                          <Select
+                            value={newLinkPageId}
+                            onValueChange={setNewLinkPageId}
+                          >
+                            <SelectTrigger id="link-page-id">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pageTitleOptions.map((option) => (
+                                <SelectItem key={option.id} value={option.id}>
+                                  {option.title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {selectedLinkPageIsNonRoot && (
+                            <p className="text-xs text-amber-600">
+                              Selected page is not root.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label htmlFor="link-icon-name">Icon Name</Label>
+                            <a
+                              href="https://lucide.dev/icons"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-primary underline underline-offset-2"
+                            >
+                              Lucide icons
+                            </a>
+                          </div>
+                          <Input
+                            id="link-icon-name"
+                            placeholder="Home"
+                            value={newLinkIconName}
+                            onChange={(e) => setNewLinkIconName(e.target.value)}
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && addNavigationPage()
+                            }
+                          />
+                          {!isPendingNavIconValid && (
+                            <p className="text-xs text-destructive">
+                              Enter a valid Lucide icon name.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={addNavigationPage}
+                          className="flex-1 gap-2"
+                          disabled={
+                            !isPendingNavIconValid ||
+                            pageTitleOptions.length === 0
+                          }
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowAddNavigationPage(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   )}
-
-                  <Button onClick={addNavigationPage} className="w-full gap-2">
-                    <Plus size={18} weight="bold" />
-                    Add Page
-                  </Button>
 
                   {navDraftPages.length > 0 && (
                     <>
@@ -8607,8 +8699,7 @@ function App() {
                                       {page.title}
                                     </p>
                                     <p className="text-sm text-muted-foreground truncate">
-                                      {page.link} • {page.icon.name} • pageId:{" "}
-                                      {page.pageId}
+                                      {page.link}
                                     </p>
                                   </div>
                                 </div>
@@ -8639,16 +8730,6 @@ function App() {
                     <span className="text-xs text-muted-foreground font-mono">
                       Hidden
                     </span>
-                  ) : navDraftStyle.type === "drawer" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={cycleDrawerState}
-                      className="gap-2"
-                    >
-                      <List size={16} weight="bold" />
-                      Cycle Drawer
-                    </Button>
                   ) : (
                     <span className="text-xs text-muted-foreground font-mono">
                       Always visible
@@ -8658,24 +8739,77 @@ function App() {
 
                 <div className="relative border-2 border-border rounded-lg overflow-hidden bg-card min-h-[400px]">
                   {safeConfig.navigation.shown &&
+                    navigationPreviewShowsHeader && (
+                      <div className="absolute top-0 left-0 right-0 z-20 h-14 border-b border-border bg-card/95 px-3">
+                        <div className="flex h-full items-center justify-between gap-3">
+                          {navigationPreviewHasParent ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-card hover:bg-muted"
+                              onClick={() => {
+                                if (navigationPreviewParentPage) {
+                                  navigateNavigationPreview(
+                                    navigationPreviewParentPage.id,
+                                    { replace: true },
+                                  );
+                                }
+                              }}
+                              aria-label="Back to parent page"
+                            >
+                              {renderNavIcon(
+                                {
+                                  name:
+                                    navDraftHeaderBackIconName || "ArrowLeft",
+                                },
+                                "",
+                                16,
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-card hover:bg-muted"
+                              onClick={openNavigationMenu}
+                              aria-label="Open navigation menu"
+                            >
+                              {renderNavIcon(
+                                { name: navDraftHeaderMenuIconName || "Menu" },
+                                "",
+                                16,
+                              )}
+                            </button>
+                          )}
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            {navigationPreviewHeaderComponent ? (
+                              renderAppComponentPreview(
+                                navigationPreviewHeaderComponent,
+                              )
+                            ) : (
+                              <h3 className="truncate text-sm font-semibold">
+                                {navigationPreviewPage?.title ||
+                                  navDraftLabel ||
+                                  "Navigation"}
+                              </h3>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                  {safeConfig.navigation.shown &&
                     navDraftStyle.type === "drawer" && (
                       <motion.div
-                        className="absolute top-0 left-0 h-full bg-secondary border-r border-border flex flex-col z-10"
+                        className="absolute left-0 bg-secondary border-r border-border flex flex-col z-10"
+                        style={{
+                          top: `${navigationPreviewHeaderHeight}px`,
+                          height: `calc(100% - ${navigationPreviewHeaderHeight}px)`,
+                        }}
                         initial={false}
                         animate={{ width: drawerWidth }}
                         transition={{ duration: 0.25, ease: "easeInOut" }}
                       >
                         {drawerState !== "closed" && (
                           <div className="flex flex-col h-full overflow-hidden">
-                            <div className="p-4 flex-shrink-0">
-                              {drawerState === "open" &&
-                                navDraftHeader.trim().length > 0 && (
-                                  <h3 className="font-semibold text-sm truncate">
-                                    {navDraftHeader}
-                                  </h3>
-                                )}
-                            </div>
-
                             <ScrollArea className="flex-1">
                               <div className="space-y-1 px-2 pb-4">
                                 {navDraftPages.length === 0 ? (
@@ -8683,10 +8817,20 @@ function App() {
                                 ) : (
                                   navDraftPages.map((page) =>
                                     (() => {
+                                      const isActive =
+                                        page.pageId ===
+                                        navigationPreviewPage?.id;
                                       return (
                                         <div
                                           key={page.id}
-                                          className="flex items-center gap-3 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                                          className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-colors ${isActive ? "bg-muted" : "hover:bg-muted/50"}`}
+                                          onClick={() => {
+                                            if (page.pageId) {
+                                              navigateNavigationPreview(
+                                                page.pageId,
+                                              );
+                                            }
+                                          }}
                                         >
                                           {renderNavIcon(
                                             page.icon,
@@ -8718,7 +8862,12 @@ function App() {
                             <button
                               key={page.id}
                               type="button"
-                              className="flex items-center justify-center rounded px-2 py-1 text-muted-foreground hover:bg-muted/50 transition-colors"
+                              className={`flex items-center justify-center rounded px-2 py-1 transition-colors ${page.pageId === navigationPreviewPage?.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"}`}
+                              onClick={() => {
+                                if (page.pageId) {
+                                  navigateNavigationPreview(page.pageId);
+                                }
+                              }}
                             >
                               {navDraftStyle.variant === "short" ? (
                                 renderNavIcon(page.icon, "", 20)
@@ -8737,20 +8886,32 @@ function App() {
                     )}
 
                   <motion.div
-                    className="h-full p-6"
+                    className="h-full"
                     initial={false}
                     animate={
                       !safeConfig.navigation.shown
-                        ? { paddingLeft: 24, paddingBottom: 24 }
+                        ? {
+                            paddingTop: 24,
+                            paddingLeft: 24,
+                            paddingBottom: 24,
+                          }
                         : navDraftStyle.type === "drawer"
-                          ? { paddingLeft: drawerWidth + 24, paddingBottom: 24 }
-                          : { paddingLeft: 24, paddingBottom: 92 }
+                          ? {
+                              paddingTop: navigationPreviewHeaderHeight + 24,
+                              paddingLeft: drawerWidth + 24,
+                              paddingBottom: 24,
+                            }
+                          : {
+                              paddingTop: navigationPreviewHeaderHeight + 24,
+                              paddingLeft: 24,
+                              paddingBottom: 92,
+                            }
                     }
                     transition={{ duration: 0.25, ease: "easeInOut" }}
                   >
-                    <p className="text-sm text-muted-foreground">
-                      This preview shows only the selected navigation component.
-                    </p>
+                    <div className="text-sm text-muted-foreground">
+                      {navigationPreviewPage?.title || "No page selected"}
+                    </div>
                   </motion.div>
                 </div>
               </Card>
