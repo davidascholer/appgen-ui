@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -277,6 +277,7 @@ interface ContainerElementStyles {
 interface TextComponentElement extends BaseComponentElement {
   elementTypeId: "element-text";
   value: string;
+  apiBinding?: string | null;
   styles: TextElementStyles;
 }
 
@@ -372,6 +373,35 @@ interface AppComponent {
   label: string;
   elements: ComponentElement[];
   styles: ComponentStyles;
+  api: ApiComponentConfig;
+}
+
+type ApiRequestMethod =
+  | "GET"
+  | "POST"
+  | "PUT"
+  | "PATCH"
+  | "DELETE"
+  | "HEAD"
+  | "OPTIONS";
+
+interface ApiRequestHeader {
+  id: string;
+  key: string;
+  value: string;
+}
+
+interface ApiComponentConfig {
+  isApitComponent: boolean;
+  request: {
+    url: string;
+    method: ApiRequestMethod;
+    headers: ApiRequestHeader[];
+    body: string;
+  };
+  response: {
+    rawTestData: string;
+  };
 }
 
 type ContainerColorField = "backgroundColor" | "borderColor";
@@ -546,6 +576,64 @@ const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
   type: "drawer",
   variant: "all",
 };
+
+const API_REQUEST_METHODS: ApiRequestMethod[] = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+];
+
+const createDefaultApiComponentConfig = (): ApiComponentConfig => ({
+  isApitComponent: false,
+  request: {
+    url: "",
+    method: "GET",
+    headers: [],
+    body: "",
+  },
+  response: {
+    rawTestData: "",
+  },
+});
+
+const getSafeApiComponentConfig = (
+  api: ApiComponentConfig | undefined,
+): ApiComponentConfig =>
+  api
+    ? {
+        isApitComponent: Boolean(
+          (api as { isApitComponent?: unknown }).isApitComponent ??
+          (api as { enabled?: unknown }).enabled,
+        ),
+        request: {
+          url: api.request?.url ?? "",
+          method: API_REQUEST_METHODS.includes(api.request?.method)
+            ? api.request.method
+            : "GET",
+          headers: Array.isArray(api.request?.headers)
+            ? api.request.headers.map((header) => ({
+                id:
+                  typeof header.id === "string" && header.id.trim().length > 0
+                    ? header.id
+                    : crypto.randomUUID(),
+                key: typeof header.key === "string" ? header.key : "",
+                value: typeof header.value === "string" ? header.value : "",
+              }))
+            : [],
+          body: api.request?.body ?? "",
+        },
+        response: {
+          rawTestData:
+            api.response?.rawTestData ??
+            (api.response as { testJson?: unknown })?.testJson?.toString?.() ??
+            "",
+        },
+      }
+    : createDefaultApiComponentConfig();
 
 const PREBUILT_SOURCE = prebuiltSourceConfig as AppgenPrebuiltSourceConfig;
 
@@ -1401,6 +1489,11 @@ export const normalizeElementFromRaw = (
         flex: elementFlex,
         elementTypeId: "element-text",
         value: typeof entry.value === "string" ? entry.value : "",
+        apiBinding:
+          typeof entry.apiBinding === "string" &&
+          entry.apiBinding.trim().startsWith("data.")
+            ? entry.apiBinding.trim()
+            : null,
         styles: {
           ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           alignment:
@@ -1745,6 +1838,40 @@ export const normalizeComponentFromRaw = (
     rawStyles.marginTop,
     rawStyles.marginBottom,
   );
+  const rawApi =
+    comp.api && typeof comp.api === "object"
+      ? (comp.api as Record<string, unknown>)
+      : {};
+  const rawApiRequest =
+    rawApi.request && typeof rawApi.request === "object"
+      ? (rawApi.request as Record<string, unknown>)
+      : {};
+  const rawApiResponse =
+    rawApi.response && typeof rawApi.response === "object"
+      ? (rawApi.response as Record<string, unknown>)
+      : {};
+  const normalizedMethod =
+    typeof rawApiRequest.method === "string" &&
+    API_REQUEST_METHODS.includes(rawApiRequest.method as ApiRequestMethod)
+      ? (rawApiRequest.method as ApiRequestMethod)
+      : "GET";
+  const normalizedHeaders = Array.isArray(rawApiRequest.headers)
+    ? rawApiRequest.headers
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const header = entry as Record<string, unknown>;
+          return {
+            id:
+              typeof header.id === "string" && header.id.trim().length > 0
+                ? header.id
+                : crypto.randomUUID(),
+            key: typeof header.key === "string" ? header.key : "",
+            value: typeof header.value === "string" ? header.value : "",
+          };
+        })
+        .filter((entry): entry is ApiRequestHeader => entry !== null)
+    : [];
+
   return {
     id:
       typeof comp.id === "string" && comp.id.trim()
@@ -1813,6 +1940,28 @@ export const normalizeComponentFromRaw = (
       borderWidth: clampContainerBorderWidth(
         rawStyles.borderWidth ?? defaultStyles.borderWidth,
       ),
+    },
+    api: {
+      isApitComponent: Boolean(
+        (rawApi as { isApitComponent?: unknown }).isApitComponent ??
+        (rawApi as { enabled?: unknown }).enabled,
+      ),
+      request: {
+        url: typeof rawApiRequest.url === "string" ? rawApiRequest.url : "",
+        method: normalizedMethod,
+        headers: normalizedHeaders,
+        body: typeof rawApiRequest.body === "string" ? rawApiRequest.body : "",
+      },
+      response: {
+        rawTestData:
+          typeof (rawApiResponse as { rawTestData?: unknown }).rawTestData ===
+          "string"
+            ? String((rawApiResponse as { rawTestData?: unknown }).rawTestData)
+            : typeof (rawApiResponse as { testJson?: unknown }).testJson ===
+                "string"
+              ? String((rawApiResponse as { testJson?: unknown }).testJson)
+              : "",
+      },
     },
   };
 };
@@ -1896,6 +2045,7 @@ const createDefaultComponent = (label: string): AppComponent => ({
     },
   ],
   styles: getDefaultComponentStyles(),
+  api: createDefaultApiComponentConfig(),
 });
 
 const getNormalizedIconKey = (name: string) =>
@@ -2699,6 +2849,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
               ? comp.id
               : crypto.randomUUID(),
           label: comp.label,
+          api: getSafeApiComponentConfig((comp as { api?: unknown }).api),
           elements: Array.isArray(comp.elements)
             ? (comp.elements as unknown[])
                 .map((el) => normalizeElementFromRaw(el))
@@ -2961,13 +3112,94 @@ function App() {
     useState<string>("none");
   const [componentMaxHeightInput, setComponentMaxHeightInput] =
     useState<string>("none");
+  const [apiRequestUrlDraft, setApiRequestUrlDraft] = useState("");
+  const [apiRequestBodyDraft, setApiRequestBodyDraft] = useState("");
+  const [apiResponseJsonDraft, setApiResponseJsonDraft] = useState("");
+  const apiResponseJsonInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const apiResponseJsonDraftTimeoutRef = useRef<number | null>(null);
+  const apiResponsePersistTimeoutRef = useRef<number | null>(null);
+  const hasInitializedConfigAutosave = useRef(false);
+  const hasInitializedThemeAutosave = useRef(false);
+  const latestConfigRef = useRef(config);
+  const latestThemeRef = useRef(colorTheme);
+
+  const getAutosaveErrorMessage = (error: unknown) => {
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message;
+    }
+
+    return "Unknown local storage error";
+  };
+
+  const persistConfigToLocalStorage = (value: AppConfig) => {
+    localStorage.setItem("app-config", JSON.stringify(value));
+  };
+
+  const persistThemeToLocalStorage = (value: ColorTheme) => {
+    localStorage.setItem("app-color-theme", JSON.stringify(value));
+  };
 
   useEffect(() => {
-    localStorage.setItem("app-config", JSON.stringify(config));
+    latestConfigRef.current = config;
   }, [config]);
 
   useEffect(() => {
-    localStorage.setItem("app-color-theme", JSON.stringify(colorTheme));
+    latestThemeRef.current = colorTheme;
+  }, [colorTheme]);
+
+  useEffect(() => {
+    const flushPendingAutosave = () => {
+      try {
+        persistConfigToLocalStorage(latestConfigRef.current);
+        persistThemeToLocalStorage(latestThemeRef.current);
+      } catch {
+        // Ignore unload-time persistence errors.
+      }
+    };
+
+    window.addEventListener("pagehide", flushPendingAutosave);
+    window.addEventListener("beforeunload", flushPendingAutosave);
+
+    return () => {
+      window.removeEventListener("pagehide", flushPendingAutosave);
+      window.removeEventListener("beforeunload", flushPendingAutosave);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasInitializedConfigAutosave.current) {
+      hasInitializedConfigAutosave.current = true;
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      try {
+        persistConfigToLocalStorage(config);
+        toast.success("Changes saved");
+      } catch (error) {
+        toast.error(`Changes weren't saved: ${getAutosaveErrorMessage(error)}`);
+      }
+    }, 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [config]);
+
+  useEffect(() => {
+    if (!hasInitializedThemeAutosave.current) {
+      hasInitializedThemeAutosave.current = true;
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      try {
+        persistThemeToLocalStorage(colorTheme);
+        toast.success("Changes saved");
+      } catch (error) {
+        toast.error(`Changes weren't saved: ${getAutosaveErrorMessage(error)}`);
+      }
+    }, 1000);
+
+    return () => window.clearTimeout(timeoutId);
   }, [colorTheme]);
 
   const resolveColor = (color: string): string =>
@@ -3125,6 +3357,28 @@ function App() {
     ) ??
     customComponents[0] ??
     null;
+  const selectedComponentApi = getSafeApiComponentConfig(
+    selectedComponent?.api,
+  );
+  const componentApiResponseDataById = useMemo(() => {
+    const byId: Record<string, unknown> = {};
+
+    customComponents.forEach((component) => {
+      const responseRaw = getSafeApiComponentConfig(component.api).response
+        .rawTestData;
+      if (responseRaw.trim().length === 0) {
+        return;
+      }
+
+      try {
+        byId[component.id] = JSON.parse(responseRaw);
+      } catch {
+        // Ignore invalid JSON and keep unresolved bindings in preview.
+      }
+    });
+
+    return byId;
+  }, [customComponents]);
   const pagesUsingSelectedComponent = selectedComponent
     ? editablePages.filter((page) =>
         page.componentIds.includes(selectedComponent.id),
@@ -3136,6 +3390,432 @@ function App() {
     Boolean(selectedComponent) &&
     isSelectedComponentUsedInPages &&
     !componentEditUnlocked;
+
+  const flattenLeafEntries = (
+    source: unknown,
+    prefix = "",
+  ): Array<{ path: string; value: unknown }> => {
+    if (Array.isArray(source)) {
+      if (source.length === 0 && prefix.length > 0) {
+        return [{ path: prefix, value: source }];
+      }
+
+      return source.flatMap((item, index) =>
+        flattenLeafEntries(
+          item,
+          prefix.length > 0 ? `${prefix}.${index}` : String(index),
+        ),
+      );
+    }
+
+    if (source && typeof source === "object") {
+      const entries = Object.entries(source as Record<string, unknown>);
+      if (entries.length === 0 && prefix.length > 0) {
+        return [{ path: prefix, value: source }];
+      }
+
+      return entries.flatMap(([key, value]) =>
+        flattenLeafEntries(value, prefix.length > 0 ? `${prefix}.${key}` : key),
+      );
+    }
+
+    return prefix.length > 0 ? [{ path: prefix, value: source }] : [];
+  };
+
+  const inferTextElementBinding = (
+    value: string,
+    responseData: unknown,
+  ): string | null => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || !responseData) {
+      return null;
+    }
+
+    const leafEntries = flattenLeafEntries(responseData);
+    const formatLeafValue = (entryValue: unknown): string => {
+      if (typeof entryValue === "string") return entryValue;
+      if (typeof entryValue === "number" || typeof entryValue === "boolean") {
+        return String(entryValue);
+      }
+      if (entryValue === null) return "null";
+      return JSON.stringify(entryValue);
+    };
+    const exactMatches = leafEntries.filter(
+      (entry) => formatLeafValue(entry.value) === trimmed,
+    );
+
+    if (exactMatches.length === 1) {
+      return `data.${exactMatches[0].path}`;
+    }
+
+    const normalizedValue = trimmed.toLowerCase();
+    const semanticMatches = leafEntries.filter((entry) => {
+      const leafKey = entry.path.split(".").pop()?.toLowerCase() ?? "";
+      return leafKey.length > 0 && normalizedValue.includes(leafKey);
+    });
+
+    if (semanticMatches.length === 1) {
+      return `data.${semanticMatches[0].path}`;
+    }
+
+    return null;
+  };
+
+  const getTextElementBinding = (
+    element: TextComponentElement,
+    responseData?: unknown,
+  ): string | null => {
+    if (element.apiBinding?.trim().startsWith("data.")) {
+      return element.apiBinding.trim();
+    }
+
+    const trimmed = element.value.trim();
+    if (trimmed.startsWith("data.")) {
+      return trimmed;
+    }
+
+    if (typeof responseData === "undefined") {
+      return null;
+    }
+
+    return inferTextElementBinding(element.value, responseData);
+  };
+
+  const getExplicitTextElementBinding = (
+    element: TextComponentElement,
+  ): string | null => {
+    if (element.apiBinding?.trim().startsWith("data.")) {
+      return element.apiBinding.trim();
+    }
+
+    const trimmed = element.value.trim();
+    return trimmed.startsWith("data.") ? trimmed : null;
+  };
+
+  const collectComponentDataBindings = (
+    elements: ComponentElement[],
+    responseData?: unknown,
+    found = new Set<string>(),
+  ): Set<string> => {
+    for (const element of elements) {
+      if (isContainerElement(element)) {
+        collectComponentDataBindings(element.elements, responseData, found);
+        continue;
+      }
+
+      const inspectValue = (value: string) => {
+        const trimmed = value.trim();
+        if (trimmed.startsWith("data.")) {
+          found.add(trimmed);
+        }
+      };
+
+      if (element.elementTypeId === "element-text") {
+        const binding = getExplicitTextElementBinding(element);
+        if (binding) {
+          inspectValue(binding);
+        }
+      } else if (element.elementTypeId === "element-button") {
+        inspectValue(element.label);
+      } else if (element.elementTypeId === "element-text-input") {
+        inspectValue(element.value);
+        inspectValue(element.textHint);
+      } else if (element.elementTypeId === "element-select") {
+        element.values.forEach(inspectValue);
+      } else if (element.elementTypeId === "element-icon") {
+        inspectValue(element.value);
+      } else if (element.elementTypeId === "element-image") {
+        inspectValue(element.src);
+      }
+    }
+
+    return found;
+  };
+
+  const deferredApiResponseJsonDraft = useDeferredValue(apiResponseJsonDraft);
+
+  const selectedComponentApiResponseValidation = useMemo(() => {
+    if (!selectedComponent) {
+      return { isValid: true, parsed: null as unknown, error: "" };
+    }
+
+    const raw = deferredApiResponseJsonDraft;
+    if (raw.trim().length === 0) {
+      return { isValid: true, parsed: null as unknown, error: "" };
+    }
+
+    try {
+      return {
+        isValid: true,
+        parsed: JSON.parse(raw),
+        error: "",
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        parsed: null as unknown,
+        error:
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : "Invalid JSON",
+      };
+    }
+  }, [selectedComponent?.id, deferredApiResponseJsonDraft]);
+
+  const selectedComponentDataBindings = useMemo(
+    () =>
+      selectedComponent
+        ? Array.from(
+            collectComponentDataBindings(
+              selectedComponent.elements,
+              selectedComponentApiResponseValidation.isValid
+                ? selectedComponentApiResponseValidation.parsed
+                : undefined,
+            ),
+          ).sort((a, b) => a.localeCompare(b))
+        : [],
+    [
+      selectedComponent?.elements,
+      selectedComponentApiResponseValidation.isValid,
+      selectedComponentApiResponseValidation.parsed,
+    ],
+  );
+
+  const applyApiResponseToTextElements = (
+    elements: ComponentElement[],
+    responseData: unknown,
+  ): {
+    nextElements: ComponentElement[];
+    changed: boolean;
+  } => {
+    let changed = false;
+
+    const nextElements = elements.map((element) => {
+      if (isContainerElement(element)) {
+        const nested = applyApiResponseToTextElements(
+          element.elements,
+          responseData,
+        );
+        if (!nested.changed) {
+          return element;
+        }
+
+        changed = true;
+        return {
+          ...element,
+          elements: nested.nextElements,
+        };
+      }
+
+      if (element.elementTypeId !== "element-text") {
+        return element;
+      }
+
+      const binding = getTextElementBinding(element, responseData);
+      if (!binding) {
+        return element;
+      }
+
+      const resolvedBinding = resolveDataBindingPath(responseData, binding);
+      const nextValue = resolvedBinding
+        ? formatResolvedValue(resolvedBinding.value)
+        : "";
+
+      if (element.value === nextValue && element.apiBinding === binding) {
+        return element;
+      }
+
+      changed = true;
+      return {
+        ...element,
+        value: nextValue,
+        apiBinding: binding,
+      };
+    });
+
+    return {
+      nextElements,
+      changed,
+    };
+  };
+
+  const applySelectedComponentApiResponse = (responseData: unknown) => {
+    if (!selectedComponent) return;
+
+    const applied = applyApiResponseToTextElements(
+      selectedComponent.elements,
+      responseData,
+    );
+
+    if (!applied.changed) {
+      return;
+    }
+
+    updateCustomComponents((components) =>
+      components.map((component) =>
+        component.id !== selectedComponent.id
+          ? component
+          : {
+              ...component,
+              elements: applied.nextElements,
+            },
+      ),
+    );
+  };
+
+  useEffect(() => {
+    if (!selectedComponent || !selectedComponentApi.isApitComponent) {
+      return;
+    }
+
+    if (
+      !selectedComponentApiResponseValidation.isValid ||
+      selectedComponentApiResponseValidation.parsed === null
+    ) {
+      return;
+    }
+
+    applySelectedComponentApiResponse(
+      selectedComponentApiResponseValidation.parsed,
+    );
+  }, [
+    selectedComponent?.id,
+    selectedComponent?.elements,
+    selectedComponentApi.isApitComponent,
+    selectedComponentApiResponseValidation.isValid,
+    selectedComponentApiResponseValidation.parsed,
+  ]);
+
+  useEffect(() => {
+    setApiRequestUrlDraft(selectedComponentApi.request.url);
+    setApiRequestBodyDraft(selectedComponentApi.request.body);
+    setApiResponseJsonDraft(selectedComponentApi.response.rawTestData);
+
+    // Keep the uncontrolled response textarea in sync with persisted data.
+    if (
+      apiResponseJsonInputRef.current &&
+      apiResponseJsonInputRef.current.value !==
+        selectedComponentApi.response.rawTestData
+    ) {
+      apiResponseJsonInputRef.current.value =
+        selectedComponentApi.response.rawTestData;
+    }
+  }, [
+    selectedComponent?.id,
+    selectedComponentApi.request.url,
+    selectedComponentApi.request.body,
+    selectedComponentApi.response.rawTestData,
+  ]);
+
+  useEffect(() => {
+    if (!selectedComponent) return;
+    if (apiRequestUrlDraft === selectedComponentApi.request.url) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateSelectedComponentApiRequest({ url: apiRequestUrlDraft });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    apiRequestUrlDraft,
+    selectedComponent?.id,
+    selectedComponentApi.request.url,
+  ]);
+
+  useEffect(() => {
+    if (!selectedComponent) return;
+    if (apiRequestBodyDraft === selectedComponentApi.request.body) return;
+
+    const timeoutId = window.setTimeout(() => {
+      updateSelectedComponentApiRequest({ body: apiRequestBodyDraft });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    apiRequestBodyDraft,
+    selectedComponent?.id,
+    selectedComponentApi.request.body,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (apiResponseJsonDraftTimeoutRef.current !== null) {
+        window.clearTimeout(apiResponseJsonDraftTimeoutRef.current);
+      }
+      if (apiResponsePersistTimeoutRef.current !== null) {
+        window.clearTimeout(apiResponsePersistTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const traceApiPersist = (
+    event: string,
+    details: Record<string, unknown> = {},
+  ) => {
+    if (!import.meta.env.DEV) return;
+    console.debug("[api-persist]", {
+      event,
+      at: new Date().toISOString(),
+      ...details,
+    });
+  };
+
+  const scheduleApiResponseJsonDraftUpdate = (value: string) => {
+    if (apiResponseJsonDraftTimeoutRef.current !== null) {
+      window.clearTimeout(apiResponseJsonDraftTimeoutRef.current);
+      traceApiPersist("draft-timeout-cancelled");
+    }
+
+    apiResponseJsonDraftTimeoutRef.current = window.setTimeout(() => {
+      setApiResponseJsonDraft(value);
+      traceApiPersist("draft-state-updated", { valueLength: value.length });
+      apiResponseJsonDraftTimeoutRef.current = null;
+    }, 180);
+
+    if (apiResponsePersistTimeoutRef.current !== null) {
+      window.clearTimeout(apiResponsePersistTimeoutRef.current);
+      traceApiPersist("persist-timeout-cancelled");
+    }
+
+    if (selectedComponent) {
+      const componentId = selectedComponent.id;
+      traceApiPersist("persist-timeout-scheduled", {
+        componentId,
+        valueLength: value.length,
+        delayMs: 900,
+      });
+      apiResponsePersistTimeoutRef.current = window.setTimeout(() => {
+        traceApiPersist("persist-timeout-fired", {
+          componentId,
+          valueLength: value.length,
+        });
+        updateComponentApi(componentId, (api) => {
+          if (api.response.rawTestData === value) {
+            traceApiPersist("persist-noop", { componentId });
+            return api;
+          }
+
+          traceApiPersist("persist-committed", {
+            componentId,
+            valueLength: value.length,
+          });
+          return {
+            ...api,
+            response: {
+              ...api.response,
+              rawTestData: value,
+            },
+          };
+        });
+        apiResponsePersistTimeoutRef.current = null;
+      }, 900);
+    } else {
+      traceApiPersist("persist-skipped-no-selected-component", {
+        valueLength: value.length,
+      });
+    }
+  };
+
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
     components: DEFAULT_SETTING_COMPONENTS.map((component) => ({
       id: component.id,
@@ -3306,6 +3986,9 @@ function App() {
 
   const updateCustomComponents = (
     transform: (components: AppComponent[]) => AppComponent[],
+    options?: {
+      persistImmediately?: boolean;
+    },
   ) => {
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
@@ -3313,10 +3996,22 @@ function App() {
         ? base.customComponents
         : [];
       const transformed = transform(existing);
-      return {
+      const next = {
         ...base,
         customComponents: transformed,
       };
+
+      latestConfigRef.current = next;
+
+      if (options?.persistImmediately) {
+        try {
+          persistConfigToLocalStorage(next);
+        } catch {
+          // Keep state update even if immediate persistence fails.
+        }
+      }
+
+      return next;
     });
   };
 
@@ -3341,13 +4036,27 @@ function App() {
   const cloneComponentTemplate = (
     template: AppComponent,
     label: string,
-  ): AppComponent => ({
-    ...template,
-    id: crypto.randomUUID(),
-    label,
-    elements: cloneComponentElementTree(template.elements),
-    styles: { ...template.styles },
-  });
+  ): AppComponent => {
+    const templateApi = getSafeApiComponentConfig(template.api);
+
+    return {
+      ...template,
+      id: crypto.randomUUID(),
+      label,
+      elements: cloneComponentElementTree(template.elements),
+      styles: { ...template.styles },
+      api: {
+        ...templateApi,
+        request: {
+          ...templateApi.request,
+          headers: templateApi.request.headers.map((header) => ({ ...header })),
+        },
+        response: {
+          ...templateApi.response,
+        },
+      },
+    };
+  };
 
   const pendingNewComponentLabel = newCustomComponentLabel.trim();
   const normalizedPendingNewComponentLabel =
@@ -3570,6 +4279,345 @@ function App() {
           : { ...comp, styles: { ...comp.styles, ...styles } },
       ),
     );
+  };
+
+  const updateComponentApi = (
+    componentId: string,
+    transform: (api: ApiComponentConfig) => ApiComponentConfig,
+    options?: {
+      persistImmediately?: boolean;
+    },
+  ) => {
+    updateCustomComponents(
+      (components) =>
+        components.map((comp) =>
+          comp.id !== componentId
+            ? comp
+            : { ...comp, api: transform(getSafeApiComponentConfig(comp.api)) },
+        ),
+      options,
+    );
+  };
+
+  const updateSelectedComponentApiEnabled = (enabled: boolean) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(
+      selectedComponent.id,
+      (api) => ({
+        ...api,
+        isApitComponent: enabled,
+      }),
+      {
+        persistImmediately: true,
+      },
+    );
+  };
+
+  const updateSelectedComponentApiRequest = (
+    request: Partial<ApiComponentConfig["request"]>,
+  ) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      request: {
+        ...api.request,
+        ...request,
+      },
+    }));
+  };
+
+  const addSelectedComponentApiHeader = () => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      request: {
+        ...api.request,
+        headers: [
+          ...api.request.headers,
+          { id: crypto.randomUUID(), key: "", value: "" },
+        ],
+      },
+    }));
+  };
+
+  const updateSelectedComponentApiHeader = (
+    headerId: string,
+    patch: Partial<Pick<ApiRequestHeader, "key" | "value">>,
+  ) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      request: {
+        ...api.request,
+        headers: api.request.headers.map((header) =>
+          header.id === headerId ? { ...header, ...patch } : header,
+        ),
+      },
+    }));
+  };
+
+  const removeSelectedComponentApiHeader = (headerId: string) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      request: {
+        ...api.request,
+        headers: api.request.headers.filter((header) => header.id !== headerId),
+      },
+    }));
+  };
+
+  const updateSelectedComponentApiResponseJson = (value: string) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      response: {
+        ...api.response,
+        rawTestData: value,
+      },
+    }));
+  };
+
+  const getValueAtPath = (source: unknown, path: string): unknown => {
+    const segments = path
+      .split(".")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+
+    let cursor: unknown = source;
+    for (const segment of segments) {
+      if (Array.isArray(cursor)) {
+        const numericIndex = Number(segment);
+        if (!Number.isInteger(numericIndex) || numericIndex < 0) {
+          return undefined;
+        }
+        cursor = cursor[numericIndex];
+        continue;
+      }
+
+      if (!cursor || typeof cursor !== "object") {
+        return undefined;
+      }
+
+      cursor = (cursor as Record<string, unknown>)[segment];
+    }
+
+    return cursor;
+  };
+
+  const flattenLeafPaths = (source: unknown, prefix = ""): string[] => {
+    if (Array.isArray(source)) {
+      if (source.length === 0 && prefix.length > 0) {
+        return [prefix];
+      }
+
+      return source.flatMap((item, index) =>
+        flattenLeafPaths(
+          item,
+          prefix.length > 0 ? `${prefix}.${index}` : String(index),
+        ),
+      );
+    }
+
+    if (source && typeof source === "object") {
+      const entries = Object.entries(source as Record<string, unknown>);
+      if (entries.length === 0 && prefix.length > 0) {
+        return [prefix];
+      }
+
+      return entries.flatMap(([key, value]) =>
+        flattenLeafPaths(value, prefix.length > 0 ? `${prefix}.${key}` : key),
+      );
+    }
+
+    return prefix.length > 0 ? [prefix] : [];
+  };
+
+  const flattenAllPaths = (source: unknown, prefix = ""): string[] => {
+    if (Array.isArray(source)) {
+      const directPath = prefix.length > 0 ? [prefix] : [];
+      if (source.length === 0) {
+        return directPath;
+      }
+
+      return [
+        ...directPath,
+        ...source.flatMap((item, index) =>
+          flattenAllPaths(
+            item,
+            prefix.length > 0 ? `${prefix}.${index}` : String(index),
+          ),
+        ),
+      ];
+    }
+
+    if (source && typeof source === "object") {
+      const directPath = prefix.length > 0 ? [prefix] : [];
+      const entries = Object.entries(source as Record<string, unknown>);
+      if (entries.length === 0) {
+        return directPath;
+      }
+
+      return [
+        ...directPath,
+        ...entries.flatMap(([key, value]) =>
+          flattenAllPaths(value, prefix.length > 0 ? `${prefix}.${key}` : key),
+        ),
+      ];
+    }
+
+    return prefix.length > 0 ? [prefix] : [];
+  };
+
+  const formatResolvedValue = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    if (value === null) return "null";
+    return JSON.stringify(value);
+  };
+
+  const resolveDataBindingPath = (
+    source: unknown,
+    binding: string,
+  ): { value: unknown; path: string } | null => {
+    const trimmed = binding.trim();
+    if (!trimmed.startsWith("data.")) {
+      return null;
+    }
+
+    // Preferred lookup keeps the full `data.*` path semantics.
+    const direct = getValueAtPath(source, trimmed);
+    if (typeof direct !== "undefined") {
+      return { value: direct, path: trimmed };
+    }
+
+    const legacyPath = trimmed.slice(5);
+    const legacy = getValueAtPath(source, legacyPath);
+    if (typeof legacy !== "undefined") {
+      return { value: legacy, path: legacyPath };
+    }
+
+    return null;
+  };
+
+  const getApiBindingStatus = (
+    responseData: unknown,
+    bindings: string[],
+  ): {
+    missingList: string[];
+    unusedPaths: string[];
+  } => {
+    const missingBindings = new Set<string>();
+    const usedResponsePaths = new Set<string>();
+
+    bindings.forEach((binding) => {
+      const resolvedBinding = resolveDataBindingPath(responseData, binding);
+      if (!resolvedBinding) {
+        missingBindings.add(binding);
+        return;
+      }
+
+      const segments = resolvedBinding.path
+        .split(".")
+        .filter((segment) => segment.trim().length > 0);
+      for (let i = 1; i <= segments.length; i += 1) {
+        usedResponsePaths.add(segments.slice(0, i).join("."));
+      }
+    });
+
+    const flattenedResponsePaths = new Set(flattenAllPaths(responseData));
+
+    return {
+      missingList: Array.from(missingBindings).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+      unusedPaths: Array.from(flattenedResponsePaths)
+        .filter((path) => !usedResponsePaths.has(path))
+        .sort((a, b) => a.localeCompare(b)),
+    };
+  };
+
+  const selectedComponentApiBindingStatus = useMemo(() => {
+    if (
+      !selectedComponent ||
+      !selectedComponentApiResponseValidation.isValid ||
+      selectedComponentApiResponseValidation.parsed === null
+    ) {
+      return {
+        missingList: [] as string[],
+        unusedPaths: [] as string[],
+      };
+    }
+
+    return getApiBindingStatus(
+      selectedComponentApiResponseValidation.parsed,
+      selectedComponentDataBindings,
+    );
+  }, [
+    selectedComponent?.id,
+    selectedComponentApiResponseValidation.isValid,
+    selectedComponentApiResponseValidation.parsed,
+    selectedComponentDataBindings,
+  ]);
+
+  const getPreviewResponseDataForComponent = (componentId: string): unknown => {
+    if (selectedComponent && componentId === selectedComponent.id) {
+      if (
+        selectedComponentApiResponseValidation.isValid &&
+        selectedComponentApiResponseValidation.parsed !== null
+      ) {
+        return selectedComponentApiResponseValidation.parsed;
+      }
+
+      return undefined;
+    }
+
+    return componentApiResponseDataById[componentId];
+  };
+
+  const populateSelectedComponentFromApiResponse = () => {
+    if (!selectedComponent) return;
+
+    const responseRaw =
+      apiResponseJsonInputRef.current?.value ?? apiResponseJsonDraft;
+    setApiResponseJsonDraft(responseRaw);
+    updateSelectedComponentApiResponseJson(responseRaw);
+    if (responseRaw.trim().length === 0) {
+      toast.success("Response is empty; preview data has been reset");
+      return;
+    }
+
+    let responseData: unknown;
+    try {
+      responseData = JSON.parse(responseRaw);
+    } catch (error) {
+      toast.error(
+        `Response JSON is invalid: ${error instanceof Error ? error.message : "Invalid JSON"}`,
+      );
+      return;
+    }
+
+    const { missingList } = getApiBindingStatus(
+      responseData,
+      selectedComponentDataBindings,
+    );
+
+    applySelectedComponentApiResponse(responseData);
+
+    if (missingList.length > 0) {
+      toast.error("Some data items were missing in the response");
+      return;
+    }
+
+    toast.success("Data items populated from response");
   };
 
   const updateComponentLabel = (componentId: string, label: string) => {
@@ -5268,6 +6316,11 @@ ${items}
         instanceId: element.instanceId,
         flex: element.flex ?? "none",
         value: element.value ?? "",
+        apiBinding:
+          typeof element.apiBinding === "string" &&
+          element.apiBinding.trim().length > 0
+            ? element.apiBinding
+            : undefined,
         styles: {
           ...getExplicitElementSpacingJson(element.styles),
           alignment: element.styles.alignment ?? "center",
@@ -5438,42 +6491,59 @@ ${items}
 
   const getExplicitComponentJson = (
     component: AppComponent,
-  ): Record<string, unknown> => ({
-    id: component.id,
-    label: component.label,
-    styles: {
-      direction: component.styles.direction ?? "horizontal",
-      justifyContent: component.styles.justifyContent ?? "space-between",
-      alignItems: component.styles.alignItems ?? "start",
-      overflowScroll: component.styles.overflowScroll ?? false,
-      gap: component.styles.gap ?? 0,
-      minWidth: component.styles.minWidth ?? 0,
-      maxWidth: component.styles.maxWidth ?? DEFAULT_CONTAINER_MAX_DIMENSION,
-      minHeight: component.styles.minHeight ?? 0,
-      maxHeight: component.styles.maxHeight ?? DEFAULT_CONTAINER_MAX_DIMENSION,
-      paddingX: component.styles.paddingX ?? 0,
-      paddingY: component.styles.paddingY ?? 0,
-      marginX: component.styles.marginX ?? 0,
-      marginY: component.styles.marginY ?? 0,
-      paddingTop: component.styles.paddingTop ?? 0,
-      paddingBottom: component.styles.paddingBottom ?? 0,
-      paddingLeft: component.styles.paddingLeft ?? 0,
-      paddingRight: component.styles.paddingRight ?? 0,
-      marginTop: component.styles.marginTop ?? 0,
-      marginBottom: component.styles.marginBottom ?? 0,
-      marginLeft: component.styles.marginLeft ?? 0,
-      marginRight: component.styles.marginRight ?? 0,
-      backgroundColor: resolveColor(
-        component.styles.backgroundColor ?? "#ffffff00",
+  ): Record<string, unknown> => {
+    const componentApi = getSafeApiComponentConfig(component.api);
+
+    return {
+      id: component.id,
+      label: component.label,
+      styles: {
+        direction: component.styles.direction ?? "horizontal",
+        justifyContent: component.styles.justifyContent ?? "space-between",
+        alignItems: component.styles.alignItems ?? "start",
+        overflowScroll: component.styles.overflowScroll ?? false,
+        gap: component.styles.gap ?? 0,
+        minWidth: component.styles.minWidth ?? 0,
+        maxWidth: component.styles.maxWidth ?? DEFAULT_CONTAINER_MAX_DIMENSION,
+        minHeight: component.styles.minHeight ?? 0,
+        maxHeight:
+          component.styles.maxHeight ?? DEFAULT_CONTAINER_MAX_DIMENSION,
+        paddingX: component.styles.paddingX ?? 0,
+        paddingY: component.styles.paddingY ?? 0,
+        marginX: component.styles.marginX ?? 0,
+        marginY: component.styles.marginY ?? 0,
+        paddingTop: component.styles.paddingTop ?? 0,
+        paddingBottom: component.styles.paddingBottom ?? 0,
+        paddingLeft: component.styles.paddingLeft ?? 0,
+        paddingRight: component.styles.paddingRight ?? 0,
+        marginTop: component.styles.marginTop ?? 0,
+        marginBottom: component.styles.marginBottom ?? 0,
+        marginLeft: component.styles.marginLeft ?? 0,
+        marginRight: component.styles.marginRight ?? 0,
+        backgroundColor: resolveColor(
+          component.styles.backgroundColor ?? "#ffffff00",
+        ),
+        borderColor: resolveColor(component.styles.borderColor ?? "#d4d4d8"),
+        borderRadius: component.styles.borderRadius ?? 8,
+        borderWidth: component.styles.borderWidth ?? 0,
+      },
+      elements: component.elements.map((el) =>
+        getExplicitComponentElementJson(el),
       ),
-      borderColor: resolveColor(component.styles.borderColor ?? "#d4d4d8"),
-      borderRadius: component.styles.borderRadius ?? 8,
-      borderWidth: component.styles.borderWidth ?? 0,
-    },
-    elements: component.elements.map((el) =>
-      getExplicitComponentElementJson(el),
-    ),
-  });
+      api: {
+        isApitComponent: componentApi.isApitComponent,
+        request: {
+          url: componentApi.request.url,
+          method: componentApi.request.method,
+          headers: componentApi.request.headers,
+          body: componentApi.request.body,
+        },
+        response: {
+          rawTestData: componentApi.response.rawTestData,
+        },
+      },
+    };
+  };
 
   const getExportConfig = (): ExportConfig => ({
     id: safeConfig.id,
@@ -5646,7 +6716,7 @@ ${items}
                       }
               }
             >
-              {renderComponentElementPreview(element)}
+              {renderComponentElementPreview(element, component.id)}
             </div>
           ))
         )}
@@ -5654,7 +6724,39 @@ ${items}
     );
   };
 
-  const renderComponentElementPreview = (element: ComponentElement) => {
+  const renderComponentElementPreview = (
+    element: ComponentElement,
+    componentId?: string,
+  ) => {
+    const resolvePreviewBinding = (value: string) => {
+      const trimmed = value.trim();
+      if (!componentId) {
+        return value;
+      }
+
+      const responseData = getPreviewResponseDataForComponent(componentId);
+      if (typeof responseData === "undefined") {
+        return value;
+      }
+
+      const textBinding =
+        element.elementTypeId === "element-text"
+          ? getTextElementBinding(element, responseData)
+          : null;
+      const binding =
+        textBinding ?? (trimmed.startsWith("data.") ? trimmed : null);
+      if (!binding) {
+        return value;
+      }
+
+      const resolvedBinding = resolveDataBindingPath(responseData, binding);
+      if (!resolvedBinding) {
+        return "";
+      }
+
+      return formatResolvedValue(resolvedBinding.value);
+    };
+
     if (element.elementTypeId === "element-text") {
       const fontSize = `${0.5 + element.styles.size * 0.125}rem`;
       const alignClass =
@@ -5667,6 +6769,7 @@ ${items}
         element.styles.isLabel ? "$textHint" : "$text",
       );
 
+      const resolvedText = resolvePreviewBinding(element.value);
       return (
         <p
           className={`${alignClass} w-full`}
@@ -5679,7 +6782,11 @@ ${items}
             color: textColor,
           }}
         >
-          {element.value || "Text"}
+          {resolvedText ||
+            ((element.apiBinding?.trim().startsWith("data.") ?? false) ||
+            element.value.trim().startsWith("data.")
+              ? ""
+              : "Text")}
         </p>
       );
     }
@@ -5752,15 +6859,15 @@ ${items}
           }}
           className={element.styles.width === "full" ? "w-full" : "w-auto"}
         >
-          {element.label}
+          {resolvePreviewBinding(element.label)}
         </Button>
       );
     }
 
     if (element.elementTypeId === "element-select") {
-      const options = element.values.filter(
-        (option) => option.trim().length > 0,
-      );
+      const options = element.values
+        .map((option) => resolvePreviewBinding(option))
+        .filter((option) => option.trim().length > 0);
       const selectTextColor = resolveColor("$text");
       const selectBackgroundColor = resolveColor("$secondary");
       const selectBorderColor = resolveColor("$border");
@@ -5826,8 +6933,8 @@ ${items}
               backgroundColor: inputBackgroundColor,
               borderColor: inputBorderColor,
             }}
-            value={element.value}
-            placeholder={element.textHint}
+            value={resolvePreviewBinding(element.value)}
+            placeholder={resolvePreviewBinding(element.textHint)}
             readOnly
           />
         </div>
@@ -5835,7 +6942,8 @@ ${items}
     }
 
     if (element.elementTypeId === "element-icon") {
-      const IconComponent = getLucideIconComponent(element.value) || Home;
+      const IconComponent =
+        getLucideIconComponent(resolvePreviewBinding(element.value)) || Home;
       const size = 10 + element.styles.size * 2;
       return (
         <div
@@ -5916,7 +7024,7 @@ ${items}
                       : { flex: `${child.flex} ${child.flex} 0%` }
                 }
               >
-                {renderComponentElementPreview(child)}
+                {renderComponentElementPreview(child, componentId)}
               </div>
             ))
           ) : (
@@ -5932,7 +7040,7 @@ ${items}
 
     return (
       <img
-        src={element.src}
+        src={resolvePreviewBinding(element.src)}
         alt="preview"
         className="rounded"
         style={{
@@ -5986,15 +7094,26 @@ ${items}
     element: ComponentElement,
   ) => {
     if (element.elementTypeId === "element-text") {
+      const isBound = element.apiBinding?.trim().startsWith("data.") ?? false;
       return (
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label>Value</Label>
+            <div className="flex items-center gap-2">
+              <Label>Value</Label>
+              {isBound && (
+                <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                  Bound to {element.apiBinding}
+                </span>
+              )}
+            </div>
             <Input
-              value={element.value}
+              value={element.apiBinding ?? element.value}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   value: e.target.value,
+                  apiBinding: e.target.value.trim().startsWith("data.")
+                    ? e.target.value.trim()
+                    : null,
                 })
               }
               placeholder="Text content"
@@ -8594,7 +9713,6 @@ ${items}
                     <Button
                       onClick={() => setShowAddNavigationPage(true)}
                       className="w-full gap-2"
-                      disabled={pageTitleOptions.length === 0}
                     >
                       <Plus size={18} weight="bold" />
                       Add Page
@@ -9096,6 +10214,208 @@ ${items}
                         )
                       }
                     />
+
+                    <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                      <Label htmlFor="selected-component-api-enabled">
+                        API Component
+                      </Label>
+                      <Switch
+                        id="selected-component-api-enabled"
+                        checked={selectedComponentApi.isApitComponent}
+                        disabled={isComponentEditorReadOnly}
+                        onCheckedChange={updateSelectedComponentApiEnabled}
+                      />
+                    </div>
+
+                    {selectedComponentApi.isApitComponent && (
+                      <div className="space-y-4 rounded-md border border-border bg-secondary/30 p-3">
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold">Data Items</p>
+                          {selectedComponentDataBindings.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              No data bindings found. Use values starting with
+                              data. in component elements.
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {selectedComponentDataBindings.map((binding) => (
+                                <span
+                                  key={binding}
+                                  className="rounded-md border border-border bg-card px-2 py-1 text-xs font-mono"
+                                >
+                                  {binding}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                          <p className="text-sm font-semibold">Request</p>
+                          <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
+                            <Select
+                              value={selectedComponentApi.request.method}
+                              onValueChange={(value: ApiRequestMethod) =>
+                                updateSelectedComponentApiRequest({
+                                  method: value,
+                                })
+                              }
+                            >
+                              <SelectTrigger id="api-request-method">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {API_REQUEST_METHODS.map((method) => (
+                                  <SelectItem key={method} value={method}>
+                                    {method}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              id="api-request-url"
+                              placeholder="https://api.example.com/resource"
+                              value={apiRequestUrlDraft}
+                              onChange={(e) =>
+                                setApiRequestUrlDraft(e.target.value)
+                              }
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                                Headers
+                              </Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={addSelectedComponentApiHeader}
+                              >
+                                <Plus size={14} />
+                                Add Header
+                              </Button>
+                            </div>
+
+                            {selectedComponentApi.request.headers.length ===
+                            0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                No headers configured.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {selectedComponentApi.request.headers.map(
+                                  (header) => (
+                                    <div
+                                      key={header.id}
+                                      className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                                    >
+                                      <Input
+                                        placeholder="Header"
+                                        value={header.key}
+                                        onChange={(e) =>
+                                          updateSelectedComponentApiHeader(
+                                            header.id,
+                                            { key: e.target.value },
+                                          )
+                                        }
+                                      />
+                                      <Input
+                                        placeholder="Value"
+                                        value={header.value}
+                                        onChange={(e) =>
+                                          updateSelectedComponentApiHeader(
+                                            header.id,
+                                            { value: e.target.value },
+                                          )
+                                        }
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() =>
+                                          removeSelectedComponentApiHeader(
+                                            header.id,
+                                          )
+                                        }
+                                        className="text-destructive hover:text-destructive"
+                                      >
+                                        <Trash2 size={16} />
+                                      </Button>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="api-request-body">Body</Label>
+                            <textarea
+                              id="api-request-body"
+                              className="min-h-[110px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+                              placeholder='{"name":"Example"}'
+                              value={apiRequestBodyDraft}
+                              onChange={(e) =>
+                                setApiRequestBodyDraft(e.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold">Response</p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={populateSelectedComponentFromApiResponse}
+                            >
+                              Populate
+                            </Button>
+                          </div>
+                          <textarea
+                            key={`api-response-${selectedComponent.id}`}
+                            ref={apiResponseJsonInputRef}
+                            id="api-response-test-json"
+                            className={`min-h-[140px] w-full rounded-md border bg-background px-3 py-2 text-sm font-mono ${selectedComponentApiResponseValidation.isValid ? "border-border" : "border-destructive"}`}
+                            placeholder='{"user":{"name":"Ada"}}'
+                            defaultValue={apiResponseJsonDraft}
+                            onChange={(e) =>
+                              scheduleApiResponseJsonDraftUpdate(e.target.value)
+                            }
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              setApiResponseJsonDraft(value);
+                              updateSelectedComponentApiResponseJson(value);
+                            }}
+                          />
+                          {!selectedComponentApiResponseValidation.isValid && (
+                            <p className="text-xs text-destructive">
+                              Invalid JSON:{" "}
+                              {selectedComponentApiResponseValidation.error}
+                            </p>
+                          )}
+
+                          {selectedComponentApiBindingStatus.missingList
+                            .length > 0 && (
+                            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+                              <p className="text-xs font-semibold text-destructive">
+                                Missing data items:
+                              </p>
+                              <p className="mt-1 text-xs text-destructive">
+                                {selectedComponentApiBindingStatus.missingList.join(
+                                  ", ",
+                                )}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {isSelectedComponentUsedInPages && (
                       <p className="text-xs text-muted-foreground">
                         Used in:{" "}
@@ -10059,7 +11379,10 @@ ${items}
                                         }
                                 }
                               >
-                                {renderComponentElementPreview(element)}
+                                {renderComponentElementPreview(
+                                  element,
+                                  selectedComponent.id,
+                                )}
                               </div>
                             ))}
                           </div>
