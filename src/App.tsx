@@ -168,12 +168,17 @@ interface ExportPrebuiltConfig {
 }
 
 interface AppgenConfigFile {
+  default?: unknown;
   navigation?: unknown;
   colorTheme?: unknown;
   prebuilt?: {
     components?: unknown;
     pages?: unknown;
     elements?: unknown;
+  };
+  schemas?: {
+    components?: unknown;
+    pages?: unknown;
   };
   signatures?: {
     components?: unknown;
@@ -228,7 +233,7 @@ interface IconElementStyles extends ElementSpacingStyles {
 }
 
 type ElementDimension = number | string;
-type ButtonWidth = number | "full" | "auto";
+type ButtonWidth = string;
 
 interface ButtonElementStyles extends ElementSpacingStyles {
   width: ButtonWidth;
@@ -244,6 +249,8 @@ interface SelectElementStyles extends ElementSpacingStyles {}
 interface ImageElementStyles extends ElementSpacingStyles {
   sizing: "contain" | "cover";
   width: ButtonWidth;
+  minWidth: ButtonWidth;
+  maxWidth: ButtonWidth;
   height: ElementDimension;
 }
 
@@ -256,9 +263,11 @@ type FlexJustifyContent =
   | "space-evenly";
 
 type FlexAlignItems = "start" | "center" | "end" | "stretch";
+type FlexWrapMode = "nowrap" | "wrap" | "wrap-reverse";
 
 interface ContainerElementStyles {
   flexDirection: "row" | "column";
+  flexWrap: FlexWrapMode;
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
   overflowScroll: boolean;
@@ -347,6 +356,7 @@ type ComponentElement =
 
 interface ComponentStyles {
   direction: ComponentDirection;
+  flexWrap: FlexWrapMode;
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
   overflowScroll: boolean;
@@ -400,6 +410,10 @@ interface ApiRequestHeader {
 
 interface ApiComponentConfig {
   isApitComponent: boolean;
+  isList: boolean;
+  listItemComponentId: string;
+  listDataBinding: string;
+  isBordered: boolean;
   request: {
     url: string;
     method: ApiRequestMethod;
@@ -452,6 +466,7 @@ interface PrebuiltElementDef {
     justifyContent?: FlexJustifyContent;
     alignItems?: FlexAlignItems;
     flexDirection?: "row" | "column";
+    flexWrap?: FlexWrapMode;
     backgroundColor?: string;
     borderColor?: string;
     borderRadius?: number;
@@ -463,6 +478,8 @@ interface PrebuiltElementDef {
     isLabel?: boolean;
     sizing?: "contain" | "cover";
     width?: ElementDimension;
+    minWidth?: ElementDimension;
+    maxWidth?: ElementDimension;
     height?: ElementDimension;
     containerWidth?: ElementDimension;
     containerHeight?: ElementDimension;
@@ -521,8 +538,18 @@ const THEME_VARIABLE_KEYS: ThemeVariableKey[] = [
   "textHint",
 ];
 
+const APP_CONFIG = prebuiltSourceConfig as AppgenConfigFile;
+const APP_CONFIG_DEFAULT_SOURCE: Record<string, unknown> = (() => {
+  const rawDefault = APP_CONFIG.default;
+  if (rawDefault && typeof rawDefault === "object") {
+    return rawDefault as Record<string, unknown>;
+  }
+
+  return prebuiltSourceConfig as Record<string, unknown>;
+})();
+
 const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = (() => {
-  const raw = (prebuiltSourceConfig as Record<string, unknown>).colorTheme;
+  const raw = APP_CONFIG_DEFAULT_SOURCE.colorTheme;
   const parsed =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return THEME_VARIABLE_KEYS.reduce(
@@ -539,7 +566,7 @@ const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = (() => {
 })();
 
 const DEFAULT_COLOR_THEME: ColorTheme = (() => {
-  const raw = (prebuiltSourceConfig as Record<string, unknown>).colorTheme;
+  const raw = APP_CONFIG_DEFAULT_SOURCE.colorTheme;
   if (!raw || typeof raw !== "object") {
     return THEME_VARIABLE_KEYS.reduce((acc, key) => {
       acc[key] = { light: "#000000", dark: "#ffffff" };
@@ -602,7 +629,7 @@ type NavigationStyle =
     };
 
 const DEFAULT_NAVIGATION_STYLE: NavigationStyle = (() => {
-  const raw = (prebuiltSourceConfig as Record<string, unknown>).navigation;
+  const raw = APP_CONFIG_DEFAULT_SOURCE.navigation;
   if (!raw || typeof raw !== "object")
     return { type: "drawer" as const, variant: "all" as const };
   const nav = raw as Record<string, unknown>;
@@ -643,6 +670,10 @@ const API_REQUEST_METHODS: ApiRequestMethod[] = [
 
 const createDefaultApiComponentConfig = (): ApiComponentConfig => ({
   isApitComponent: false,
+  isList: false,
+  listItemComponentId: "",
+  listDataBinding: "",
+  isBordered: false,
   request: {
     url: "",
     method: "GET",
@@ -661,8 +692,28 @@ const getSafeApiComponentConfig = (
     ? {
         isApitComponent: Boolean(
           (api as { isApitComponent?: unknown }).isApitComponent ??
+          (api as { isApiComponent?: unknown }).isApiComponent ??
           (api as { enabled?: unknown }).enabled,
         ),
+        isList: Boolean((api as { isList?: unknown }).isList),
+        listItemComponentId:
+          typeof (api as { listItemComponentId?: unknown })
+            .listItemComponentId === "string"
+            ? String(
+                (api as { listItemComponentId?: unknown }).listItemComponentId,
+              )
+            : "",
+        listDataBinding:
+          typeof (api as { listDataBinding?: unknown }).listDataBinding ===
+            "string" &&
+          String((api as { listDataBinding?: unknown }).listDataBinding)
+            .trim()
+            .startsWith("data.")
+            ? String(
+                (api as { listDataBinding?: unknown }).listDataBinding,
+              ).trim()
+            : "",
+        isBordered: Boolean((api as { isBordered?: unknown }).isBordered),
         request: {
           url: api.request?.url ?? "",
           method: API_REQUEST_METHODS.includes(api.request?.method)
@@ -688,8 +739,6 @@ const getSafeApiComponentConfig = (
         },
       }
     : createDefaultApiComponentConfig();
-
-const APP_CONFIG = prebuiltSourceConfig as AppgenConfigFile;
 
 const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = Array.isArray(
   APP_CONFIG.prebuilt?.components,
@@ -854,48 +903,138 @@ const getDefaultButtonIsGhost = (): boolean => {
   return Boolean(value);
 };
 
-const normalizeButtonWidth = (value: unknown): ButtonWidth => {
-  if (value === "auto") return "auto";
-  if (value === "full") return "full";
+const normalizeCssWidthAlias = (value: string): string =>
+  value.trim().toLowerCase() === "full" ? "100%" : value.trim();
 
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.round(value);
+const isValidCssWidthValue = (value: string): boolean => {
+  const trimmed = normalizeCssWidthAlias(value);
+  if (trimmed.length === 0) return false;
+
+  if (
+    trimmed === "auto" ||
+    trimmed === "inherit" ||
+    trimmed === "initial" ||
+    trimmed === "unset" ||
+    trimmed === "revert" ||
+    trimmed === "revert-layer" ||
+    trimmed === "min-content" ||
+    trimmed === "max-content" ||
+    trimmed === "fit-content" ||
+    trimmed === "stretch"
+  ) {
+    return true;
   }
 
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed === "auto") return "auto";
-    if (trimmed === "full") return "full";
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-      if (parsed > 0) return parsed;
-    }
-  }
+  if (/^fit-content\(.+\)$/.test(trimmed)) return true;
+  if (/^(calc|min|max|clamp)\(.+\)$/.test(trimmed)) return true;
+  if (/^var\(--[A-Za-z0-9_-]+\)$/.test(trimmed)) return true;
+  if (/^0(?:\.0+)?$/.test(trimmed)) return true;
 
-  return "auto";
+  return /^-?\d*\.?\d+(px|%|vw|vh|vmin|vmax|em|rem|ch|ex|cm|mm|in|pt|pc)$/.test(
+    trimmed,
+  );
 };
 
-const normalizeImageWidth = (value: unknown): ButtonWidth => {
-  if (value === "full" || value === "100%") return "full";
+const DebouncedValidatedInput = ({
+  value,
+  onValueChange,
+  validate,
+  placeholder,
+  delayMs = 1000,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  validate: (value: string) => boolean;
+  placeholder?: string;
+  delayMs?: number;
+}) => {
+  const [draft, setDraft] = useState(value);
+  const [showValidation, setShowValidation] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
+  useEffect(() => {
+    if (isFocused) return;
+    setDraft(value);
+  }, [value, isFocused]);
+
+  useEffect(() => {
+    setShowValidation(false);
+    const timeoutId = window.setTimeout(() => {
+      setShowValidation(true);
+      onValueChange(draft);
+    }, delayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [draft, delayMs, onValueChange]);
+
+  const isInvalid = showValidation && !validate(draft);
+
+  return (
+    <Input
+      value={draft}
+      onChange={(e) => {
+        const nextValue = e.target.value;
+        setDraft(nextValue);
+      }}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => {
+        setIsFocused(false);
+        onValueChange(draft);
+      }}
+      className={
+        isInvalid
+          ? "border-destructive text-destructive focus-visible:ring-destructive"
+          : undefined
+      }
+      placeholder={placeholder}
+    />
+  );
+};
+
+const normalizeWidthValue = (value: unknown, fallback: string): ButtonWidth => {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.round(value);
+    return `${Math.round(value)}px`;
   }
 
   if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed === "full" || trimmed === "100%") return "full";
-    if (/^\d+$/.test(trimmed)) {
-      const parsed = Number(trimmed);
-      if (parsed > 0) return parsed;
+    const aliased = normalizeCssWidthAlias(value);
+    if (/^\d+$/.test(aliased)) {
+      return `${Number(aliased)}px`;
     }
-    if (/^\d+px$/.test(trimmed)) {
-      const parsed = Number(trimmed.replace("px", ""));
-      if (parsed > 0) return parsed;
+    if (isValidCssWidthValue(aliased)) {
+      return aliased;
     }
   }
 
-  return "full";
+  return fallback;
+};
+
+const isFullWidthValue = (value: string): boolean =>
+  normalizeCssWidthAlias(value) === "100%";
+
+const normalizeButtonWidth = (value: unknown): ButtonWidth =>
+  normalizeWidthValue(value, "auto");
+
+const normalizeImageWidth = (value: unknown): ButtonWidth =>
+  normalizeWidthValue(value, "100%");
+
+const isValidCssMinWidthValue = (value: string): boolean =>
+  isValidCssWidthValue(value);
+
+const normalizeImageMinWidth = (value: unknown): ButtonWidth =>
+  normalizeWidthValue(value, "auto");
+
+const isValidCssMaxWidthValue = (value: string): boolean => {
+  const trimmed = normalizeCssWidthAlias(value);
+  if (trimmed === "none") return true;
+  return isValidCssWidthValue(value);
+};
+
+const normalizeImageMaxWidth = (value: unknown): ButtonWidth => {
+  if (typeof value === "string" && value.trim().toLowerCase() === "none") {
+    return "none";
+  }
+  return normalizeWidthValue(value, "none");
 };
 
 const getDefaultButtonStyles = (): ButtonElementStyles => {
@@ -988,6 +1127,8 @@ const getDefaultImageStyles = (): ImageElementStyles => {
         ? styles.sizing
         : "contain",
     width: normalizeImageWidth(styles?.width),
+    minWidth: normalizeImageMinWidth(styles?.minWidth),
+    maxWidth: normalizeImageMaxWidth(styles?.maxWidth),
     height: normalizeDimension(styles?.height, "auto"),
   };
 };
@@ -1380,6 +1521,12 @@ const getDefaultComponentStyles = (): ComponentStyles => {
       : "row";
   return {
     direction: flexDir === "row" ? "horizontal" : "vertical",
+    flexWrap:
+      styles?.flexWrap === "nowrap" ||
+      styles?.flexWrap === "wrap" ||
+      styles?.flexWrap === "wrap-reverse"
+        ? styles.flexWrap
+        : "wrap",
     justifyContent: normalizeFlexJustifyContent(
       styles?.justifyContent,
       "start",
@@ -1481,6 +1628,12 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
       styles?.flexDirection === "row" || styles?.flexDirection === "column"
         ? styles.flexDirection
         : "column",
+    flexWrap:
+      styles?.flexWrap === "nowrap" ||
+      styles?.flexWrap === "wrap" ||
+      styles?.flexWrap === "wrap-reverse"
+        ? styles.flexWrap
+        : "wrap",
     justifyContent: normalizeFlexJustifyContent(
       styles?.justifyContent,
       "start",
@@ -1770,6 +1923,12 @@ export const normalizeElementFromRaw = (
           width: normalizeImageWidth(
             rawStyles.width ?? entry.width ?? defaultStyles.width,
           ),
+          minWidth: normalizeImageMinWidth(
+            rawStyles.minWidth ?? entry.minWidth ?? defaultStyles.minWidth,
+          ),
+          maxWidth: normalizeImageMaxWidth(
+            rawStyles.maxWidth ?? entry.maxWidth ?? defaultStyles.maxWidth,
+          ),
           height: normalizeDimension(
             rawStyles.height ?? entry.height,
             defaultStyles.height,
@@ -1803,6 +1962,16 @@ export const normalizeElementFromRaw = (
             rawStyles.flexDirection === "column"
               ? rawStyles.flexDirection
               : defaultStyles.flexDirection,
+          flexWrap:
+            rawStyles.flexWrap === "nowrap" ||
+            rawStyles.flexWrap === "wrap" ||
+            rawStyles.flexWrap === "wrap-reverse"
+              ? rawStyles.flexWrap
+              : entry.flexWrap === "nowrap" ||
+                  entry.flexWrap === "wrap" ||
+                  entry.flexWrap === "wrap-reverse"
+                ? (entry.flexWrap as FlexWrapMode)
+                : defaultStyles.flexWrap,
           justifyContent: normalizeFlexJustifyContent(
             rawStyles.justifyContent ?? entry.justifyContent,
             defaultStyles.justifyContent,
@@ -2029,8 +2198,28 @@ export const normalizeComponentFromRaw = (
     api: {
       isApitComponent: Boolean(
         (rawApi as { isApitComponent?: unknown }).isApitComponent ??
+        (rawApi as { isApiComponent?: unknown }).isApiComponent ??
         (rawApi as { enabled?: unknown }).enabled,
       ),
+      isList: Boolean((rawApi as { isList?: unknown }).isList),
+      listItemComponentId:
+        typeof (rawApi as { listItemComponentId?: unknown })
+          .listItemComponentId === "string"
+          ? String(
+              (rawApi as { listItemComponentId?: unknown }).listItemComponentId,
+            )
+          : "",
+      listDataBinding:
+        typeof (rawApi as { listDataBinding?: unknown }).listDataBinding ===
+          "string" &&
+        String((rawApi as { listDataBinding?: unknown }).listDataBinding)
+          .trim()
+          .startsWith("data.")
+          ? String(
+              (rawApi as { listDataBinding?: unknown }).listDataBinding,
+            ).trim()
+          : "",
+      isBordered: Boolean((rawApi as { isBordered?: unknown }).isBordered),
       request: {
         url: typeof rawApiRequest.url === "string" ? rawApiRequest.url : "",
         method: normalizedMethod,
@@ -2181,7 +2370,7 @@ const renderNavIcon = (
 };
 
 export const toCssDimension = (value: number | string): string =>
-  typeof value === "number" ? `${value}px` : value === "full" ? "100%" : value;
+  typeof value === "number" ? `${value}px` : normalizeCssWidthAlias(value);
 
 export const getFlexJustifyClass = (value: FlexJustifyContent): string => {
   if (value === "center") return "justify-center";
@@ -2197,6 +2386,12 @@ export const getFlexAlignItemsClass = (value: FlexAlignItems): string => {
   if (value === "end") return "items-end";
   if (value === "stretch") return "items-stretch";
   return "items-start";
+};
+
+export const getFlexWrapClass = (value: FlexWrapMode): string => {
+  if (value === "nowrap") return "flex-nowrap";
+  if (value === "wrap-reverse") return "flex-wrap-reverse";
+  return "flex-wrap";
 };
 
 export const getEffectiveFlexJustifyClass = (
@@ -2275,12 +2470,16 @@ export const elementNeedsFullWidth = (element: ComponentElement): boolean => {
     element.elementTypeId === "element-button" ||
     element.elementTypeId === "element-text-input"
   ) {
-    return element.styles.width === "full";
+    return isFullWidthValue(element.styles.width);
   }
   if (element.elementTypeId === "element-image") {
     return (
-      element.styles.width === "full" ||
-      (element.styles as Record<string, unknown>).containerWidth === "full"
+      isFullWidthValue(element.styles.width) ||
+      normalizeCssWidthAlias(
+        String(
+          (element.styles as Record<string, unknown>).containerWidth ?? "",
+        ),
+      ) === "100%"
     );
   }
   // text is always w-full internally; toggle/icon/select size themselves
@@ -2413,12 +2612,18 @@ const getElementByInstanceId = (
 };
 
 const DEFAULT_CONFIG: AppConfig = (() => {
-  const raw = (prebuiltSourceConfig as Record<string, unknown>).navigation;
+  const raw = APP_CONFIG_DEFAULT_SOURCE.navigation;
   const nav =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+
+  const appName =
+    typeof APP_CONFIG_DEFAULT_SOURCE.appName === "string"
+      ? APP_CONFIG_DEFAULT_SOURCE.appName
+      : "";
+
   return {
     id: crypto.randomUUID(),
-    appName: "",
+    appName,
     components: [],
     colorTheme: DEFAULT_COLOR_THEME,
     navigation: {
@@ -2849,6 +3054,12 @@ const normalizeConfig = (input: unknown): AppConfig => {
               rawStyles.direction === "horizontal"
                 ? rawStyles.direction
                 : defaultStyles.direction,
+            flexWrap:
+              rawStyles.flexWrap === "nowrap" ||
+              rawStyles.flexWrap === "wrap" ||
+              rawStyles.flexWrap === "wrap-reverse"
+                ? rawStyles.flexWrap
+                : defaultStyles.flexWrap,
             justifyContent: normalizeFlexJustifyContent(
               rawStyles.justifyContent ??
                 (rawStyles.horizontalAlignment === "end-to-end"
@@ -2966,11 +3177,25 @@ const normalizeConfig = (input: unknown): AppConfig => {
 function App() {
   const [config, setConfig] = useState<AppConfig>(() => {
     const persisted = localStorage.getItem("app-config");
-    if (!persisted) return DEFAULT_CONFIG;
+    if (!persisted) {
+      try {
+        localStorage.setItem("app-config", JSON.stringify(DEFAULT_CONFIG));
+      } catch {
+        // Ignore persistence failures and continue with in-memory defaults.
+      }
+
+      return DEFAULT_CONFIG;
+    }
 
     try {
       return normalizeConfig(JSON.parse(persisted));
     } catch {
+      try {
+        localStorage.setItem("app-config", JSON.stringify(DEFAULT_CONFIG));
+      } catch {
+        // Ignore persistence failures and continue with in-memory defaults.
+      }
+
       return DEFAULT_CONFIG;
     }
   });
@@ -3494,24 +3719,52 @@ function App() {
     }
   }, [selectedComponent?.id, deferredApiResponseJsonDraft]);
 
-  const selectedComponentDataBindings = useMemo(
-    () =>
-      selectedComponent
+  const selectedComponentDataBindings = useMemo(() => {
+    if (!selectedComponent) {
+      return [];
+    }
+
+    const parsedResponse = selectedComponentApiResponseValidation.isValid
+      ? selectedComponentApiResponseValidation.parsed
+      : undefined;
+
+    if (
+      selectedComponentApi.isApitComponent &&
+      selectedComponentApi.isList &&
+      selectedComponentApi.listItemComponentId.trim().length > 0
+    ) {
+      const listTemplate = customComponents.find(
+        (component) =>
+          component.id === selectedComponentApi.listItemComponentId,
+      );
+      const listItems = getListItemsFromResponseData(
+        parsedResponse,
+        selectedComponentApi.listDataBinding,
+      );
+
+      return listTemplate
         ? Array.from(
             collectComponentDataBindings(
-              selectedComponent.elements,
-              selectedComponentApiResponseValidation.isValid
-                ? selectedComponentApiResponseValidation.parsed
-                : undefined,
+              listTemplate.elements,
+              listItems.length > 0 ? listItems[0] : undefined,
             ),
           ).sort((a, b) => a.localeCompare(b))
-        : [],
-    [
-      selectedComponent?.elements,
-      selectedComponentApiResponseValidation.isValid,
-      selectedComponentApiResponseValidation.parsed,
-    ],
-  );
+        : [];
+    }
+
+    return Array.from(
+      collectComponentDataBindings(selectedComponent.elements, parsedResponse),
+    ).sort((a, b) => a.localeCompare(b));
+  }, [
+    customComponents,
+    selectedComponentApi.isApitComponent,
+    selectedComponentApi.isList,
+    selectedComponentApi.listItemComponentId,
+    selectedComponentApi.listDataBinding,
+    selectedComponent?.elements,
+    selectedComponentApiResponseValidation.isValid,
+    selectedComponentApiResponseValidation.parsed,
+  ]);
 
   const applyApiResponseToTextElements = (
     elements: ComponentElement[],
@@ -4235,6 +4488,22 @@ function App() {
     );
   };
 
+  const updateSelectedComponentApiListConfig = (
+    patch: Partial<
+      Pick<
+        ApiComponentConfig,
+        "isList" | "listItemComponentId" | "listDataBinding" | "isBordered"
+      >
+    >,
+  ) => {
+    if (!selectedComponent) return;
+
+    updateComponentApi(selectedComponent.id, (api) => ({
+      ...api,
+      ...patch,
+    }));
+  };
+
   const updateSelectedComponentApiRequest = (
     request: Partial<ApiComponentConfig["request"]>,
   ) => {
@@ -4305,7 +4574,7 @@ function App() {
     }));
   };
 
-  const getValueAtPath = (source: unknown, path: string): unknown => {
+  function getValueAtPath(source: unknown, path: string): unknown {
     const segments = path
       .split(".")
       .map((segment) => segment.trim())
@@ -4330,7 +4599,60 @@ function App() {
     }
 
     return cursor;
-  };
+  }
+
+  function getArrayBindingOptions(source: unknown): string[] {
+    const walk = (input: unknown, prefix = ""): string[] => {
+      if (Array.isArray(input)) {
+        const current = prefix.length > 0 ? [prefix] : [];
+        if (input.length === 0) {
+          return current;
+        }
+
+        // Keep searching through the first item to avoid noisy indexed paths.
+        return [...current, ...walk(input[0], prefix)];
+      }
+
+      if (input && typeof input === "object") {
+        return Object.entries(input as Record<string, unknown>).flatMap(
+          ([key, value]) =>
+            walk(value, prefix.length > 0 ? `${prefix}.${key}` : key),
+        );
+      }
+
+      return [];
+    };
+
+    return Array.from(
+      new Set(
+        walk(source)
+          .filter((path) => path.trim().length > 0)
+          .map((path) => `data.${path}`),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }
+
+  function getListItemsFromResponseData(
+    responseData: unknown,
+    binding: string,
+  ): unknown[] {
+    const trimmed = binding.trim();
+    if (!trimmed.startsWith("data.")) {
+      return [];
+    }
+
+    const directValue = getValueAtPath(responseData, trimmed);
+    if (Array.isArray(directValue)) {
+      return directValue;
+    }
+
+    const legacyValue = getValueAtPath(responseData, trimmed.slice(5));
+    if (!Array.isArray(legacyValue)) {
+      return [];
+    }
+
+    return legacyValue;
+  }
 
   const flattenLeafPaths = (source: unknown, prefix = ""): string[] => {
     if (Array.isArray(source)) {
@@ -4478,11 +4800,24 @@ function App() {
       };
     }
 
-    return getApiBindingStatus(
-      selectedComponentApiResponseValidation.parsed,
-      selectedComponentDataBindings,
-    );
+    const bindingSource =
+      selectedComponentApi.isApitComponent &&
+      selectedComponentApi.isList &&
+      selectedComponentApi.listDataBinding.trim().startsWith("data.")
+        ? (() => {
+            const items = getListItemsFromResponseData(
+              selectedComponentApiResponseValidation.parsed,
+              selectedComponentApi.listDataBinding,
+            );
+            return items.length > 0 ? items[0] : {};
+          })()
+        : selectedComponentApiResponseValidation.parsed;
+
+    return getApiBindingStatus(bindingSource, selectedComponentDataBindings);
   }, [
+    selectedComponentApi.isApitComponent,
+    selectedComponentApi.isList,
+    selectedComponentApi.listDataBinding,
     selectedComponent?.id,
     selectedComponentApiResponseValidation.isValid,
     selectedComponentApiResponseValidation.parsed,
@@ -4501,7 +4836,41 @@ function App() {
       return undefined;
     }
 
-    return componentApiResponseDataById[componentId];
+    const directData = componentApiResponseDataById[componentId];
+    if (typeof directData !== "undefined") {
+      return directData;
+    }
+
+    // If this component is used as a list item template, expose one item as
+    // preview context to enable per-item binding mapping (e.g. data.text).
+    for (const parentComponent of customComponents) {
+      const parentApi = getSafeApiComponentConfig(parentComponent.api);
+      if (
+        !parentApi.isApitComponent ||
+        !parentApi.isList ||
+        parentApi.listItemComponentId !== componentId ||
+        parentApi.listDataBinding.trim().length === 0
+      ) {
+        continue;
+      }
+
+      const parentResponseData =
+        selectedComponent && parentComponent.id === selectedComponent.id
+          ? selectedComponentApiResponseValidation.isValid
+            ? selectedComponentApiResponseValidation.parsed
+            : undefined
+          : componentApiResponseDataById[parentComponent.id];
+
+      const listItems = getListItemsFromResponseData(
+        parentResponseData,
+        parentApi.listDataBinding,
+      );
+      if (listItems.length > 0) {
+        return listItems[0];
+      }
+    }
+
+    return undefined;
   };
 
   const populateSelectedComponentFromApiResponse = () => {
@@ -5396,6 +5765,50 @@ function App() {
     toast.success("Custom page added");
   };
 
+  const deleteCustomPage = (pageId: string) => {
+    const pageToDelete = editablePages.find((page) => page.id === pageId);
+    if (!pageToDelete) {
+      return;
+    }
+
+    const childPageTitles = editablePages
+      .filter((page) => page.parentPageId === pageId)
+      .map((page) => page.title.trim())
+      .filter((title) => title.length > 0);
+
+    const confirmMessage =
+      childPageTitles.length > 0
+        ? `Delete page \"${pageToDelete.title}\"?\n\nChild page(s) will be moved to root: ${childPageTitles.join(", ")}.`
+        : `Delete page \"${pageToDelete.title}\"?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const pages = Array.isArray(base.pages) ? base.pages : [];
+
+      return {
+        ...base,
+        pages: pages
+          .filter((page) => !(page.kind === "custom" && page.id === pageId))
+          .map((page) =>
+            page.kind === "custom" && page.parentPageId === pageId
+              ? { ...page, parentPageId: null }
+              : page,
+          ),
+      };
+    });
+
+    setNavDraftPages((current) =>
+      current.filter((page) => page.pageId !== pageId),
+    );
+    setSelectedPageId((current) => (current === pageId ? "" : current));
+    setShowAddCustomPage(false);
+    toast.success("Page deleted");
+  };
+
   const updateCustomPageById = (
     pageId: string,
     transform: (page: CustomPage) => CustomPage,
@@ -6063,24 +6476,17 @@ ${items}
     }
 
     if (element.elementTypeId === "element-button") {
+      const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const buttonStyleBlock = formatJsxStyleBlock(
         [
-          [
-            "width",
-            element.styles.width === "auto"
-              ? undefined
-              : element.styles.width === "full"
-                ? "100%"
-                : `${element.styles.width}px`,
-          ],
+          ["width", cssWidth === "auto" ? undefined : cssWidth],
           ...getElementSpacingStyleEntries(element.styles),
         ],
         `${indent}`,
       );
-      const buttonClassName =
-        element.styles.width === "full"
-          ? ' className="w-full"'
-          : ' className="w-auto"';
+      const buttonClassName = isFullWidthValue(element.styles.width)
+        ? ' className="w-full"'
+        : ' className="w-auto"';
       const variantProp = element.isGhost ? ' variant="ghost"' : "";
 
       return `${indent}<Button${variantProp}${buttonClassName}${buttonStyleBlock}>${element.label}</Button>`;
@@ -6107,20 +6513,14 @@ ${items}
           : element.styles.alignment === "right"
             ? "justify-end"
             : "justify-center";
+      const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const inputStyleBlock = formatJsxStyleBlock(
-        [
-          [
-            "width",
-            element.styles.width === "full"
-              ? "100%"
-              : `${element.styles.width}px`,
-          ],
-          ...getElementSpacingStyleEntries(element.styles),
-        ],
+        [["width", cssWidth], ...getElementSpacingStyleEntries(element.styles)],
         `${indent}  `,
       );
-      const inputClassName =
-        element.styles.width === "full" ? ' className="w-full"' : "";
+      const inputClassName = isFullWidthValue(element.styles.width)
+        ? ' className="w-full"'
+        : "";
 
       return `${indent}<div className=${JSON.stringify(`flex w-full ${alignmentClass}`)}>\n${indent}  <Input${inputClassName}${inputStyleBlock} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(element.textHint)} />\n${indent}</div>`;
     }
@@ -6138,6 +6538,8 @@ ${items}
       const styleBlock = formatJsxStyleBlock(
         [
           ["width", toCssDimension(element.styles.width)],
+          ["minWidth", toCssDimension(element.styles.minWidth)],
+          ["maxWidth", toCssDimension(element.styles.maxWidth)],
           ["height", toCssDimension(element.styles.height)],
           ["objectFit", element.styles.sizing],
           ...getElementSpacingStyleEntries(element.styles),
@@ -6148,10 +6550,16 @@ ${items}
     }
 
     const containerDirection = getDirectionFromContainer(element);
+    const containerWrapClass =
+      element.styles.flexWrap === "nowrap"
+        ? "flex-nowrap"
+        : element.styles.flexWrap === "wrap-reverse"
+          ? "flex-wrap-reverse"
+          : "flex-wrap";
     const containerClasses = [
       "flex",
       containerDirection === "horizontal" ? "flex-row" : "flex-col",
-      element.styles.overflowScroll ? "" : "flex-wrap",
+      containerWrapClass,
       getFlexJustifyClass(element.styles.justifyContent),
       getFlexAlignItemsClass(element.styles.alignItems),
     ]
@@ -6361,6 +6769,8 @@ ${items}
           borderRadius: 8,
           padding: 0,
           width: element.styles.width ?? "full",
+          minWidth: element.styles.minWidth ?? "auto",
+          maxWidth: element.styles.maxWidth ?? "none",
           height: element.styles.height ?? "auto",
         },
       };
@@ -6373,6 +6783,7 @@ ${items}
         flex: element.flex ?? "none",
         styles: {
           flexDirection: element.styles.flexDirection ?? "column",
+          flexWrap: element.styles.flexWrap ?? "wrap",
           justifyContent: element.styles.justifyContent ?? "start",
           alignItems: element.styles.alignItems ?? "start",
           overflowScroll: element.styles.overflowScroll ?? false,
@@ -6416,6 +6827,7 @@ ${items}
       label: component.label,
       styles: {
         direction: component.styles.direction ?? "horizontal",
+        flexWrap: component.styles.flexWrap ?? "wrap",
         justifyContent: component.styles.justifyContent ?? "space-between",
         alignItems: component.styles.alignItems ?? "start",
         overflowScroll: component.styles.overflowScroll ?? false,
@@ -6449,6 +6861,10 @@ ${items}
       ),
       api: {
         isApitComponent: componentApi.isApitComponent,
+        isList: componentApi.isList,
+        listItemComponentId: componentApi.listItemComponentId,
+        listDataBinding: componentApi.listDataBinding,
+        isBordered: componentApi.isBordered,
         request: {
           url: componentApi.request.url,
           method: componentApi.request.method,
@@ -6493,7 +6909,7 @@ ${items}
       "flex",
       "w-full",
       component.styles.direction === "vertical" ? "flex-col" : "flex-row",
-      component.styles.overflowScroll ? "" : "flex-wrap",
+      getFlexWrapClass(component.styles.flexWrap),
       getFlexAlignItemsClass(component.styles.alignItems),
       justifyClass,
     ]
@@ -6568,7 +6984,68 @@ ${items}
     return `<div\n  className=${JSON.stringify(className)}${styleBlock}\n>\n${children}\n</div>`;
   };
 
-  const renderAppComponentPreview = (component: AppComponent) => {
+  const renderAppComponentPreview = (
+    component: AppComponent,
+    responseDataOverride?: unknown,
+    renderStack: string[] = [],
+  ) => {
+    if (renderStack.includes(component.id)) {
+      return (
+        <p className="text-sm text-destructive">
+          Recursive list component reference detected.
+        </p>
+      );
+    }
+
+    const nextRenderStack = [...renderStack, component.id];
+    const componentApi = getSafeApiComponentConfig(component.api);
+    const listItemTemplate = customComponents.find(
+      (entry) => entry.id === componentApi.listItemComponentId,
+    );
+    const componentResponseData =
+      typeof responseDataOverride === "undefined"
+        ? getPreviewResponseDataForComponent(component.id)
+        : responseDataOverride;
+    const listItems =
+      componentApi.isApitComponent &&
+      componentApi.isList &&
+      componentApi.listDataBinding.trim().startsWith("data.")
+        ? getListItemsFromResponseData(
+            componentResponseData,
+            componentApi.listDataBinding,
+          )
+        : [];
+
+    if (
+      componentApi.isApitComponent &&
+      componentApi.isList &&
+      listItemTemplate &&
+      listItemTemplate.id !== component.id
+    ) {
+      return (
+        <div className="w-full">
+          {listItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No list items found</p>
+          ) : (
+            <div className="w-full">
+              {listItems.map((item, index) => (
+                <div key={`${component.id}-list-item-${index}`}>
+                  {renderAppComponentPreview(
+                    listItemTemplate,
+                    item,
+                    nextRenderStack,
+                  )}
+                  {componentApi.isBordered && index < listItems.length - 1 && (
+                    <div className="my-2 border-t border-border" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     const justifyClass = getEffectiveFlexJustifyClass(
       component.styles.justifyContent,
       component.elements.length,
@@ -6580,7 +7057,7 @@ ${items}
 
     return (
       <div
-        className={`flex w-full ${component.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${component.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(component.styles.alignItems)} ${justifyClass}`}
+        className={`flex w-full ${component.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${getFlexWrapClass(component.styles.flexWrap)} ${getFlexAlignItemsClass(component.styles.alignItems)} ${justifyClass}`}
         style={{
           gap: `${component.styles.gap}px`,
           minWidth:
@@ -6633,7 +7110,11 @@ ${items}
                       }
               }
             >
-              {renderComponentElementPreview(element, component.id)}
+              {renderComponentElementPreview(
+                element,
+                component.id,
+                responseDataOverride,
+              )}
             </div>
           ))
         )}
@@ -6644,6 +7125,7 @@ ${items}
   const renderComponentElementPreview = (
     element: ComponentElement,
     componentId?: string,
+    responseDataOverride?: unknown,
   ) => {
     const resolvePreviewBinding = (value: string) => {
       const trimmed = value.trim();
@@ -6651,7 +7133,10 @@ ${items}
         return value;
       }
 
-      const responseData = getPreviewResponseDataForComponent(componentId);
+      const responseData =
+        typeof responseDataOverride === "undefined"
+          ? getPreviewResponseDataForComponent(componentId)
+          : responseDataOverride;
       if (typeof responseData === "undefined") {
         return value;
       }
@@ -6750,12 +7235,9 @@ ${items}
     }
 
     if (element.elementTypeId === "element-button") {
+      const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const widthStyle =
-        element.styles.width === "full"
-          ? { width: "100%" }
-          : element.styles.width === "auto"
-            ? undefined
-            : { width: `${element.styles.width}px` };
+        cssWidth === "auto" ? undefined : { width: toCssDimension(cssWidth) };
       const backgroundColor = element.isGhost
         ? "transparent"
         : resolveColor("$button");
@@ -6774,7 +7256,9 @@ ${items}
             borderWidth: element.isGhost ? "1px" : undefined,
             borderStyle: element.isGhost ? "solid" : undefined,
           }}
-          className={element.styles.width === "full" ? "w-full" : "w-auto"}
+          className={
+            isFullWidthValue(element.styles.width) ? "w-full" : "w-auto"
+          }
         >
           {resolvePreviewBinding(element.label)}
         </Button>
@@ -6829,10 +7313,8 @@ ${items}
             ? "justify-end"
             : "justify-center";
 
-      const widthStyle =
-        element.styles.width === "full"
-          ? { width: "100%" }
-          : { width: `${element.styles.width}px` };
+      const cssWidth = normalizeCssWidthAlias(element.styles.width);
+      const widthStyle = { width: toCssDimension(cssWidth) };
       const inputTextColor = resolveColor("$text");
       const inputBackgroundColor = resolveColor("$secondary");
       const inputBorderColor = resolveColor("$border");
@@ -6843,7 +7325,9 @@ ${items}
           style={getBoxSpacingStyle(element.styles)}
         >
           <Input
-            className={element.styles.width === "full" ? "w-full" : undefined}
+            className={
+              isFullWidthValue(element.styles.width) ? "w-full" : undefined
+            }
             style={{
               ...widthStyle,
               color: inputTextColor,
@@ -6888,9 +7372,15 @@ ${items}
         containerDirection,
         element.styles.overflowScroll,
       );
+      const containerWrapClass =
+        element.styles.flexWrap === "nowrap"
+          ? "flex-nowrap"
+          : element.styles.flexWrap === "wrap-reverse"
+            ? "flex-wrap-reverse"
+            : "flex-wrap";
       return (
         <div
-          className={`flex h-full w-full ${containerDirection === "horizontal" ? "flex-row" : "flex-col"} rounded-lg ${element.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexJustifyClass(element.styles.justifyContent)} ${getFlexAlignItemsClass(element.styles.alignItems)}`}
+          className={`flex h-full w-full ${containerDirection === "horizontal" ? "flex-row" : "flex-col"} rounded-lg ${containerWrapClass} ${getFlexJustifyClass(element.styles.justifyContent)} ${getFlexAlignItemsClass(element.styles.alignItems)}`}
           style={{
             gap: `${element.styles.gap}px`,
             minWidth:
@@ -6939,7 +7429,11 @@ ${items}
                       : { flex: `${child.flex} ${child.flex} 0%` }
                 }
               >
-                {renderComponentElementPreview(child, componentId)}
+                {renderComponentElementPreview(
+                  child,
+                  componentId,
+                  responseDataOverride,
+                )}
               </div>
             ))
           ) : (
@@ -6961,6 +7455,8 @@ ${items}
         style={{
           ...getBoxSpacingStyle(element.styles),
           width: toCssDimension(element.styles.width),
+          minWidth: toCssDimension(element.styles.minWidth),
+          maxWidth: toCssDimension(element.styles.maxWidth),
           height: toCssDimension(element.styles.height),
           objectFit,
           backgroundColor: resolveColor("$background"),
@@ -6981,6 +7477,66 @@ ${items}
 
   const getAllowedElementOptions = () => {
     return PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label }));
+  };
+
+  const getComponentApiBindingOptions = (componentId: string): string[] => {
+    const component = customComponents.find(
+      (entry) => entry.id === componentId,
+    );
+    if (!component) {
+      return [];
+    }
+
+    const responseData = getPreviewResponseDataForComponent(componentId);
+    if (typeof responseData === "undefined" || responseData === null) {
+      return [];
+    }
+
+    const paths = flattenLeafEntries(responseData)
+      .map((entry) => entry.path.trim())
+      .filter((path) => path.length > 0)
+      .map((path) => `data.${path}`);
+
+    return Array.from(new Set(paths)).sort((a, b) => a.localeCompare(b));
+  };
+
+  const renderApiBindingPicker = (
+    componentId: string,
+    label: string,
+    onSelect: (binding: string) => void,
+  ) => {
+    const options = getComponentApiBindingOptions(componentId);
+    if (options.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-2">
+        <Label>{label}</Label>
+        <Select
+          value=""
+          onValueChange={(value) => {
+            if (value.trim().length > 0) {
+              onSelect(value);
+            }
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Choose data path" />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem
+                key={`${componentId}-${label}-${option}`}
+                value={option}
+              >
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
   };
 
   const renderComponentElementFields = (
@@ -7013,6 +7569,15 @@ ${items}
               placeholder="Text content"
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Value from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                value: binding,
+                apiBinding: binding,
+              }),
+          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -7177,6 +7742,14 @@ ${items}
               placeholder="Button"
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Label from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                label: binding,
+              }),
+          )}
           <div className="flex items-center justify-between">
             <Label>Highlight on Hover</Label>
             <Switch
@@ -7204,65 +7777,20 @@ ${items}
           </p>
           <div className="space-y-2">
             <Label>Width</Label>
-            <Select
-              value={
-                element.styles.width === "full"
-                  ? "full"
-                  : element.styles.width === "auto"
-                    ? "auto"
-                    : "pixels"
-              }
-              onValueChange={(mode: "auto" | "full" | "pixels") =>
+            <DebouncedValidatedInput
+              value={element.styles.width}
+              onValueChange={(nextValue) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
-                    width:
-                      mode === "full"
-                        ? "full"
-                        : mode === "auto"
-                          ? "auto"
-                          : typeof element.styles.width === "number"
-                            ? element.styles.width
-                            : 240,
+                    width: nextValue,
                   },
                 })
               }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto</SelectItem>
-                <SelectItem value="full">Full Width</SelectItem>
-                <SelectItem value="pixels">Pixels</SelectItem>
-              </SelectContent>
-            </Select>
+              validate={isValidCssWidthValue}
+              placeholder="auto, 240px, 50vw, 100%"
+            />
           </div>
-          {element.styles.width !== "full" &&
-            element.styles.width !== "auto" && (
-              <div className="space-y-2">
-                <Label>Width (px)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={element.styles.width}
-                  onChange={(e) => {
-                    const parsed = parseInt(e.target.value, 10);
-                    const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
-                    updateComponentElementField(
-                      componentId,
-                      element.instanceId,
-                      {
-                        styles: {
-                          ...element.styles,
-                          width: nextWidth,
-                        },
-                      },
-                    );
-                  }}
-                />
-              </div>
-            )}
           {renderElementSpacingSection(
             componentId,
             element.instanceId,
@@ -7365,6 +7893,14 @@ ${items}
               placeholder="Enter text..."
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Hint from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                textHint: binding,
+              }),
+          )}
           <div className="space-y-2">
             <Label>value</Label>
             <Input
@@ -7377,56 +7913,33 @@ ${items}
               placeholder="value"
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Value from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                value: binding,
+              }),
+          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
           <div className="space-y-2">
             <Label>Width</Label>
-            <Select
-              value={element.styles.width === "full" ? "full" : "pixels"}
-              onValueChange={(mode: "full" | "pixels") =>
+            <DebouncedValidatedInput
+              value={element.styles.width}
+              onValueChange={(nextValue) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
-                    width:
-                      mode === "full"
-                        ? "full"
-                        : typeof element.styles.width === "number"
-                          ? element.styles.width
-                          : 240,
+                    width: nextValue,
                   },
                 })
               }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">Full Width</SelectItem>
-                <SelectItem value="pixels">Pixels</SelectItem>
-              </SelectContent>
-            </Select>
+              validate={isValidCssWidthValue}
+              placeholder="auto, 240px, 50vw, 100%"
+            />
           </div>
-          {element.styles.width !== "full" && (
-            <div className="space-y-2">
-              <Label>Width (px)</Label>
-              <Input
-                type="number"
-                min={1}
-                value={element.styles.width}
-                onChange={(e) => {
-                  const parsed = parseInt(e.target.value, 10);
-                  const nextWidth = isNaN(parsed) ? 240 : Math.max(1, parsed);
-                  updateComponentElementField(componentId, element.instanceId, {
-                    styles: {
-                      ...element.styles,
-                      width: nextWidth,
-                    },
-                  });
-                }}
-              />
-            </div>
-          )}
           <div className="space-y-2">
             <Label>Alignment</Label>
             <Select
@@ -7474,6 +7987,14 @@ ${items}
               placeholder="Home"
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Icon Name from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                value: binding,
+              }),
+          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -7522,6 +8043,14 @@ ${items}
               placeholder="https://..."
             />
           </div>
+          {renderApiBindingPicker(
+            componentId,
+            "Map Source from Response",
+            (binding) =>
+              updateComponentElementField(componentId, element.instanceId, {
+                src: binding,
+              }),
+          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -7549,51 +8078,52 @@ ${items}
           </div>
           <div className="space-y-2">
             <Label>Width</Label>
-            <Select
-              value={element.styles.width === "full" ? "full" : "pixels"}
-              onValueChange={(mode: "full" | "pixels") =>
+            <DebouncedValidatedInput
+              value={element.styles.width}
+              onValueChange={(nextValue) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
-                    width:
-                      mode === "full"
-                        ? "full"
-                        : typeof element.styles.width === "number"
-                          ? element.styles.width
-                          : 320,
+                    width: nextValue,
                   },
                 })
               }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">Full Width</SelectItem>
-                <SelectItem value="pixels">Pixels</SelectItem>
-              </SelectContent>
-            </Select>
+              validate={isValidCssWidthValue}
+              placeholder="auto, 240px, 50vw, 100%"
+            />
           </div>
-          {element.styles.width !== "full" && (
-            <div className="space-y-2">
-              <Label>Width (px)</Label>
-              <Input
-                type="number"
-                min={1}
-                value={element.styles.width}
-                onChange={(e) => {
-                  const parsed = parseInt(e.target.value, 10);
-                  const nextWidth = isNaN(parsed) ? 320 : Math.max(1, parsed);
-                  updateComponentElementField(componentId, element.instanceId, {
-                    styles: {
-                      ...element.styles,
-                      width: nextWidth,
-                    },
-                  });
-                }}
-              />
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label>Min Width</Label>
+            <DebouncedValidatedInput
+              value={element.styles.minWidth}
+              onValueChange={(nextValue) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    minWidth: nextValue,
+                  },
+                })
+              }
+              validate={isValidCssMinWidthValue}
+              placeholder="auto, 20px, 30vw"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Max Width</Label>
+            <DebouncedValidatedInput
+              value={element.styles.maxWidth}
+              onValueChange={(nextValue) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    maxWidth: nextValue,
+                  },
+                })
+              }
+              validate={isValidCssMaxWidthValue}
+              placeholder="none, 3840px, 90vw, 100%"
+            />
+          </div>
           <div className="space-y-2">
             <Label>Height</Label>
             <Input
@@ -7702,6 +8232,29 @@ ${items}
                 })
               }
             />
+          </div>
+          <div className="space-y-2">
+            <Label>Flex Wrap</Label>
+            <Select
+              value={element.styles.flexWrap}
+              onValueChange={(value: FlexWrapMode) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    flexWrap: value,
+                  },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="wrap">Wrap</SelectItem>
+                <SelectItem value="nowrap">No Wrap</SelectItem>
+                <SelectItem value="wrap-reverse">Wrap Reverse</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 sm:col-span-2">
             <Label>Overflow Scroll</Label>
@@ -8615,6 +9168,15 @@ ${items}
                           {selectedEditablePage.parentPageId}
                         </p>
                       )}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => deleteCustomPage(selectedEditablePage.id)}
+                      className="w-full text-destructive hover:text-destructive"
+                    >
+                      Delete Page
+                    </Button>
                   </div>
                 )}
               </Card>
@@ -10234,6 +10796,131 @@ ${items}
 
                             {selectedComponentApi.isApitComponent && (
                               <div className="space-y-4 rounded-md border border-border bg-secondary/30 p-3">
+                                <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor="api-list-mode">Mode</Label>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-muted-foreground">
+                                        {selectedComponentApi.isList
+                                          ? "List"
+                                          : "Detail"}
+                                      </span>
+                                      <Switch
+                                        id="api-list-mode"
+                                        checked={selectedComponentApi.isList}
+                                        onCheckedChange={(checked) =>
+                                          updateSelectedComponentApiListConfig({
+                                            isList: checked,
+                                            ...(checked
+                                              ? {}
+                                              : {
+                                                  listItemComponentId: "",
+                                                  listDataBinding: "",
+                                                }),
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {selectedComponentApi.isList && (
+                                    <div className="space-y-3">
+                                      <div className="space-y-2">
+                                        <Label htmlFor="api-list-item-component">
+                                          List Component
+                                        </Label>
+                                        <Select
+                                          value={
+                                            selectedComponentApi.listItemComponentId
+                                          }
+                                          onValueChange={(value) =>
+                                            updateSelectedComponentApiListConfig(
+                                              {
+                                                listItemComponentId: value,
+                                              },
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger id="api-list-item-component">
+                                            <SelectValue placeholder="Select a component" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {customComponents
+                                              .filter(
+                                                (component) =>
+                                                  component.id !==
+                                                  selectedComponent.id,
+                                              )
+                                              .map((component) => (
+                                                <SelectItem
+                                                  key={component.id}
+                                                  value={component.id}
+                                                >
+                                                  {component.label}
+                                                </SelectItem>
+                                              ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        <Label htmlFor="api-list-data-binding">
+                                          List Data Path
+                                        </Label>
+                                        <Select
+                                          value={
+                                            selectedComponentApi.listDataBinding
+                                          }
+                                          onValueChange={(value) =>
+                                            updateSelectedComponentApiListConfig(
+                                              {
+                                                listDataBinding: value,
+                                              },
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger id="api-list-data-binding">
+                                            <SelectValue placeholder="Select array path" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {getArrayBindingOptions(
+                                              selectedComponentApiResponseValidation.isValid
+                                                ? selectedComponentApiResponseValidation.parsed
+                                                : null,
+                                            ).map((path) => (
+                                              <SelectItem
+                                                key={path}
+                                                value={path}
+                                              >
+                                                {path}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+
+                                      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                                        <Label htmlFor="api-list-bordered">
+                                          Bordered
+                                        </Label>
+                                        <Switch
+                                          id="api-list-bordered"
+                                          checked={
+                                            selectedComponentApi.isBordered
+                                          }
+                                          onCheckedChange={(checked) =>
+                                            updateSelectedComponentApiListConfig(
+                                              {
+                                                isBordered: checked,
+                                              },
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
                                 <div className="space-y-2">
                                   <p className="text-sm font-semibold">
                                     Data Items
@@ -10581,6 +11268,28 @@ ${items}
                               <SelectItem value="center">Center</SelectItem>
                               <SelectItem value="end">End</SelectItem>
                               <SelectItem value="stretch">Stretch</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="comp-flex-wrap">Flex Wrap</Label>
+                          <Select
+                            value={selectedComponent.styles.flexWrap}
+                            onValueChange={(value: FlexWrapMode) =>
+                              updateComponentStyles(selectedComponent.id, {
+                                flexWrap: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger id="comp-flex-wrap">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="wrap">Wrap</SelectItem>
+                              <SelectItem value="nowrap">No Wrap</SelectItem>
+                              <SelectItem value="wrap-reverse">
+                                Wrap Reverse
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -11306,83 +12015,7 @@ ${items}
                       </p>
                     ) : (
                       (() => {
-                        const justifyClass = getEffectiveFlexJustifyClass(
-                          selectedComponent.styles.justifyContent,
-                          selectedComponent.elements.length,
-                        );
-                        const overflowStyle = getFlexOverflowStyle(
-                          selectedComponent.styles.direction,
-                          selectedComponent.styles.overflowScroll,
-                        );
-
-                        return (
-                          <div
-                            className={`flex w-full ${selectedComponent.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${selectedComponent.styles.overflowScroll ? "" : "flex-wrap"} ${getFlexAlignItemsClass(selectedComponent.styles.alignItems)} ${justifyClass}`}
-                            style={{
-                              gap: `${selectedComponent.styles.gap}px`,
-                              minWidth:
-                                selectedComponent.styles.minWidth > 0
-                                  ? `${selectedComponent.styles.minWidth}px`
-                                  : undefined,
-                              maxWidth:
-                                selectedComponent.styles.maxWidth > 0
-                                  ? `${selectedComponent.styles.maxWidth}px`
-                                  : undefined,
-                              minHeight:
-                                selectedComponent.styles.minHeight > 0
-                                  ? `${selectedComponent.styles.minHeight}px`
-                                  : undefined,
-                              maxHeight:
-                                selectedComponent.styles.maxHeight > 0
-                                  ? `${selectedComponent.styles.maxHeight}px`
-                                  : undefined,
-                              paddingLeft: `${selectedComponent.styles.paddingLeft}px`,
-                              paddingRight: `${selectedComponent.styles.paddingRight}px`,
-                              paddingTop: `${selectedComponent.styles.paddingTop}px`,
-                              paddingBottom: `${selectedComponent.styles.paddingBottom}px`,
-                              marginLeft: `${selectedComponent.styles.marginLeft}px`,
-                              marginRight: `${selectedComponent.styles.marginRight}px`,
-                              marginTop: `${selectedComponent.styles.marginTop}px`,
-                              marginBottom: `${selectedComponent.styles.marginBottom}px`,
-                              overflowX: overflowStyle.overflowX,
-                              overflowY: overflowStyle.overflowY,
-                              backgroundColor: resolveColor(
-                                selectedComponent.styles.backgroundColor,
-                              ),
-                              borderColor: resolveColor(
-                                selectedComponent.styles.borderColor,
-                              ),
-                              borderRadius: `${selectedComponent.styles.borderRadius}px`,
-                              borderWidth: `${selectedComponent.styles.borderWidth}px`,
-                              borderStyle:
-                                selectedComponent.styles.borderWidth > 0
-                                  ? "solid"
-                                  : "none",
-                            }}
-                          >
-                            {selectedComponent.elements.map((element) => (
-                              <div
-                                key={element.instanceId}
-                                className={`min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
-                                style={
-                                  element.flex === null ||
-                                  element.flex === undefined
-                                    ? undefined
-                                    : element.flex === 0
-                                      ? { flex: "0 0 auto" }
-                                      : {
-                                          flex: `${element.flex} ${element.flex} 0%`,
-                                        }
-                                }
-                              >
-                                {renderComponentElementPreview(
-                                  element,
-                                  selectedComponent.id,
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        );
+                        return renderAppComponentPreview(selectedComponent);
                       })()
                     )}
                   </Card>

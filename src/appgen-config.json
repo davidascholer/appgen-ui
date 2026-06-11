@@ -1,62 +1,68 @@
 {
-    "navigation": {
-        "shown": true,
-        "navigationLabel": "",
-        "showNavigationHeader": true,
-        "headerMenuIconName": "Menu",
-        "headerBackIconName": "ArrowLeft",
-        "navigationStyle": {
-            "type": "drawer",
-            "variant": "all"
+    "default":{
+        "appName": "",
+        "navigation": {
+            "shown": true,
+            "navigationLabel": "",
+            "showNavigationHeader": true,
+            "headerMenuIconName": "Menu",
+            "headerBackIconName": "ArrowLeft",
+            "navigationStyle": {
+                "type": "drawer",
+                "variant": "all"
+            },
+            "navigationPages": []
         },
-        "navigationPages": []
-    },
-    "colorTheme": {
-        "primary": {
-            "label": "Primary",
-            "light": "#6366f1",
-            "dark": "#818cf8"
+        "colorTheme": {
+            "primary": {
+                "label": "Primary",
+                "light": "#6366f1",
+                "dark": "#818cf8"
+            },
+            "secondary": {
+                "label": "Secondary",
+                "light": "#64748b",
+                "dark": "#94a3b8"
+            },
+            "tertiary": {
+                "label": "Tertiary",
+                "light": "#a855f7",
+                "dark": "#c084fc"
+            },
+            "highlight": {
+                "label": "Highlight",
+                "light": "#f59e0b",
+                "dark": "#fbbf24"
+            },
+            "background": {
+                "label": "Background",
+                "light": "#ffffff",
+                "dark": "#0f172a"
+            },
+            "border": {
+                "label": "Border",
+                "light": "#e2e8f0",
+                "dark": "#334155"
+            },
+            "text": {
+                "label": "Text",
+                "light": "#111827",
+                "dark": "#e2e8f0"
+            },
+            "button": {
+                "label": "Button",
+                "light": "#2563eb",
+                "dark": "#3b82f6"
+            },
+            "textHint": {
+                "label": "Text Hint",
+                "light": "#71717a",
+                "dark": "#94a3b8"
+            }
         },
-        "secondary": {
-            "label": "Secondary",
-            "light": "#64748b",
-            "dark": "#94a3b8"
-        },
-        "tertiary": {
-            "label": "Tertiary",
-            "light": "#a855f7",
-            "dark": "#c084fc"
-        },
-        "highlight": {
-            "label": "Highlight",
-            "light": "#f59e0b",
-            "dark": "#fbbf24"
-        },
-        "background": {
-            "label": "Background",
-            "light": "#ffffff",
-            "dark": "#0f172a"
-        },
-        "border": {
-            "label": "Border",
-            "light": "#e2e8f0",
-            "dark": "#334155"
-        },
-        "text": {
-            "label": "Text",
-            "light": "#111827",
-            "dark": "#e2e8f0"
-        },
-        "button": {
-            "label": "Button",
-            "light": "#2563eb",
-            "dark": "#3b82f6"
-        },
-        "textHint": {
-            "label": "Text Hint",
-            "light": "#71717a",
-            "dark": "#94a3b8"
-        }
+        "fonts":[],
+        "components": [],
+        "pages": []
     },
     "prebuilt": {
         "components": [],
@@ -66,6 +72,7 @@
                 "id": "element-text",
                 "label": "Text",
                 "value": "",
+                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "paddingX": 0,
@@ -91,8 +98,11 @@
                 }
             },
             {
+                "id": "element-toggle",
                 "elementTypeId": "element-toggle",
+                "label": "Toggle",
                 "defaultValue": false,
+                "apiBinding": "",
                 "styles": {
                     "activeColor": "$primary",
                     "inactiveColor": "$border"
@@ -104,6 +114,7 @@
                 "buttonLabel": "Button",
                 "highlightOnHover": true,
                 "isGhost": false,
+                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "alignment": "center",
@@ -121,6 +132,7 @@
                 ],
                 "showDefaultLabel": true,
                 "defaultLabel": "Please Select",
+                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "textColor": "$text",
@@ -134,6 +146,7 @@
                 "label": "Text Input",
                 "textHint": "",
                 "value": "",
+                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "textColor": "$text",
@@ -145,6 +158,7 @@
                 "id": "element-icon",
                 "label": "Icon",
                 "value": "Home",
+                "apiBinding": "",
                 "styles": {
                     "alignment": "center",
                     "size": 24,
@@ -155,23 +169,32 @@
                 }
             },
             {
+                "id": "element-image",
                 "elementTypeId": "element-image",
+                "label": "Image",
                 "src": "https://placehold.co/600x400",
+                "apiBinding": "",
                 "styles": {
                     "flex": "none",
                     "borderWidth": 0,
                     "borderColor": "",
                     "borderRadius": 8,
                     "width": "auto",
+                    "minWidth": 20,
+                    "maxWidth": 3840,
                     "height": "auto"
                 }
             },
             {
+                "id": "element-container",
                 "elementTypeId": "element-container",
+                "label": "Container",
                 "elements": [],
+                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "flexDirection": "row",
+                    "flexWrap": "wrap",
                     "justifyContent": "start",
                     "alignItems": "center",
                     "overflowScroll": false,
@@ -186,15 +209,20 @@
                     "marginBottom": 0,
                     "marginLeft": 0,
                     "marginRight": 0,
-                    "backgroundColor": "$background",
-                    "borderColor": "$border",
+                    "backgroundColor": "",
+                    "borderColor": "",
                     "borderRadius": 8,
                     "borderWidth": 0
                 }
             }
+ 
         ]
     },
-    "signatures": {
+    "schemas": {
+        "fonts": {
+            "label": "",
+            "package": ""
+        },
         "components": {
             "label": "",
             "api": {
@@ -207,7 +235,10 @@
                 },
                 "response": {
                     "rawTestData": ""
-                }
+                },
+                "isList": false,
+                "listItemComponentId": "",
+                "isBordered": false
             },
             "elements": []
         },
