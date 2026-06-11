@@ -9,7 +9,9 @@
         "build": "tsc -b --noCheck && vite build",
         "lint": "eslint .",
         "optimize": "vite optimize",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "prebuilt:styles:sync": "node scripts/prebuilt-styles-sync.mjs",
+        "prebuilt:styles:hook": "node scripts/prebuilt-styles-hook.mjs"
     },
     "dependencies": {
         "@hookform/resolvers": "^4.1.3",

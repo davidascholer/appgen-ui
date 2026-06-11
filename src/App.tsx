@@ -199,6 +199,7 @@ type ElementTypeId =
 interface BaseComponentElement {
   instanceId: string;
   flex?: number | null;
+  props?: Record<string, unknown>[];
 }
 
 interface ElementSpacingStyles {
@@ -246,11 +247,13 @@ interface TextInputElementStyles extends ElementSpacingStyles {
 
 interface SelectElementStyles extends ElementSpacingStyles {}
 
-interface ImageElementStyles extends ElementSpacingStyles {
-  sizing: "contain" | "cover";
+interface ImageElementStyles {
+  borderWidth: number;
+  borderColor: string;
+  borderRadius: number;
   width: ButtonWidth;
-  minWidth: ButtonWidth;
-  maxWidth: ButtonWidth;
+  minWidth: number;
+  maxWidth: number;
   height: ElementDimension;
 }
 
@@ -293,7 +296,6 @@ interface ContainerElementStyles {
 interface TextComponentElement extends BaseComponentElement {
   elementTypeId: "element-text";
   value: string;
-  apiBinding?: string | null;
   styles: TextElementStyles;
 }
 
@@ -314,6 +316,7 @@ interface ButtonComponentElement extends BaseComponentElement {
 interface SelectComponentElement extends BaseComponentElement {
   elementTypeId: "element-select";
   values: string[];
+  defaultLabel: string;
   styles: SelectElementStyles;
 }
 
@@ -456,6 +459,7 @@ type ColorEditTarget =
 interface PrebuiltElementDef {
   id: ElementTypeId;
   label: string;
+  props?: Record<string, unknown>[];
   value?: string | boolean;
   values?: string[];
   showDefaultLabel?: boolean;
@@ -476,13 +480,10 @@ interface PrebuiltElementDef {
     isBold?: boolean;
     isItalic?: boolean;
     isLabel?: boolean;
-    sizing?: "contain" | "cover";
     width?: ElementDimension;
     minWidth?: ElementDimension;
     maxWidth?: ElementDimension;
     height?: ElementDimension;
-    containerWidth?: ElementDimension;
-    containerHeight?: ElementDimension;
     gap?: number;
     textColor?: string;
     color?: string;
@@ -493,11 +494,16 @@ interface PrebuiltElementDef {
     padding?: number;
   };
   textHint?: string;
-  sizing?: "contain" | "cover";
   src?: string;
   buttonLabel?: string;
   highlightOnHover?: boolean;
   isGhost?: boolean;
+  other?: {
+    highlightOnHover?: boolean;
+    isGhost?: boolean;
+    value?: string;
+    [key: string]: unknown;
+  };
 }
 
 type DrawerState = "closed" | "icons-only" | "open";
@@ -849,6 +855,106 @@ const getPrebuiltElementDef = (
 ): PrebuiltElementDef | undefined =>
   PREBUILT_ELEMENTS.find((element) => element.id === id);
 
+const normalizeElementProps = (raw: unknown): Record<string, unknown>[] => {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter(
+    (entry): entry is Record<string, unknown> =>
+      Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+  );
+};
+
+const getPropValueFromList = (
+  props: Record<string, unknown>[] | undefined,
+  key: string,
+): unknown => {
+  if (!Array.isArray(props)) {
+    return undefined;
+  }
+
+  for (const entry of props) {
+    if (key in entry) {
+      return entry[key];
+    }
+  }
+
+  return undefined;
+};
+
+const getPrebuiltElementPropValue = (id: ElementTypeId, key: string): unknown =>
+  getPropValueFromList(getPrebuiltElementDef(id)?.props, key);
+
+const getPrebuiltElementOtherValue = (
+  id: ElementTypeId,
+  key: string,
+): unknown => {
+  const other = getPrebuiltElementDef(id)?.other;
+  if (!other || typeof other !== "object") {
+    return undefined;
+  }
+
+  return (other as Record<string, unknown>)[key];
+};
+
+const withElementProp = (
+  props: Record<string, unknown>[] | undefined,
+  key: string,
+  value: unknown,
+): Record<string, unknown>[] => {
+  const normalized = normalizeElementProps(props);
+  if (normalized.length === 0) {
+    return [{ [key]: value }];
+  }
+
+  let applied = false;
+  const next = normalized.map((entry) => {
+    if (!applied) {
+      applied = true;
+      return { ...entry, [key]: value };
+    }
+
+    return { ...entry };
+  });
+
+  return next;
+};
+
+const readElementStringProp = (
+  element: ComponentElement,
+  key: string,
+  legacyFallback: string,
+): string => {
+  const value = getPropValueFromList(element.props, key);
+  return typeof value === "string" ? value : legacyFallback;
+};
+
+const readElementBooleanProp = (
+  element: ComponentElement,
+  key: string,
+  legacyFallback: boolean,
+): boolean => {
+  const value = getPropValueFromList(element.props, key);
+  return typeof value === "boolean" ? value : legacyFallback;
+};
+
+const readElementStringArrayProp = (
+  element: ComponentElement,
+  key: string,
+  legacyFallback: string[],
+): string[] => {
+  const value = getPropValueFromList(element.props, key);
+  if (!Array.isArray(value)) {
+    return legacyFallback;
+  }
+
+  return value.filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim().length > 0,
+  );
+};
+
 const getDefaultTextStyles = (): TextElementStyles => {
   const styles = getPrebuiltElementDef("element-text")?.styles;
   return {
@@ -867,9 +973,17 @@ const getDefaultTextStyles = (): TextElementStyles => {
 };
 
 const getDefaultToggleValue = (): boolean =>
-  typeof getPrebuiltElementDef("element-toggle")?.value === "boolean"
-    ? (getPrebuiltElementDef("element-toggle")?.value as boolean)
-    : false;
+  typeof getPrebuiltElementPropValue("element-toggle", "selected") === "boolean"
+    ? (getPrebuiltElementPropValue("element-toggle", "selected") as boolean)
+    : typeof getPrebuiltElementPropValue("element-toggle", "defaultValue") ===
+        "boolean"
+      ? (getPrebuiltElementPropValue(
+          "element-toggle",
+          "defaultValue",
+        ) as boolean)
+      : typeof getPrebuiltElementDef("element-toggle")?.value === "boolean"
+        ? (getPrebuiltElementDef("element-toggle")?.value as boolean)
+        : false;
 
 const getDefaultToggleStyles = (): ToggleElementStyles => {
   const styles = getPrebuiltElementDef("element-toggle")?.styles;
@@ -889,17 +1003,23 @@ const getDefaultToggleStyles = (): ToggleElementStyles => {
 };
 
 const getDefaultButtonLabel = (): string => {
-  const label = getPrebuiltElementDef("element-button")?.buttonLabel;
+  const label =
+    getPrebuiltElementPropValue("element-button", "buttonLabel") ??
+    getPrebuiltElementDef("element-button")?.buttonLabel;
   return typeof label === "string" ? label : "";
 };
 
 const getDefaultButtonHighlightOnHover = (): boolean => {
-  const value = getPrebuiltElementDef("element-button")?.highlightOnHover;
+  const value =
+    getPrebuiltElementOtherValue("element-button", "highlightOnHover") ??
+    getPrebuiltElementDef("element-button")?.highlightOnHover;
   return Boolean(value);
 };
 
 const getDefaultButtonIsGhost = (): boolean => {
-  const value = getPrebuiltElementDef("element-button")?.isGhost;
+  const value =
+    getPrebuiltElementOtherValue("element-button", "isGhost") ??
+    getPrebuiltElementDef("element-button")?.isGhost;
   return Boolean(value);
 };
 
@@ -1016,25 +1136,16 @@ const normalizeButtonWidth = (value: unknown): ButtonWidth =>
   normalizeWidthValue(value, "auto");
 
 const normalizeImageWidth = (value: unknown): ButtonWidth =>
-  normalizeWidthValue(value, "100%");
-
-const isValidCssMinWidthValue = (value: string): boolean =>
-  isValidCssWidthValue(value);
-
-const normalizeImageMinWidth = (value: unknown): ButtonWidth =>
   normalizeWidthValue(value, "auto");
 
-const isValidCssMaxWidthValue = (value: string): boolean => {
-  const trimmed = normalizeCssWidthAlias(value);
-  if (trimmed === "none") return true;
-  return isValidCssWidthValue(value);
+const normalizeImageMinWidth = (value: unknown): number => {
+  const parsed = clampContainerDimension(value);
+  return parsed > 0 ? parsed : 20;
 };
 
-const normalizeImageMaxWidth = (value: unknown): ButtonWidth => {
-  if (typeof value === "string" && value.trim().toLowerCase() === "none") {
-    return "none";
-  }
-  return normalizeWidthValue(value, "none");
+const normalizeImageMaxWidth = (value: unknown): number => {
+  const parsed = clampContainerDimension(value);
+  return parsed > 0 ? parsed : 3840;
 };
 
 const getDefaultButtonStyles = (): ButtonElementStyles => {
@@ -1050,7 +1161,9 @@ const getDefaultSelectStyles = (): SelectElementStyles => ({
 });
 
 const getDefaultSelectValues = (): string[] => {
-  const values = getPrebuiltElementDef("element-select")?.values;
+  const values =
+    getPrebuiltElementPropValue("element-select", "values") ??
+    getPrebuiltElementDef("element-select")?.values;
   if (!Array.isArray(values)) return [];
   return values.filter(
     (value): value is string =>
@@ -1058,9 +1171,23 @@ const getDefaultSelectValues = (): string[] => {
   );
 };
 
+const getDefaultSelectLabel = (): string => {
+  const label = getPrebuiltElementPropValue("element-select", "defaultLabel");
+  return typeof label === "string" ? label : "Select...";
+};
+
 const getDefaultTextInputHint = (): string => {
-  const hint = getPrebuiltElementDef("element-text-input")?.textHint;
+  const hint =
+    getPrebuiltElementPropValue("element-text-input", "textHint") ??
+    getPrebuiltElementDef("element-text-input")?.textHint;
   return typeof hint === "string" ? hint : "";
+};
+
+const getDefaultTextInputValue = (): string => {
+  const value =
+    getPrebuiltElementOtherValue("element-text-input", "value") ??
+    getPrebuiltElementDef("element-text-input")?.value;
+  return typeof value === "string" ? value : "";
 };
 
 const getDefaultTextInputStyles = (): TextInputElementStyles => {
@@ -1078,7 +1205,9 @@ const getDefaultTextInputStyles = (): TextInputElementStyles => {
 };
 
 const getDefaultIconValue = (): string => {
-  const value = getPrebuiltElementDef("element-icon")?.value;
+  const value =
+    getPrebuiltElementPropValue("element-icon", "value") ??
+    getPrebuiltElementDef("element-icon")?.value;
   return typeof value === "string" ? value : "";
 };
 
@@ -1088,14 +1217,6 @@ const getDefaultIconStyles = (): IconElementStyles => {
     ...getDefaultElementSpacingStyles(),
     size: clampTextSize(styles?.size),
   };
-};
-
-const getDefaultImageSizing = (): "contain" | "cover" => {
-  const sizing = getPrebuiltElementDef("element-image")?.styles?.sizing;
-  if (sizing === "cover" || sizing === "contain") {
-    return sizing;
-  }
-  return "contain";
 };
 
 const normalizeDimension = (
@@ -1121,11 +1242,10 @@ const normalizeDimension = (
 const getDefaultImageStyles = (): ImageElementStyles => {
   const styles = getPrebuiltElementDef("element-image")?.styles;
   return {
-    ...getDefaultElementSpacingStyles(),
-    sizing:
-      styles?.sizing === "contain" || styles?.sizing === "cover"
-        ? styles.sizing
-        : "contain",
+    borderWidth: clampContainerBorderWidth(styles?.borderWidth),
+    borderColor:
+      typeof styles?.borderColor === "string" ? styles.borderColor : "",
+    borderRadius: clampContainerBorderRadius(styles?.borderRadius),
     width: normalizeImageWidth(styles?.width),
     minWidth: normalizeImageMinWidth(styles?.minWidth),
     maxWidth: normalizeImageMaxWidth(styles?.maxWidth),
@@ -1675,7 +1795,9 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
 };
 
 const getDefaultImageSrc = (): string => {
-  const src = getPrebuiltElementDef("element-image")?.src;
+  const src =
+    getPrebuiltElementPropValue("element-image", "imgSrc") ??
+    getPrebuiltElementDef("element-image")?.src;
   return typeof src === "string" ? src : "";
 };
 
@@ -1709,6 +1831,12 @@ export const normalizeElementFromRaw = (
       ? entry.instanceId
       : crypto.randomUUID();
   const elementFlex = normalizeElementFlex(entry.flex);
+  const entryOther =
+    entry.other &&
+    typeof entry.other === "object" &&
+    !Array.isArray(entry.other)
+      ? (entry.other as Record<string, unknown>)
+      : {};
 
   switch (elementTypeId as ElementTypeId) {
     case "element-text": {
@@ -1716,18 +1844,22 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultTextStyles();
+      const props = normalizeElementProps(entry.props);
+      const textValue =
+        typeof getPropValueFromList(props, "value") === "string"
+          ? String(getPropValueFromList(props, "value"))
+          : typeof entry.value === "string"
+            ? entry.value
+            : "";
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-text",
-        value: typeof entry.value === "string" ? entry.value : "",
-        apiBinding:
-          typeof entry.apiBinding === "string" &&
-          entry.apiBinding.trim().startsWith("data.")
-            ? entry.apiBinding.trim()
-            : null,
+        props: withElementProp(props, "value", textValue),
+        value: textValue,
         styles: {
           ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           alignment:
@@ -1760,18 +1892,26 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultToggleStyles();
+      const props = normalizeElementProps(entry.props);
+      const defaultValue =
+        typeof getPropValueFromList(props, "selected") === "boolean"
+          ? Boolean(getPropValueFromList(props, "selected"))
+          : typeof getPropValueFromList(props, "defaultValue") === "boolean"
+            ? Boolean(getPropValueFromList(props, "defaultValue"))
+            : typeof entry.defaultValue === "boolean"
+              ? entry.defaultValue
+              : typeof entry.value === "boolean"
+                ? entry.value
+                : getDefaultToggleValue();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-toggle",
-        defaultValue:
-          typeof entry.defaultValue === "boolean"
-            ? entry.defaultValue
-            : typeof entry.value === "boolean"
-              ? entry.value
-              : getDefaultToggleValue(),
+        props: withElementProp(props, "selected", defaultValue),
+        defaultValue,
         styles: {
           ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           position:
@@ -1800,24 +1940,34 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultButtonStyles();
+      const props = normalizeElementProps(entry.props);
+      const buttonLabel =
+        typeof getPropValueFromList(props, "buttonLabel") === "string"
+          ? String(getPropValueFromList(props, "buttonLabel"))
+          : typeof entry.label === "string" && entry.label.trim().length > 0
+            ? entry.label
+            : getDefaultButtonLabel();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-button",
-        label:
-          typeof entry.label === "string" && entry.label.trim().length > 0
-            ? entry.label
-            : getDefaultButtonLabel(),
+        props: withElementProp(props, "buttonLabel", buttonLabel),
+        label: buttonLabel,
         highlightOnHover:
-          typeof entry.highlightOnHover === "boolean"
-            ? entry.highlightOnHover
-            : getDefaultButtonHighlightOnHover(),
+          typeof entryOther.highlightOnHover === "boolean"
+            ? entryOther.highlightOnHover
+            : typeof entry.highlightOnHover === "boolean"
+              ? entry.highlightOnHover
+              : getDefaultButtonHighlightOnHover(),
         isGhost:
-          typeof entry.isGhost === "boolean"
-            ? entry.isGhost
-            : getDefaultButtonIsGhost(),
+          typeof entryOther.isGhost === "boolean"
+            ? entryOther.isGhost
+            : typeof entry.isGhost === "boolean"
+              ? entry.isGhost
+              : getDefaultButtonIsGhost(),
         styles: {
           ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           width: normalizeButtonWidth(
@@ -1831,13 +1981,30 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultSelectStyles();
+      const props = normalizeElementProps(entry.props);
+      const valuesFromProps = getPropValueFromList(props, "values");
+      const values = normalizeSelectValues(
+        typeof valuesFromProps === "undefined" ? entry.values : valuesFromProps,
+      );
+      const defaultLabelRaw = getPropValueFromList(props, "defaultLabel");
+      const defaultLabel =
+        typeof defaultLabelRaw === "string" && defaultLabelRaw.trim().length > 0
+          ? defaultLabelRaw
+          : getDefaultSelectLabel();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-select",
-        values: normalizeSelectValues(entry.values),
+        props: withElementProp(
+          withElementProp(props, "values", values),
+          "defaultLabel",
+          defaultLabel,
+        ),
+        values,
+        defaultLabel,
         styles: normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
       };
     }
@@ -1846,17 +2013,29 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultTextInputStyles();
+      const props = normalizeElementProps(entry.props);
+      const textHint =
+        typeof getPropValueFromList(props, "textHint") === "string"
+          ? String(getPropValueFromList(props, "textHint"))
+          : typeof entry.textHint === "string" &&
+              entry.textHint.trim().length > 0
+            ? entry.textHint
+            : getDefaultTextInputHint();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-text-input",
-        textHint:
-          typeof entry.textHint === "string" && entry.textHint.trim().length > 0
-            ? entry.textHint
-            : getDefaultTextInputHint(),
-        value: typeof entry.value === "string" ? entry.value : "",
+        props: withElementProp(props, "textHint", textHint),
+        textHint,
+        value:
+          typeof entryOther.value === "string"
+            ? entryOther.value
+            : typeof entry.value === "string"
+              ? entry.value
+              : getDefaultTextInputValue(),
         styles: {
           ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
           alignment:
@@ -1880,15 +2059,22 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
+
+      const props = normalizeElementProps(entry.props);
+      const iconValue =
+        typeof getPropValueFromList(props, "value") === "string"
+          ? String(getPropValueFromList(props, "value"))
+          : typeof entry.value === "string" && entry.value.trim().length > 0
+            ? entry.value
+            : getDefaultIconValue();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-icon",
-        value:
-          typeof entry.value === "string" && entry.value.trim().length > 0
-            ? entry.value
-            : getDefaultIconValue(),
+        props: withElementProp(props, "value", iconValue),
+        value: iconValue,
         styles: {
           ...normalizeElementSpacingStyles(
             rawStyles,
@@ -1907,37 +2093,41 @@ export const normalizeElementFromRaw = (
           ? (entry.styles as Record<string, unknown>)
           : {};
       const defaultStyles = getDefaultImageStyles();
+      const props = normalizeElementProps(entry.props);
+      const imageSrc =
+        typeof getPropValueFromList(props, "imgSrc") === "string"
+          ? String(getPropValueFromList(props, "imgSrc"))
+          : typeof entry.src === "string" && entry.src.trim().length > 0
+            ? entry.src
+            : getDefaultImageSrc();
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId: "element-image",
+        props: withElementProp(props, "imgSrc", imageSrc),
         styles: {
-          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
-          sizing:
-            rawStyles.sizing === "contain" || rawStyles.sizing === "cover"
-              ? rawStyles.sizing
-              : entry.sizing === "contain" || entry.sizing === "cover"
-                ? entry.sizing
-                : defaultStyles.sizing,
-          width: normalizeImageWidth(
-            rawStyles.width ?? entry.width ?? defaultStyles.width,
+          borderWidth: clampContainerBorderWidth(
+            rawStyles.borderWidth ?? defaultStyles.borderWidth,
           ),
+          borderColor:
+            typeof rawStyles.borderColor === "string"
+              ? rawStyles.borderColor
+              : defaultStyles.borderColor,
+          borderRadius: clampContainerBorderRadius(
+            rawStyles.borderRadius ?? defaultStyles.borderRadius,
+          ),
+          width: normalizeImageWidth(rawStyles.width ?? defaultStyles.width),
           minWidth: normalizeImageMinWidth(
-            rawStyles.minWidth ?? entry.minWidth ?? defaultStyles.minWidth,
+            rawStyles.minWidth ?? defaultStyles.minWidth,
           ),
           maxWidth: normalizeImageMaxWidth(
-            rawStyles.maxWidth ?? entry.maxWidth ?? defaultStyles.maxWidth,
+            rawStyles.maxWidth ?? defaultStyles.maxWidth,
           ),
-          height: normalizeDimension(
-            rawStyles.height ?? entry.height,
-            defaultStyles.height,
-          ),
+          height: normalizeDimension(rawStyles.height, defaultStyles.height),
         },
-        src:
-          typeof entry.src === "string" && entry.src.trim().length > 0
-            ? entry.src
-            : getDefaultImageSrc(),
+        src: imageSrc,
       };
     }
     case "element-container": {
@@ -1945,12 +2135,14 @@ export const normalizeElementFromRaw = (
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
           : {};
+      const styleFlex = normalizeElementFlex(rawStyles.flex);
       const defaultStyles = getDefaultContainerStyles();
 
       return {
         instanceId,
-        flex: elementFlex,
+        flex: elementFlex ?? styleFlex,
         elementTypeId,
+        props: normalizeElementProps(entry.props),
         elements: Array.isArray(entry.elements)
           ? entry.elements
               .map((child) => normalizeElementFromRaw(child))
@@ -2250,6 +2442,7 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-text",
         value: "",
+        props: [{ value: "" }],
         styles: getDefaultTextStyles(),
       };
     case "element-toggle":
@@ -2257,6 +2450,7 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-toggle",
         defaultValue: getDefaultToggleValue(),
+        props: [{ selected: getDefaultToggleValue() }],
         styles: getDefaultToggleStyles(),
       };
     case "element-button":
@@ -2264,6 +2458,7 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-button",
         label: getDefaultButtonLabel(),
+        props: [{ buttonLabel: getDefaultButtonLabel() }],
         highlightOnHover: getDefaultButtonHighlightOnHover(),
         isGhost: getDefaultButtonIsGhost(),
         styles: getDefaultButtonStyles(),
@@ -2273,13 +2468,22 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-select",
         values: getDefaultSelectValues(),
+        defaultLabel: getDefaultSelectLabel(),
+        props: [
+          {
+            values: getDefaultSelectValues(),
+            defaultLabel: getDefaultSelectLabel(),
+          },
+        ],
+        styles: getDefaultSelectStyles(),
       };
     case "element-text-input":
       return {
         instanceId,
         elementTypeId: "element-text-input",
         textHint: getDefaultTextInputHint(),
-        value: "",
+        props: [{ textHint: getDefaultTextInputHint() }],
+        value: getDefaultTextInputValue(),
         styles: getDefaultTextInputStyles(),
       };
     case "element-icon":
@@ -2287,6 +2491,7 @@ const createDefaultComponentElement = (
         instanceId,
         elementTypeId: "element-icon",
         value: getDefaultIconValue(),
+        props: [{ value: getDefaultIconValue() }],
         styles: getDefaultIconStyles(),
       };
     case "element-image":
@@ -2295,12 +2500,14 @@ const createDefaultComponentElement = (
         elementTypeId: "element-image",
         styles: getDefaultImageStyles(),
         src: getDefaultImageSrc(),
+        props: [{ imgSrc: getDefaultImageSrc() }],
       };
     case "element-container":
       return {
         instanceId,
         elementTypeId: "element-container",
         elements: [],
+        props: [],
         styles: getDefaultContainerStyles(),
       };
   }
@@ -2314,6 +2521,7 @@ const createDefaultComponent = (label: string): AppComponent => ({
       instanceId: crypto.randomUUID(),
       elementTypeId: "element-text",
       value: label,
+      props: [{ value: label }],
       styles: getDefaultTextStyles(),
     },
   ],
@@ -2473,14 +2681,7 @@ export const elementNeedsFullWidth = (element: ComponentElement): boolean => {
     return isFullWidthValue(element.styles.width);
   }
   if (element.elementTypeId === "element-image") {
-    return (
-      isFullWidthValue(element.styles.width) ||
-      normalizeCssWidthAlias(
-        String(
-          (element.styles as Record<string, unknown>).containerWidth ?? "",
-        ),
-      ) === "100%"
-    );
+    return isFullWidthValue(element.styles.width);
   }
   // text is always w-full internally; toggle/icon/select size themselves
   return false;
@@ -3548,147 +3749,6 @@ function App() {
     isSelectedComponentUsedInPages &&
     !componentEditUnlocked;
 
-  const flattenLeafEntries = (
-    source: unknown,
-    prefix = "",
-  ): Array<{ path: string; value: unknown }> => {
-    if (Array.isArray(source)) {
-      if (source.length === 0 && prefix.length > 0) {
-        return [{ path: prefix, value: source }];
-      }
-
-      return source.flatMap((item, index) =>
-        flattenLeafEntries(
-          item,
-          prefix.length > 0 ? `${prefix}.${index}` : String(index),
-        ),
-      );
-    }
-
-    if (source && typeof source === "object") {
-      const entries = Object.entries(source as Record<string, unknown>);
-      if (entries.length === 0 && prefix.length > 0) {
-        return [{ path: prefix, value: source }];
-      }
-
-      return entries.flatMap(([key, value]) =>
-        flattenLeafEntries(value, prefix.length > 0 ? `${prefix}.${key}` : key),
-      );
-    }
-
-    return prefix.length > 0 ? [{ path: prefix, value: source }] : [];
-  };
-
-  const inferTextElementBinding = (
-    value: string,
-    responseData: unknown,
-  ): string | null => {
-    const trimmed = value.trim();
-    if (trimmed.length === 0 || !responseData) {
-      return null;
-    }
-
-    const leafEntries = flattenLeafEntries(responseData);
-    const formatLeafValue = (entryValue: unknown): string => {
-      if (typeof entryValue === "string") return entryValue;
-      if (typeof entryValue === "number" || typeof entryValue === "boolean") {
-        return String(entryValue);
-      }
-      if (entryValue === null) return "null";
-      return JSON.stringify(entryValue);
-    };
-    const exactMatches = leafEntries.filter(
-      (entry) => formatLeafValue(entry.value) === trimmed,
-    );
-
-    if (exactMatches.length === 1) {
-      return `data.${exactMatches[0].path}`;
-    }
-
-    const normalizedValue = trimmed.toLowerCase();
-    const semanticMatches = leafEntries.filter((entry) => {
-      const leafKey = entry.path.split(".").pop()?.toLowerCase() ?? "";
-      return leafKey.length > 0 && normalizedValue.includes(leafKey);
-    });
-
-    if (semanticMatches.length === 1) {
-      return `data.${semanticMatches[0].path}`;
-    }
-
-    return null;
-  };
-
-  const getTextElementBinding = (
-    element: TextComponentElement,
-    responseData?: unknown,
-  ): string | null => {
-    if (element.apiBinding?.trim().startsWith("data.")) {
-      return element.apiBinding.trim();
-    }
-
-    const trimmed = element.value.trim();
-    if (trimmed.startsWith("data.")) {
-      return trimmed;
-    }
-
-    if (typeof responseData === "undefined") {
-      return null;
-    }
-
-    return inferTextElementBinding(element.value, responseData);
-  };
-
-  const getExplicitTextElementBinding = (
-    element: TextComponentElement,
-  ): string | null => {
-    if (element.apiBinding?.trim().startsWith("data.")) {
-      return element.apiBinding.trim();
-    }
-
-    const trimmed = element.value.trim();
-    return trimmed.startsWith("data.") ? trimmed : null;
-  };
-
-  const collectComponentDataBindings = (
-    elements: ComponentElement[],
-    responseData?: unknown,
-    found = new Set<string>(),
-  ): Set<string> => {
-    for (const element of elements) {
-      if (isContainerElement(element)) {
-        collectComponentDataBindings(element.elements, responseData, found);
-        continue;
-      }
-
-      const inspectValue = (value: string) => {
-        const trimmed = value.trim();
-        if (trimmed.startsWith("data.")) {
-          found.add(trimmed);
-        }
-      };
-
-      if (element.elementTypeId === "element-text") {
-        const binding = getExplicitTextElementBinding(element);
-        if (binding) {
-          inspectValue(binding);
-        }
-      } else if (element.elementTypeId === "element-button") {
-        inspectValue(element.label);
-      } else if (element.elementTypeId === "element-text-input") {
-        inspectValue(element.value);
-        inspectValue(element.textHint);
-      } else if (element.elementTypeId === "element-select") {
-        element.values.forEach(inspectValue);
-      } else if (element.elementTypeId === "element-icon") {
-        inspectValue(element.value);
-      } else if (element.elementTypeId === "element-image") {
-        inspectValue(element.src);
-      }
-    }
-
-    return found;
-  };
-
   const deferredApiResponseJsonDraft = useDeferredValue(apiResponseJsonDraft);
 
   const selectedComponentApiResponseValidation = useMemo(() => {
@@ -3719,157 +3779,7 @@ function App() {
     }
   }, [selectedComponent?.id, deferredApiResponseJsonDraft]);
 
-  const selectedComponentDataBindings = useMemo(() => {
-    if (!selectedComponent) {
-      return [];
-    }
-
-    const parsedResponse = selectedComponentApiResponseValidation.isValid
-      ? selectedComponentApiResponseValidation.parsed
-      : undefined;
-
-    if (
-      selectedComponentApi.isApitComponent &&
-      selectedComponentApi.isList &&
-      selectedComponentApi.listItemComponentId.trim().length > 0
-    ) {
-      const listTemplate = customComponents.find(
-        (component) =>
-          component.id === selectedComponentApi.listItemComponentId,
-      );
-      const listItems = getListItemsFromResponseData(
-        parsedResponse,
-        selectedComponentApi.listDataBinding,
-      );
-
-      return listTemplate
-        ? Array.from(
-            collectComponentDataBindings(
-              listTemplate.elements,
-              listItems.length > 0 ? listItems[0] : undefined,
-            ),
-          ).sort((a, b) => a.localeCompare(b))
-        : [];
-    }
-
-    return Array.from(
-      collectComponentDataBindings(selectedComponent.elements, parsedResponse),
-    ).sort((a, b) => a.localeCompare(b));
-  }, [
-    customComponents,
-    selectedComponentApi.isApitComponent,
-    selectedComponentApi.isList,
-    selectedComponentApi.listItemComponentId,
-    selectedComponentApi.listDataBinding,
-    selectedComponent?.elements,
-    selectedComponentApiResponseValidation.isValid,
-    selectedComponentApiResponseValidation.parsed,
-  ]);
-
-  const applyApiResponseToTextElements = (
-    elements: ComponentElement[],
-    responseData: unknown,
-  ): {
-    nextElements: ComponentElement[];
-    changed: boolean;
-  } => {
-    let changed = false;
-
-    const nextElements = elements.map((element) => {
-      if (isContainerElement(element)) {
-        const nested = applyApiResponseToTextElements(
-          element.elements,
-          responseData,
-        );
-        if (!nested.changed) {
-          return element;
-        }
-
-        changed = true;
-        return {
-          ...element,
-          elements: nested.nextElements,
-        };
-      }
-
-      if (element.elementTypeId !== "element-text") {
-        return element;
-      }
-
-      const binding = getTextElementBinding(element, responseData);
-      if (!binding) {
-        return element;
-      }
-
-      const resolvedBinding = resolveDataBindingPath(responseData, binding);
-      const nextValue = resolvedBinding
-        ? formatResolvedValue(resolvedBinding.value)
-        : "";
-
-      if (element.value === nextValue && element.apiBinding === binding) {
-        return element;
-      }
-
-      changed = true;
-      return {
-        ...element,
-        value: nextValue,
-        apiBinding: binding,
-      };
-    });
-
-    return {
-      nextElements,
-      changed,
-    };
-  };
-
-  const applySelectedComponentApiResponse = (responseData: unknown) => {
-    if (!selectedComponent) return;
-
-    const applied = applyApiResponseToTextElements(
-      selectedComponent.elements,
-      responseData,
-    );
-
-    if (!applied.changed) {
-      return;
-    }
-
-    updateCustomComponents((components) =>
-      components.map((component) =>
-        component.id !== selectedComponent.id
-          ? component
-          : {
-              ...component,
-              elements: applied.nextElements,
-            },
-      ),
-    );
-  };
-
-  useEffect(() => {
-    if (!selectedComponent || !selectedComponentApi.isApitComponent) {
-      return;
-    }
-
-    if (
-      !selectedComponentApiResponseValidation.isValid ||
-      selectedComponentApiResponseValidation.parsed === null
-    ) {
-      return;
-    }
-
-    applySelectedComponentApiResponse(
-      selectedComponentApiResponseValidation.parsed,
-    );
-  }, [
-    selectedComponent?.id,
-    selectedComponent?.elements,
-    selectedComponentApi.isApitComponent,
-    selectedComponentApiResponseValidation.isValid,
-    selectedComponentApiResponseValidation.parsed,
-  ]);
+  const applySelectedComponentApiResponse = (_responseData: unknown) => {};
 
   useEffect(() => {
     setApiRequestUrlDraft(selectedComponentApi.request.url);
@@ -4682,42 +4592,6 @@ function App() {
     return prefix.length > 0 ? [prefix] : [];
   };
 
-  const flattenAllPaths = (source: unknown, prefix = ""): string[] => {
-    if (Array.isArray(source)) {
-      const directPath = prefix.length > 0 ? [prefix] : [];
-      if (source.length === 0) {
-        return directPath;
-      }
-
-      return [
-        ...directPath,
-        ...source.flatMap((item, index) =>
-          flattenAllPaths(
-            item,
-            prefix.length > 0 ? `${prefix}.${index}` : String(index),
-          ),
-        ),
-      ];
-    }
-
-    if (source && typeof source === "object") {
-      const directPath = prefix.length > 0 ? [prefix] : [];
-      const entries = Object.entries(source as Record<string, unknown>);
-      if (entries.length === 0) {
-        return directPath;
-      }
-
-      return [
-        ...directPath,
-        ...entries.flatMap(([key, value]) =>
-          flattenAllPaths(value, prefix.length > 0 ? `${prefix}.${key}` : key),
-        ),
-      ];
-    }
-
-    return prefix.length > 0 ? [prefix] : [];
-  };
-
   const formatResolvedValue = (value: unknown): string => {
     if (typeof value === "string") return value;
     if (typeof value === "number" || typeof value === "boolean") {
@@ -4750,79 +4624,6 @@ function App() {
 
     return null;
   };
-
-  const getApiBindingStatus = (
-    responseData: unknown,
-    bindings: string[],
-  ): {
-    missingList: string[];
-    unusedPaths: string[];
-  } => {
-    const missingBindings = new Set<string>();
-    const usedResponsePaths = new Set<string>();
-
-    bindings.forEach((binding) => {
-      const resolvedBinding = resolveDataBindingPath(responseData, binding);
-      if (!resolvedBinding) {
-        missingBindings.add(binding);
-        return;
-      }
-
-      const segments = resolvedBinding.path
-        .split(".")
-        .filter((segment) => segment.trim().length > 0);
-      for (let i = 1; i <= segments.length; i += 1) {
-        usedResponsePaths.add(segments.slice(0, i).join("."));
-      }
-    });
-
-    const flattenedResponsePaths = new Set(flattenAllPaths(responseData));
-
-    return {
-      missingList: Array.from(missingBindings).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-      unusedPaths: Array.from(flattenedResponsePaths)
-        .filter((path) => !usedResponsePaths.has(path))
-        .sort((a, b) => a.localeCompare(b)),
-    };
-  };
-
-  const selectedComponentApiBindingStatus = useMemo(() => {
-    if (
-      !selectedComponent ||
-      !selectedComponentApiResponseValidation.isValid ||
-      selectedComponentApiResponseValidation.parsed === null
-    ) {
-      return {
-        missingList: [] as string[],
-        unusedPaths: [] as string[],
-      };
-    }
-
-    const bindingSource =
-      selectedComponentApi.isApitComponent &&
-      selectedComponentApi.isList &&
-      selectedComponentApi.listDataBinding.trim().startsWith("data.")
-        ? (() => {
-            const items = getListItemsFromResponseData(
-              selectedComponentApiResponseValidation.parsed,
-              selectedComponentApi.listDataBinding,
-            );
-            return items.length > 0 ? items[0] : {};
-          })()
-        : selectedComponentApiResponseValidation.parsed;
-
-    return getApiBindingStatus(bindingSource, selectedComponentDataBindings);
-  }, [
-    selectedComponentApi.isApitComponent,
-    selectedComponentApi.isList,
-    selectedComponentApi.listDataBinding,
-    selectedComponent?.id,
-    selectedComponentApiResponseValidation.isValid,
-    selectedComponentApiResponseValidation.parsed,
-    selectedComponentDataBindings,
-  ]);
 
   const getPreviewResponseDataForComponent = (componentId: string): unknown => {
     if (selectedComponent && componentId === selectedComponent.id) {
@@ -4895,19 +4696,9 @@ function App() {
       return;
     }
 
-    const { missingList } = getApiBindingStatus(
-      responseData,
-      selectedComponentDataBindings,
-    );
-
     applySelectedComponentApiResponse(responseData);
 
-    if (missingList.length > 0) {
-      toast.error("Some data items were missing in the response");
-      return;
-    }
-
-    toast.success("Data items populated from response");
+    toast.success("Response data loaded for preview");
   };
 
   const updateComponentLabel = (componentId: string, label: string) => {
@@ -6007,6 +5798,65 @@ function App() {
     }));
   };
 
+  const deleteCustomComponent = (componentId: string) => {
+    const componentToDelete = customComponents.find(
+      (component) => component.id === componentId,
+    );
+    if (!componentToDelete) {
+      return;
+    }
+
+    const affectedPageTitles = editablePages
+      .filter(
+        (page) =>
+          page.componentIds.includes(componentId) ||
+          page.navigationHeaderComponentId === componentId,
+      )
+      .map((page) => page.title.trim())
+      .filter((title) => title.length > 0);
+
+    const confirmMessage =
+      affectedPageTitles.length > 0
+        ? `Delete component "${componentToDelete.label}"?\n\nIt is used on page(s): ${affectedPageTitles.join(", ")}. References will be removed.`
+        : `Delete component "${componentToDelete.label}"?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const pages = Array.isArray(base.pages) ? base.pages : [];
+
+      return {
+        ...base,
+        pages: pages.map((page) => {
+          if (page.kind !== "custom") {
+            return page;
+          }
+
+          return {
+            ...page,
+            componentIds: page.componentIds.filter((id) => id !== componentId),
+            navigationHeaderComponentId:
+              page.navigationHeaderComponentId === componentId
+                ? null
+                : page.navigationHeaderComponentId,
+          };
+        }),
+      };
+    });
+
+    updateCustomComponents((components) =>
+      components.filter((component) => component.id !== componentId),
+    );
+    setSelectedComponentId((current) =>
+      current === componentId ? null : current,
+    );
+    setComponentEditUnlocked(false);
+    toast.success("Component deleted");
+  };
+
   const removePageComponent = (pageId: string, index: number) => {
     updateCustomPageById(pageId, (page) => ({
       ...page,
@@ -6442,6 +6292,7 @@ ${items}
     indent = "  ",
   ): string => {
     if (element.elementTypeId === "element-text") {
+      const textValue = readElementStringProp(element, "value", element.value);
       const classes = [
         element.styles.alignment === "left"
           ? "text-left"
@@ -6461,10 +6312,15 @@ ${items}
         indent,
       );
 
-      return `${indent}<p\n${indent}  className=${JSON.stringify(classes)}${styleBlock}\n${indent}>${element.value || "Text"}</p>`;
+      return `${indent}<p\n${indent}  className=${JSON.stringify(classes)}${styleBlock}\n${indent}>${textValue || "Text"}</p>`;
     }
 
     if (element.elementTypeId === "element-toggle") {
+      const toggleValue = readElementBooleanProp(
+        element,
+        "selected",
+        element.defaultValue,
+      );
       const positionClass =
         element.styles.position === "left"
           ? "justify-start"
@@ -6472,10 +6328,15 @@ ${items}
             ? "justify-end"
             : "justify-center";
 
-      return `${indent}<div className=${JSON.stringify(`flex w-full ${positionClass}`)}>\n${indent}  <Switch defaultChecked={${element.defaultValue}} />\n${indent}</div>`;
+      return `${indent}<div className=${JSON.stringify(`flex w-full ${positionClass}`)}>\n${indent}  <Switch defaultChecked={${toggleValue}} />\n${indent}</div>`;
     }
 
     if (element.elementTypeId === "element-button") {
+      const buttonLabel = readElementStringProp(
+        element,
+        "buttonLabel",
+        element.label,
+      );
       const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const buttonStyleBlock = formatJsxStyleBlock(
         [
@@ -6489,12 +6350,19 @@ ${items}
         : ' className="w-auto"';
       const variantProp = element.isGhost ? ' variant="ghost"' : "";
 
-      return `${indent}<Button${variantProp}${buttonClassName}${buttonStyleBlock}>${element.label}</Button>`;
+      return `${indent}<Button${variantProp}${buttonClassName}${buttonStyleBlock}>${buttonLabel}</Button>`;
     }
 
     if (element.elementTypeId === "element-select") {
-      const options = element.values.filter(
-        (option) => option.trim().length > 0,
+      const options = readElementStringArrayProp(
+        element,
+        "values",
+        element.values,
+      ).filter((option) => option.trim().length > 0);
+      const defaultLabel = readElementStringProp(
+        element,
+        "defaultLabel",
+        element.defaultLabel,
       );
       const renderedOptions = (
         options.length > 0 ? options : ["No values"]
@@ -6503,10 +6371,15 @@ ${items}
           `${indent}      <SelectItem value=${JSON.stringify(String(index))}${options.length === 0 ? " disabled" : ""}>${option}</SelectItem>`,
       );
 
-      return `${indent}<Select defaultValue=${JSON.stringify(options.length > 0 ? "0" : "")}>\n${indent}  <SelectTrigger className="w-44">\n${indent}    <SelectValue placeholder="Select..." />\n${indent}  </SelectTrigger>\n${indent}  <SelectContent>\n${renderedOptions.join("\n")}\n${indent}  </SelectContent>\n${indent}</Select>`;
+      return `${indent}<Select defaultValue=${JSON.stringify(options.length > 0 ? "0" : "")}>\n${indent}  <SelectTrigger className="w-44">\n${indent}    <SelectValue placeholder=${JSON.stringify(defaultLabel || "Select...")} />\n${indent}  </SelectTrigger>\n${indent}  <SelectContent>\n${renderedOptions.join("\n")}\n${indent}  </SelectContent>\n${indent}</Select>`;
     }
 
     if (element.elementTypeId === "element-text-input") {
+      const textHint = readElementStringProp(
+        element,
+        "textHint",
+        element.textHint,
+      );
       const alignmentClass =
         element.styles.alignment === "left"
           ? "justify-start"
@@ -6522,11 +6395,12 @@ ${items}
         ? ' className="w-full"'
         : "";
 
-      return `${indent}<div className=${JSON.stringify(`flex w-full ${alignmentClass}`)}>\n${indent}  <Input${inputClassName}${inputStyleBlock} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(element.textHint)} />\n${indent}</div>`;
+      return `${indent}<div className=${JSON.stringify(`flex w-full ${alignmentClass}`)}>\n${indent}  <Input${inputClassName}${inputStyleBlock} defaultValue=${JSON.stringify(element.value)} placeholder=${JSON.stringify(textHint)} />\n${indent}</div>`;
     }
 
     if (element.elementTypeId === "element-icon") {
-      const iconName = toPascalCase(element.value) || "CircleAlert";
+      const iconValue = readElementStringProp(element, "value", element.value);
+      const iconName = toPascalCase(iconValue) || "CircleAlert";
       const styleBlock = formatJsxStyleBlock(
         getElementSpacingStyleEntries(element.styles),
         indent,
@@ -6535,18 +6409,26 @@ ${items}
     }
 
     if (element.elementTypeId === "element-image") {
+      const imageSrc = readElementStringProp(element, "imgSrc", element.src);
       const styleBlock = formatJsxStyleBlock(
         [
           ["width", toCssDimension(element.styles.width)],
           ["minWidth", toCssDimension(element.styles.minWidth)],
           ["maxWidth", toCssDimension(element.styles.maxWidth)],
           ["height", toCssDimension(element.styles.height)],
-          ["objectFit", element.styles.sizing],
-          ...getElementSpacingStyleEntries(element.styles),
+          [
+            "borderColor",
+            element.styles.borderWidth > 0
+              ? element.styles.borderColor
+              : undefined,
+          ],
+          ["borderRadius", `${element.styles.borderRadius}px`],
+          ["borderWidth", `${element.styles.borderWidth}px`],
+          ["borderStyle", element.styles.borderWidth > 0 ? "solid" : undefined],
         ],
         indent,
       );
-      return `${indent}<img\n${indent}  src=${JSON.stringify(element.src)}\n${indent}  alt="preview"\n${indent}  className="rounded border border-border bg-muted"${styleBlock}\n${indent}/>`;
+      return `${indent}<img\n${indent}  src=${JSON.stringify(imageSrc)}\n${indent}  alt="preview"\n${indent}  className="rounded border border-border bg-muted"${styleBlock}\n${indent}/>`;
     }
 
     const containerDirection = getDirectionFromContainer(element);
@@ -6638,17 +6520,13 @@ ${items}
     element: ComponentElement,
   ): Record<string, unknown> => {
     if (element.elementTypeId === "element-text") {
+      const textValue = readElementStringProp(element, "value", element.value);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        value: element.value ?? "",
-        apiBinding:
-          typeof element.apiBinding === "string" &&
-          element.apiBinding.trim().length > 0
-            ? element.apiBinding
-            : undefined,
+        props: withElementProp(element.props, "value", textValue),
         styles: {
+          flex: element.flex ?? 1,
           ...getExplicitElementSpacingJson(element.styles),
           alignment: element.styles.alignment ?? "center",
           size: element.styles.size ?? 3,
@@ -6664,14 +6542,16 @@ ${items}
     }
 
     if (element.elementTypeId === "element-toggle") {
+      const toggleValue = readElementBooleanProp(
+        element,
+        "selected",
+        element.defaultValue,
+      );
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        defaultValue: element.defaultValue ?? false,
+        props: withElementProp(element.props, "selected", toggleValue),
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
-          position: element.styles.position ?? "center",
           activeColor: "$primary",
           inactiveColor: "$border",
         },
@@ -6679,16 +6559,21 @@ ${items}
     }
 
     if (element.elementTypeId === "element-button") {
+      const buttonLabel = readElementStringProp(
+        element,
+        "buttonLabel",
+        element.label,
+      );
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        label: element.label ?? "",
-        highlightOnHover: element.highlightOnHover ?? false,
-        isGhost: element.isGhost ?? false,
+        props: withElementProp(element.props, "buttonLabel", buttonLabel),
+        other: {
+          highlightOnHover: element.highlightOnHover ?? false,
+          isGhost: element.isGhost ?? false,
+        },
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
-          width: element.styles.width ?? "full",
+          flex: element.flex ?? 1,
           alignment: "center",
           textColor: "$text",
           backgroundColor: "$button",
@@ -6698,15 +6583,29 @@ ${items}
     }
 
     if (element.elementTypeId === "element-select") {
+      const values = readElementStringArrayProp(
+        element,
+        "values",
+        element.values,
+      );
+      const defaultLabel = readElementStringProp(
+        element,
+        "defaultLabel",
+        element.defaultLabel,
+      );
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        values: element.values ?? [],
-        showDefaultLabel: true,
-        defaultLabel: "Please Select",
+        props: withElementProp(
+          withElementProp(element.props, "values", values),
+          "defaultLabel",
+          defaultLabel,
+        ),
+        other: {
+          showDefaultLabel: true,
+        },
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
+          flex: element.flex ?? 1,
           textColor: "$text",
           backgroundColor: "$secondary",
           highlightColor: "$highlight",
@@ -6716,16 +6615,20 @@ ${items}
     }
 
     if (element.elementTypeId === "element-text-input") {
+      const textHint = readElementStringProp(
+        element,
+        "textHint",
+        element.textHint,
+      );
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        textHint: element.textHint ?? "",
-        value: element.value ?? "",
+        props: withElementProp(element.props, "textHint", textHint),
+        other: {
+          value: element.value ?? "",
+        },
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
-          alignment: element.styles.alignment ?? "center",
-          width: element.styles.width ?? "full",
+          flex: element.flex ?? 1,
           textColor: "$text",
           borderColor: "$border",
           backgroundColor: "$secondary",
@@ -6734,43 +6637,40 @@ ${items}
     }
 
     if (element.elementTypeId === "element-icon") {
+      const iconValue = readElementStringProp(element, "value", element.value);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        value: element.value ?? "",
+        props: withElementProp(element.props, "value", iconValue),
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
           alignment: "center",
           size: element.styles.size ?? 24,
           color: "$text",
           borderWidth: 0,
-          borderColor: "$border",
+          borderColor: "",
           borderRadius: 8,
         },
       };
     }
 
     if (element.elementTypeId === "element-image") {
+      const imageSrc = readElementStringProp(element, "imgSrc", element.src);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
-        src: element.src ?? "https://placehold.co/600x400",
+        props: withElementProp(
+          element.props,
+          "imgSrc",
+          imageSrc || "https://placehold.co/600x400",
+        ),
         styles: {
-          ...getExplicitElementSpacingJson(element.styles),
-          alignment: "center",
-          sizing: element.styles.sizing ?? "contain",
-          containerWidth: "auto",
-          containerHeight: "auto",
-          backgroundColor: "$background",
-          borderWidth: 0,
-          borderColor: "$border",
-          borderRadius: 8,
-          padding: 0,
-          width: element.styles.width ?? "full",
-          minWidth: element.styles.minWidth ?? "auto",
-          maxWidth: element.styles.maxWidth ?? "none",
+          flex: element.flex ?? "none",
+          borderWidth: element.styles.borderWidth ?? 0,
+          borderColor: element.styles.borderColor ?? "",
+          borderRadius: element.styles.borderRadius ?? 8,
+          width: element.styles.width ?? "auto",
+          minWidth: element.styles.minWidth ?? 20,
+          maxWidth: element.styles.maxWidth ?? 3840,
           height: element.styles.height ?? "auto",
         },
       };
@@ -6780,8 +6680,9 @@ ${items}
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
-        flex: element.flex ?? "none",
+        props: normalizeElementProps(element.props),
         styles: {
+          flex: element.flex ?? 1,
           flexDirection: element.styles.flexDirection ?? "column",
           flexWrap: element.styles.flexWrap ?? "wrap",
           justifyContent: element.styles.justifyContent ?? "start",
@@ -7141,12 +7042,7 @@ ${items}
         return value;
       }
 
-      const textBinding =
-        element.elementTypeId === "element-text"
-          ? getTextElementBinding(element, responseData)
-          : null;
-      const binding =
-        textBinding ?? (trimmed.startsWith("data.") ? trimmed : null);
+      const binding = trimmed.startsWith("data.") ? trimmed : null;
       if (!binding) {
         return value;
       }
@@ -7160,6 +7056,7 @@ ${items}
     };
 
     if (element.elementTypeId === "element-text") {
+      const textValue = readElementStringProp(element, "value", element.value);
       const fontSize = `${0.5 + element.styles.size * 0.125}rem`;
       const alignClass =
         element.styles.alignment === "left"
@@ -7171,7 +7068,7 @@ ${items}
         element.styles.isLabel ? "$textHint" : "$text",
       );
 
-      const resolvedText = resolvePreviewBinding(element.value);
+      const resolvedText = resolvePreviewBinding(textValue);
       return (
         <p
           className={`${alignClass} w-full`}
@@ -7184,11 +7081,7 @@ ${items}
             color: textColor,
           }}
         >
-          {resolvedText ||
-            ((element.apiBinding?.trim().startsWith("data.") ?? false) ||
-            element.value.trim().startsWith("data.")
-              ? ""
-              : "Text")}
+          {resolvedText || (textValue.trim().startsWith("data.") ? "" : "Text")}
         </p>
       );
     }
@@ -7200,9 +7093,12 @@ ${items}
           : element.styles.position === "right"
             ? "justify-end"
             : "justify-center";
-      const trackColor = resolveColor(
-        element.defaultValue ? "$primary" : "$border",
+      const toggleValue = readElementBooleanProp(
+        element,
+        "defaultValue",
+        element.defaultValue,
       );
+      const trackColor = resolveColor(toggleValue ? "$primary" : "$border");
 
       return (
         <div
@@ -7217,7 +7113,7 @@ ${items}
               borderRadius: "999px",
               backgroundColor: trackColor,
               padding: "2px",
-              justifyContent: element.defaultValue ? "flex-end" : "flex-start",
+              justifyContent: toggleValue ? "flex-end" : "flex-start",
             }}
           >
             <div
@@ -7235,6 +7131,11 @@ ${items}
     }
 
     if (element.elementTypeId === "element-button") {
+      const buttonLabel = readElementStringProp(
+        element,
+        "buttonLabel",
+        element.label,
+      );
       const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const widthStyle =
         cssWidth === "auto" ? undefined : { width: toCssDimension(cssWidth) };
@@ -7260,15 +7161,24 @@ ${items}
             isFullWidthValue(element.styles.width) ? "w-full" : "w-auto"
           }
         >
-          {resolvePreviewBinding(element.label)}
+          {resolvePreviewBinding(buttonLabel)}
         </Button>
       );
     }
 
     if (element.elementTypeId === "element-select") {
-      const options = element.values
+      const options = readElementStringArrayProp(
+        element,
+        "values",
+        element.values,
+      )
         .map((option) => resolvePreviewBinding(option))
         .filter((option) => option.trim().length > 0);
+      const defaultLabel = readElementStringProp(
+        element,
+        "defaultLabel",
+        element.defaultLabel,
+      );
       const selectTextColor = resolveColor("$text");
       const selectBackgroundColor = resolveColor("$secondary");
       const selectBorderColor = resolveColor("$border");
@@ -7283,7 +7193,7 @@ ${items}
               borderColor: selectBorderColor,
             }}
           >
-            <SelectValue placeholder="Select..." />
+            <SelectValue placeholder={defaultLabel || "Select..."} />
           </SelectTrigger>
           <SelectContent>
             {options.length > 0 ? (
@@ -7306,6 +7216,11 @@ ${items}
     }
 
     if (element.elementTypeId === "element-text-input") {
+      const textHint = readElementStringProp(
+        element,
+        "textHint",
+        element.textHint,
+      );
       const alignmentClass =
         element.styles.alignment === "left"
           ? "justify-start"
@@ -7335,7 +7250,7 @@ ${items}
               borderColor: inputBorderColor,
             }}
             value={resolvePreviewBinding(element.value)}
-            placeholder={resolvePreviewBinding(element.textHint)}
+            placeholder={resolvePreviewBinding(textHint)}
             readOnly
           />
         </div>
@@ -7343,8 +7258,9 @@ ${items}
     }
 
     if (element.elementTypeId === "element-icon") {
+      const iconValue = readElementStringProp(element, "value", element.value);
       const IconComponent =
-        getLucideIconComponent(resolvePreviewBinding(element.value)) || Home;
+        getLucideIconComponent(resolvePreviewBinding(iconValue)) || Home;
       const size = 10 + element.styles.size * 2;
       return (
         <div
@@ -7445,24 +7361,24 @@ ${items}
       );
     }
 
-    const objectFit = element.styles.sizing;
-
+    const imageSrc = readElementStringProp(element, "imgSrc", element.src);
     return (
       <img
-        src={resolvePreviewBinding(element.src)}
+        src={resolvePreviewBinding(imageSrc)}
         alt="preview"
         className="rounded"
         style={{
-          ...getBoxSpacingStyle(element.styles),
           width: toCssDimension(element.styles.width),
           minWidth: toCssDimension(element.styles.minWidth),
           maxWidth: toCssDimension(element.styles.maxWidth),
           height: toCssDimension(element.styles.height),
-          objectFit,
-          backgroundColor: resolveColor("$background"),
-          borderColor: resolveColor("$border"),
-          borderWidth: "0px",
-          borderStyle: "solid",
+          borderColor:
+            element.styles.borderWidth > 0
+              ? resolveColor(element.styles.borderColor)
+              : undefined,
+          borderWidth: `${element.styles.borderWidth}px`,
+          borderStyle: element.styles.borderWidth > 0 ? "solid" : undefined,
+          borderRadius: `${element.styles.borderRadius}px`,
         }}
       />
     );
@@ -7479,105 +7395,34 @@ ${items}
     return PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label }));
   };
 
-  const getComponentApiBindingOptions = (componentId: string): string[] => {
-    const component = customComponents.find(
-      (entry) => entry.id === componentId,
-    );
-    if (!component) {
-      return [];
-    }
-
-    const responseData = getPreviewResponseDataForComponent(componentId);
-    if (typeof responseData === "undefined" || responseData === null) {
-      return [];
-    }
-
-    const paths = flattenLeafEntries(responseData)
-      .map((entry) => entry.path.trim())
-      .filter((path) => path.length > 0)
-      .map((path) => `data.${path}`);
-
-    return Array.from(new Set(paths)).sort((a, b) => a.localeCompare(b));
-  };
-
-  const renderApiBindingPicker = (
-    componentId: string,
-    label: string,
-    onSelect: (binding: string) => void,
-  ) => {
-    const options = getComponentApiBindingOptions(componentId);
-    if (options.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="space-y-2">
-        <Label>{label}</Label>
-        <Select
-          value=""
-          onValueChange={(value) => {
-            if (value.trim().length > 0) {
-              onSelect(value);
-            }
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Choose data path" />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((option) => (
-              <SelectItem
-                key={`${componentId}-${label}-${option}`}
-                value={option}
-              >
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    );
-  };
-
   const renderComponentElementFields = (
     componentId: string,
     element: ComponentElement,
   ) => {
     if (element.elementTypeId === "element-text") {
-      const isBound = element.apiBinding?.trim().startsWith("data.") ?? false;
+      const textValue = readElementStringProp(element, "value", element.value);
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label>Value</Label>
-              {isBound && (
-                <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                  Bound to {element.apiBinding}
-                </span>
-              )}
-            </div>
+            <Label>Value</Label>
             <Input
-              value={element.apiBinding ?? element.value}
+              value={textValue}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   value: e.target.value,
-                  apiBinding: e.target.value.trim().startsWith("data.")
-                    ? e.target.value.trim()
-                    : null,
+                  props: withElementProp(
+                    element.props,
+                    "value",
+                    e.target.value,
+                  ),
                 })
               }
               placeholder="Text content"
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Value from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                value: binding,
-                apiBinding: binding,
-              }),
-          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -7679,15 +7524,24 @@ ${items}
     }
 
     if (element.elementTypeId === "element-toggle") {
+      const toggleValue = readElementBooleanProp(
+        element,
+        "selected",
+        element.defaultValue,
+      );
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="flex items-center justify-between">
-            <Label>Default Value</Label>
+            <Label>Selected</Label>
             <Switch
-              checked={element.defaultValue}
+              checked={toggleValue}
               onCheckedChange={(checked) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   defaultValue: checked,
+                  props: withElementProp(element.props, "selected", checked),
                 })
               }
             />
@@ -7728,28 +7582,36 @@ ${items}
     }
 
     if (element.elementTypeId === "element-button") {
+      const buttonLabel = readElementStringProp(
+        element,
+        "buttonLabel",
+        element.label,
+      );
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="space-y-2">
             <Label>Label</Label>
             <Input
-              value={element.label}
+              value={buttonLabel}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   label: e.target.value,
+                  props: withElementProp(
+                    element.props,
+                    "buttonLabel",
+                    e.target.value,
+                  ),
                 })
               }
               placeholder="Button"
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Label from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                label: binding,
-              }),
-          )}
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            other
+          </p>
           <div className="flex items-center justify-between">
             <Label>Highlight on Hover</Label>
             <Switch
@@ -7801,12 +7663,42 @@ ${items}
     }
 
     if (element.elementTypeId === "element-select") {
+      const optionValues = readElementStringArrayProp(
+        element,
+        "values",
+        element.values,
+      );
+      const defaultLabel = readElementStringProp(
+        element,
+        "defaultLabel",
+        element.defaultLabel,
+      );
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
+          <div className="space-y-2">
+            <Label>Default Label</Label>
+            <Input
+              value={defaultLabel}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  defaultLabel: e.target.value,
+                  props: withElementProp(
+                    element.props,
+                    "defaultLabel",
+                    e.target.value,
+                  ),
+                })
+              }
+              placeholder="Select..."
+            />
+          </div>
           <div className="space-y-2">
             <Label>Options</Label>
             <div className="space-y-2">
-              {element.values.map((val, valIndex) => (
+              {optionValues.map((val, valIndex) => (
                 <div
                   key={`${element.instanceId}-val-${valIndex}`}
                   className="flex items-center gap-2"
@@ -7815,13 +7707,18 @@ ${items}
                     placeholder={`Option ${valIndex + 1}`}
                     value={val}
                     onChange={(e) => {
-                      const updated = [...element.values];
+                      const updated = [...optionValues];
                       updated[valIndex] = e.target.value;
                       updateComponentElementField(
                         componentId,
                         element.instanceId,
                         {
                           values: updated,
+                          props: withElementProp(
+                            withElementProp(element.props, "values", updated),
+                            "defaultLabel",
+                            defaultLabel,
+                          ),
                         },
                       );
                     }}
@@ -7832,14 +7729,19 @@ ${items}
                     size="icon"
                     onClick={() => {
                       const updated =
-                        element.values.length <= 1
+                        optionValues.length <= 1
                           ? [""]
-                          : element.values.filter((_, i) => i !== valIndex);
+                          : optionValues.filter((_, i) => i !== valIndex);
                       updateComponentElementField(
                         componentId,
                         element.instanceId,
                         {
                           values: updated,
+                          props: withElementProp(
+                            withElementProp(element.props, "values", updated),
+                            "defaultLabel",
+                            defaultLabel,
+                          ),
                         },
                       );
                     }}
@@ -7859,7 +7761,15 @@ ${items}
             className="gap-2"
             onClick={() =>
               updateComponentElementField(componentId, element.instanceId, {
-                values: [...element.values, ""],
+                values: [...optionValues, ""],
+                props: withElementProp(
+                  withElementProp(element.props, "values", [
+                    ...optionValues,
+                    "",
+                  ]),
+                  "defaultLabel",
+                  defaultLabel,
+                ),
               })
             }
           >
@@ -7879,28 +7789,36 @@ ${items}
     }
 
     if (element.elementTypeId === "element-text-input") {
+      const textHint = readElementStringProp(
+        element,
+        "textHint",
+        element.textHint,
+      );
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="space-y-2">
             <Label>Text Hint</Label>
             <Input
-              value={element.textHint}
+              value={textHint}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   textHint: e.target.value,
+                  props: withElementProp(
+                    element.props,
+                    "textHint",
+                    e.target.value,
+                  ),
                 })
               }
               placeholder="Enter text..."
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Hint from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                textHint: binding,
-              }),
-          )}
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            other
+          </p>
           <div className="space-y-2">
             <Label>value</Label>
             <Input
@@ -7913,14 +7831,6 @@ ${items}
               placeholder="value"
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Value from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                value: binding,
-              }),
-          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -7973,28 +7883,29 @@ ${items}
     }
 
     if (element.elementTypeId === "element-icon") {
+      const iconValue = readElementStringProp(element, "value", element.value);
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="space-y-2">
             <Label>Lucide Icon Name</Label>
             <Input
-              value={element.value}
+              value={iconValue}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   value: e.target.value,
+                  props: withElementProp(
+                    element.props,
+                    "value",
+                    e.target.value,
+                  ),
                 })
               }
               placeholder="Home"
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Icon Name from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                value: binding,
-              }),
-          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
@@ -8029,41 +7940,43 @@ ${items}
     }
 
     if (element.elementTypeId === "element-image") {
+      const imageSrc = readElementStringProp(element, "imgSrc", element.src);
       return (
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            props
+          </p>
           <div className="space-y-2">
             <Label>Source URL</Label>
             <Input
-              value={element.src}
+              value={imageSrc}
               onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   src: e.target.value,
+                  props: withElementProp(
+                    element.props,
+                    "imgSrc",
+                    e.target.value,
+                  ),
                 })
               }
               placeholder="https://..."
             />
           </div>
-          {renderApiBindingPicker(
-            componentId,
-            "Map Source from Response",
-            (binding) =>
-              updateComponentElementField(componentId, element.instanceId, {
-                src: binding,
-              }),
-          )}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
           <div className="space-y-2">
-            <Label>Sizing</Label>
+            <Label>Flex</Label>
             <Select
-              value={element.styles.sizing}
-              onValueChange={(value: "contain" | "cover") =>
+              value={
+                element.flex === null || element.flex === undefined
+                  ? "none"
+                  : String(element.flex)
+              }
+              onValueChange={(value) =>
                 updateComponentElementField(componentId, element.instanceId, {
-                  styles: {
-                    ...element.styles,
-                    sizing: value,
-                  },
+                  flex: value === "none" ? null : Number(value),
                 })
               }
             >
@@ -8071,10 +7984,69 @@ ${items}
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="contain">Contain</SelectItem>
-                <SelectItem value="cover">Cover</SelectItem>
+                <SelectItem value="none">none</SelectItem>
+                <SelectItem value="0">0</SelectItem>
+                <SelectItem value="1">1</SelectItem>
+                <SelectItem value="2">2</SelectItem>
+                <SelectItem value="3">3</SelectItem>
+                <SelectItem value="4">4</SelectItem>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="7">7</SelectItem>
+                <SelectItem value="8">8</SelectItem>
+                <SelectItem value="9">9</SelectItem>
+                <SelectItem value="10">10</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Border Width</Label>
+            <Input
+              type="number"
+              min={0}
+              max={16}
+              value={element.styles.borderWidth}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    borderWidth: clampContainerBorderWidth(e.target.value),
+                  },
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Border Color</Label>
+            <Input
+              value={element.styles.borderColor}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    borderColor: e.target.value,
+                  },
+                })
+              }
+              placeholder="#e2e8f0"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Border Radius</Label>
+            <Input
+              type="number"
+              min={0}
+              max={64}
+              value={element.styles.borderRadius}
+              onChange={(e) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  styles: {
+                    ...element.styles,
+                    borderRadius: clampContainerBorderRadius(e.target.value),
+                  },
+                })
+              }
+            />
           </div>
           <div className="space-y-2">
             <Label>Width</Label>
@@ -8094,34 +8066,36 @@ ${items}
           </div>
           <div className="space-y-2">
             <Label>Min Width</Label>
-            <DebouncedValidatedInput
+            <Input
+              type="number"
+              min={0}
+              max={4096}
               value={element.styles.minWidth}
-              onValueChange={(nextValue) =>
+              onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
-                    minWidth: nextValue,
+                    minWidth: clampContainerDimension(e.target.value),
                   },
                 })
               }
-              validate={isValidCssMinWidthValue}
-              placeholder="auto, 20px, 30vw"
             />
           </div>
           <div className="space-y-2">
             <Label>Max Width</Label>
-            <DebouncedValidatedInput
+            <Input
+              type="number"
+              min={0}
+              max={4096}
               value={element.styles.maxWidth}
-              onValueChange={(nextValue) =>
+              onChange={(e) =>
                 updateComponentElementField(componentId, element.instanceId, {
                   styles: {
                     ...element.styles,
-                    maxWidth: nextValue,
+                    maxWidth: clampContainerDimension(e.target.value),
                   },
                 })
               }
-              validate={isValidCssMaxWidthValue}
-              placeholder="none, 3840px, 90vw, 100%"
             />
           </div>
           <div className="space-y-2">
@@ -8139,11 +8113,6 @@ ${items}
               placeholder="auto or 240"
             />
           </div>
-          {renderElementSpacingSection(
-            componentId,
-            element.instanceId,
-            element.styles,
-          )}
         </div>
       );
     }
@@ -8162,6 +8131,10 @@ ${items}
 
     return (
       <div className="space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          props
+        </p>
+        <p className="text-xs text-muted-foreground">No props</p>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           styles
         </p>
@@ -8577,6 +8550,10 @@ ${items}
 
         <Separator />
 
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          other
+        </p>
+
         <div className="space-y-3">
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <div className="space-y-2">
@@ -8730,44 +8707,6 @@ ${items}
                 >
                   <Trash2 size={18} />
                 </Button>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Flex</Label>
-                <Select
-                  value={
-                    element.flex === null || element.flex === undefined
-                      ? "none"
-                      : String(element.flex)
-                  }
-                  onValueChange={(value) =>
-                    updateComponentElementField(
-                      componentId,
-                      element.instanceId,
-                      {
-                        flex: value === "none" ? null : Number(value),
-                      },
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">none</SelectItem>
-                    <SelectItem value="0">0</SelectItem>
-                    <SelectItem value="1">1</SelectItem>
-                    <SelectItem value="2">2</SelectItem>
-                    <SelectItem value="3">3</SelectItem>
-                    <SelectItem value="4">4</SelectItem>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="6">6</SelectItem>
-                    <SelectItem value="7">7</SelectItem>
-                    <SelectItem value="8">8</SelectItem>
-                    <SelectItem value="9">9</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
 
               {renderComponentElementFields(componentId, element)}
@@ -10921,32 +10860,6 @@ ${items}
                                   )}
                                 </div>
 
-                                <div className="space-y-2">
-                                  <p className="text-sm font-semibold">
-                                    Data Items
-                                  </p>
-                                  {selectedComponentDataBindings.length ===
-                                  0 ? (
-                                    <p className="text-xs text-muted-foreground">
-                                      No data bindings found. Use values
-                                      starting with data. in component elements.
-                                    </p>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                      {selectedComponentDataBindings.map(
-                                        (binding) => (
-                                          <span
-                                            key={binding}
-                                            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-mono"
-                                          >
-                                            {binding}
-                                          </span>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-
                                 <div className="space-y-2 rounded-md border border-border bg-card p-3">
                                   <p className="text-sm font-semibold">
                                     Request
@@ -11115,20 +11028,6 @@ ${items}
                                         selectedComponentApiResponseValidation.error
                                       }
                                     </p>
-                                  )}
-
-                                  {selectedComponentApiBindingStatus.missingList
-                                    .length > 0 && (
-                                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-                                      <p className="text-xs font-semibold text-destructive">
-                                        Missing data items:
-                                      </p>
-                                      <p className="mt-1 text-xs text-destructive">
-                                        {selectedComponentApiBindingStatus.missingList.join(
-                                          ", ",
-                                        )}
-                                      </p>
-                                    </div>
                                   )}
                                 </div>
                               </div>

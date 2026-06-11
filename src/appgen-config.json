@@ -1,5 +1,5 @@
 {
-    "default":{
+    "default": {
         "appName": "",
         "navigation": {
             "shown": true,
@@ -60,7 +60,7 @@
                 "dark": "#94a3b8"
             }
         },
-        "fonts":[],
+        "fonts": [],
         "components": [],
         "pages": []
     },
@@ -71,8 +71,11 @@
             {
                 "id": "element-text",
                 "label": "Text",
-                "value": "",
-                "apiBinding": "",
+                "props": [
+                    {
+                        "value": ""
+                    }
+                ],
                 "styles": {
                     "flex": 1,
                     "paddingX": 0,
@@ -101,8 +104,11 @@
                 "id": "element-toggle",
                 "elementTypeId": "element-toggle",
                 "label": "Toggle",
-                "defaultValue": false,
-                "apiBinding": "",
+                "props": [
+                    {
+                        "selected": false
+                    }
+                ],
                 "styles": {
                     "activeColor": "$primary",
                     "inactiveColor": "$border"
@@ -111,10 +117,15 @@
             {
                 "id": "element-button",
                 "label": "Button",
-                "buttonLabel": "Button",
-                "highlightOnHover": true,
-                "isGhost": false,
-                "apiBinding": "",
+                "other": {
+                    "highlightOnHover": true,
+                    "isGhost": false
+                },
+                "props": [
+                    {
+                        "buttonLabel": "Button"
+                    }
+                ],
                 "styles": {
                     "flex": 1,
                     "alignment": "center",
@@ -126,13 +137,15 @@
             {
                 "id": "element-select",
                 "label": "Select Dropdown",
-                "values": [
-                    "Value One",
-                    "Value Two"
+                "other": {
+                    "showDefaultLabel": true
+                },
+                "props": [
+                    {
+                        "values": [],
+                        "defaultLabel": ""
+                    }
                 ],
-                "showDefaultLabel": true,
-                "defaultLabel": "Please Select",
-                "apiBinding": "",
                 "styles": {
                     "flex": 1,
                     "textColor": "$text",
@@ -144,9 +157,14 @@
             {
                 "id": "element-text-input",
                 "label": "Text Input",
-                "textHint": "",
-                "value": "",
-                "apiBinding": "",
+                "other": {
+                    "value": ""
+                },
+                "props": [
+                    {
+                        "textHint": ""
+                    }
+                ],
                 "styles": {
                     "flex": 1,
                     "textColor": "$text",
@@ -157,8 +175,11 @@
             {
                 "id": "element-icon",
                 "label": "Icon",
-                "value": "Home",
-                "apiBinding": "",
+                "props": [
+                    {
+                        "value": "Home"
+                    }
+                ],
                 "styles": {
                     "alignment": "center",
                     "size": 24,
@@ -170,10 +191,12 @@
             },
             {
                 "id": "element-image",
-                "elementTypeId": "element-image",
                 "label": "Image",
-                "src": "https://placehold.co/600x400",
-                "apiBinding": "",
+                "props": [
+                    {
+                        "imgSrc": "https://placehold.co/600x400"
+                    }
+                ],
                 "styles": {
                     "flex": "none",
                     "borderWidth": 0,
@@ -187,10 +210,9 @@
             },
             {
                 "id": "element-container",
-                "elementTypeId": "element-container",
                 "label": "Container",
                 "elements": [],
-                "apiBinding": "",
+                "props": [],
                 "styles": {
                     "flex": 1,
                     "flexDirection": "row",
@@ -215,7 +237,6 @@
                     "borderWidth": 0
                 }
             }
- 
         ]
     },
     "schemas": {
