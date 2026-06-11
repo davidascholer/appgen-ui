@@ -42,7 +42,6 @@ type SummaryPageItem = {
   id: string;
   title: string;
   source: "config" | "prebuilt";
-  kind: "custom" | "prebuilt";
   componentIds: string[];
 };
 
@@ -130,28 +129,28 @@ const getSpacingCodeParts = (styles: {
   `marginRight: "${styles.marginRight}px"`,
 ];
 
-type ParsedKind =
+type ParsedProjectInput =
   | {
-      kind: "project";
+      status: "project";
       pages: SummaryPageItem[];
       components: AppComponent[];
       colorTheme: SummaryColorTheme;
     }
-  | { kind: "error"; message: string }
-  | { kind: "empty" };
+  | { status: "error"; message: string }
+  | { status: "empty" };
 
-function parseProjectInput(raw: string): ParsedKind {
-  if (!raw.trim()) return { kind: "empty" };
+function parseProjectInput(raw: string): ParsedProjectInput {
+  if (!raw.trim()) return { status: "empty" };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { kind: "error", message: "Invalid JSON" };
+    return { status: "error", message: "Invalid JSON" };
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { kind: "error", message: "Expected a JSON object" };
+    return { status: "error", message: "Expected a JSON object" };
   }
 
   const root = parsed as Record<string, unknown>;
@@ -180,14 +179,12 @@ function parseProjectInput(raw: string): ParsedKind {
           ? page.title
           : id;
       if (!id) continue;
-      const kind = page.kind === "custom" ? "custom" : "prebuilt";
-      const componentIds =
-        kind === "custom" && Array.isArray(page.componentIds)
-          ? page.componentIds.filter(
-              (value): value is string => typeof value === "string",
-            )
-          : [];
-      pages.push({ id, title, source: "config", kind, componentIds });
+      const componentIds = Array.isArray(page.componentIds)
+        ? page.componentIds.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [];
+      pages.push({ id, title, source: "config", componentIds });
     }
   }
 
@@ -205,7 +202,6 @@ function parseProjectInput(raw: string): ParsedKind {
         id,
         title,
         source: "prebuilt",
-        kind: "prebuilt",
         componentIds: [],
       });
     }
@@ -228,13 +224,13 @@ function parseProjectInput(raw: string): ParsedKind {
 
   if (pages.length === 0 && components.length === 0) {
     return {
-      kind: "error",
+      status: "error",
       message:
         "No pages or components found. Expected full project JSON with config/pages/components.",
     };
   }
 
-  return { kind: "project", pages, components, colorTheme };
+  return { status: "project", pages, components, colorTheme };
 }
 
 const getNormalizedIconKey = (name: string) =>
@@ -294,17 +290,8 @@ function renderComponentElement(
   }
 
   if (element.elementTypeId === "element-toggle") {
-    const positionClass =
-      element.styles.position === "left"
-        ? "justify-start"
-        : element.styles.position === "right"
-          ? "justify-end"
-          : "justify-center";
     return (
-      <div
-        className={`flex w-full ${positionClass}`}
-        style={getBoxSpacingStyle(element.styles)}
-      >
+      <div className="inline-flex items-center">
         <Switch defaultChecked={element.defaultValue} />
       </div>
     );
@@ -539,13 +526,7 @@ function codeForComponentElement(
   }
 
   if (element.elementTypeId === "element-toggle") {
-    const pos =
-      element.styles.position === "left"
-        ? "justify-start"
-        : element.styles.position === "right"
-          ? "justify-end"
-          : "justify-center";
-    return `${indent}<div className="flex w-full ${pos}" style={{ ${getSpacingCodeParts(element.styles).join(", ")} }}>\n${indent}  <Switch defaultChecked={${element.defaultValue}} />\n${indent}</div>`;
+    return `${indent}<Switch defaultChecked={${element.defaultValue}} />`;
   }
 
   if (element.elementTypeId === "element-button") {
@@ -725,10 +706,12 @@ export default function Summary() {
   const parsed = useMemo(() => parseProjectInput(jsonText), [jsonText]);
   const [themeMode, setThemeMode] = useState<SummaryThemeMode>("light");
 
-  const pages = parsed.kind === "project" ? parsed.pages : [];
-  const components = parsed.kind === "project" ? parsed.components : [];
+  const pages = parsed.status === "project" ? parsed.pages : [];
+  const components = parsed.status === "project" ? parsed.components : [];
   const colorTheme =
-    parsed.kind === "project" ? parsed.colorTheme : DEFAULT_SUMMARY_COLOR_THEME;
+    parsed.status === "project"
+      ? parsed.colorTheme
+      : DEFAULT_SUMMARY_COLOR_THEME;
   const resolveColor = (color: string): string =>
     resolveThemeColor(color, colorTheme, themeMode);
 
@@ -815,7 +798,7 @@ export default function Summary() {
     }
 
     if (!selectedPage) return null;
-    if (selectedPage.kind !== "custom") {
+    if (selectedPage.source !== "config") {
       return `// ${selectedPage.title}\n// Prebuilt page preview code is not available.`;
     }
 
@@ -844,7 +827,7 @@ export default function Summary() {
     }
 
     if (!selectedPage) return null;
-    if (selectedPage.kind !== "custom") {
+    if (selectedPage.source !== "config") {
       return (
         <span style={{ color: "#a1a1aa", fontSize: "14px" }}>
           Prebuilt page preview is not available.
@@ -945,12 +928,12 @@ export default function Summary() {
               outline: "none",
             }}
           />
-          {parsed.kind === "error" && (
+          {parsed.status === "error" && (
             <p style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
               {parsed.message}
             </p>
           )}
-          {parsed.kind === "project" && (
+          {parsed.status === "project" && (
             <p style={{ marginTop: "6px", fontSize: "12px", color: "#71717a" }}>
               Detected: <strong>{pages.length}</strong> page
               {pages.length !== 1 ? "s" : ""} and{" "}

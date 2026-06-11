@@ -1,0 +1,196 @@
+{
+    "navigation": {
+        "shown": true,
+        "navigationLabel": "",
+        "showNavigationHeader": true,
+        "headerMenuIconName": "Menu",
+        "headerBackIconName": "ArrowLeft",
+        "navigationStyle": {
+            "type": "drawer",
+            "variant": "all"
+        },
+        "navigationPages": []
+    },
+    "colorTheme": {
+        "primary": {
+            "label": "Primary",
+            "light": "#6366f1",
+            "dark": "#818cf8"
+        },
+        "secondary": {
+            "label": "Secondary",
+            "light": "#64748b",
+            "dark": "#94a3b8"
+        },
+        "tertiary": {
+            "label": "Tertiary",
+            "light": "#a855f7",
+            "dark": "#c084fc"
+        },
+        "highlight": {
+            "label": "Highlight",
+            "light": "#f59e0b",
+            "dark": "#fbbf24"
+        },
+        "background": {
+            "label": "Background",
+            "light": "#ffffff",
+            "dark": "#0f172a"
+        },
+        "border": {
+            "label": "Border",
+            "light": "#e2e8f0",
+            "dark": "#334155"
+        },
+        "text": {
+            "label": "Text",
+            "light": "#111827",
+            "dark": "#e2e8f0"
+        },
+        "button": {
+            "label": "Button",
+            "light": "#2563eb",
+            "dark": "#3b82f6"
+        },
+        "textHint": {
+            "label": "Text Hint",
+            "light": "#71717a",
+            "dark": "#94a3b8"
+        }
+    },
+    "ui": {
+        "components": [],
+        "pages": [],
+        "elements": [
+            {
+                "id": "element-text",
+                "label": "Text",
+                "value": "",
+                "styles": {
+                    "flex": 1,
+                    "paddingX": 0,
+                    "paddingY": 0,
+                    "marginX": 0,
+                    "marginY": 0,
+                    "paddingTop": 0,
+                    "paddingBottom": 0,
+                    "paddingLeft": 0,
+                    "paddingRight": 0,
+                    "marginTop": 0,
+                    "marginBottom": 0,
+                    "marginLeft": 0,
+                    "marginRight": 0,
+                    "alignment": "center",
+                    "size": 3,
+                    "fontWeight": 400,
+                    "isBold": false,
+                    "isItalic": false,
+                    "isLabel": false,
+                    "textColor": "$text",
+                    "labelColor": "$textHint"
+                }
+            },
+            {
+                "elementTypeId": "element-toggle",
+                "defaultValue": false,
+                "styles": {
+                    "activeColor": "$primary",
+                    "inactiveColor": "$border"
+                }
+            },
+            {
+                "id": "element-button",
+                "label": "Button",
+                "buttonLabel": "Button",
+                "highlightOnHover": true,
+                "isGhost": false,
+                "styles": {
+                    "flex": 1,
+                    "alignment": "center",
+                    "textColor": "$text",
+                    "backgroundColor": "$button",
+                    "highlightColor": "$highlight"
+                }
+            },
+            {
+                "id": "element-select",
+                "label": "Select Dropdown",
+                "values": [
+                    "Value One",
+                    "Value Two"
+                ],
+                "showDefaultLabel": true,
+                "defaultLabel": "Please Select",
+                "styles": {
+                    "flex": 1,
+                    "textColor": "$text",
+                    "backgroundColor": "$secondary",
+                    "highlightColor": "$highlight",
+                    "borderColor": "$border"
+                }
+            },
+            {
+                "id": "element-text-input",
+                "label": "Text Input",
+                "textHint": "",
+                "value": "",
+                "styles": {
+                    "flex": 1,
+                    "textColor": "$text",
+                    "borderColor": "$border",
+                    "backgroundColor": "$secondary"
+                }
+            },
+            {
+                "id": "element-icon",
+                "label": "Icon",
+                "value": "Home",
+                "styles": {
+                    "alignment": "center",
+                    "size": 24,
+                    "color": "#111827",
+                    "borderWidth": 0,
+                    "borderColor": "",
+                    "borderRadius": 8
+                }
+            },
+            {
+                "elementTypeId": "element-image",
+                "src": "https://placehold.co/600x400",
+                "styles": {
+                    "flex": "none",
+                    "borderWidth": 0,
+                    "borderColor": "",
+                    "borderRadius": 8,
+                    "width": "auto",
+                    "height": "auto"
+                }
+            },
+            {
+                "elementTypeId": "element-container",
+                "elements": [],
+                "styles": {
+                    "flex": 1,
+                    "justifyContent": "start",
+                    "alignItems": "center",
+                    "overflowScroll": false,
+                    "gap": 2,
+                    "minWidth": 0,
+                    "maxWidth": 3840,
+                    "paddingTop": 0,
+                    "paddingBottom": 0,
+                    "paddingLeft": 0,
+                    "paddingRight": 0,
+                    "marginTop": 0,
+                    "marginBottom": 0,
+                    "marginLeft": 0,
+                    "marginRight": 0,
+                    "backgroundColor": "$background",
+                    "borderColor": "$border",
+                    "borderRadius": 8,
+                    "borderWidth": 0
+                }
+            }
+        ]
+    }
+}

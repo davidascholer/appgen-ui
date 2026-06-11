@@ -45,7 +45,7 @@ import {
 import * as LucideIcons from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import prebuiltSourceConfig from "./appgen-config-prebuilt.json";
+import prebuiltSourceConfig from "./appgen-config.json";
 
 interface NavPage {
   id: string;
@@ -10215,206 +10215,16 @@ ${items}
                       }
                     />
 
-                    <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                      <Label htmlFor="selected-component-api-enabled">
-                        API Component
-                      </Label>
-                      <Switch
-                        id="selected-component-api-enabled"
-                        checked={selectedComponentApi.isApitComponent}
-                        disabled={isComponentEditorReadOnly}
-                        onCheckedChange={updateSelectedComponentApiEnabled}
-                      />
-                    </div>
-
-                    {selectedComponentApi.isApitComponent && (
-                      <div className="space-y-4 rounded-md border border-border bg-secondary/30 p-3">
-                        <div className="space-y-2">
-                          <p className="text-sm font-semibold">Data Items</p>
-                          {selectedComponentDataBindings.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                              No data bindings found. Use values starting with
-                              data. in component elements.
-                            </p>
-                          ) : (
-                            <div className="flex flex-wrap gap-2">
-                              {selectedComponentDataBindings.map((binding) => (
-                                <span
-                                  key={binding}
-                                  className="rounded-md border border-border bg-card px-2 py-1 text-xs font-mono"
-                                >
-                                  {binding}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
-                          <p className="text-sm font-semibold">Request</p>
-                          <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-                            <Select
-                              value={selectedComponentApi.request.method}
-                              onValueChange={(value: ApiRequestMethod) =>
-                                updateSelectedComponentApiRequest({
-                                  method: value,
-                                })
-                              }
-                            >
-                              <SelectTrigger id="api-request-method">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {API_REQUEST_METHODS.map((method) => (
-                                  <SelectItem key={method} value={method}>
-                                    {method}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Input
-                              id="api-request-url"
-                              placeholder="https://api.example.com/resource"
-                              value={apiRequestUrlDraft}
-                              onChange={(e) =>
-                                setApiRequestUrlDraft(e.target.value)
-                              }
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                                Headers
-                              </Label>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={addSelectedComponentApiHeader}
-                              >
-                                <Plus size={14} />
-                                Add Header
-                              </Button>
-                            </div>
-
-                            {selectedComponentApi.request.headers.length ===
-                            0 ? (
-                              <p className="text-xs text-muted-foreground">
-                                No headers configured.
-                              </p>
-                            ) : (
-                              <div className="space-y-2">
-                                {selectedComponentApi.request.headers.map(
-                                  (header) => (
-                                    <div
-                                      key={header.id}
-                                      className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-                                    >
-                                      <Input
-                                        placeholder="Header"
-                                        value={header.key}
-                                        onChange={(e) =>
-                                          updateSelectedComponentApiHeader(
-                                            header.id,
-                                            { key: e.target.value },
-                                          )
-                                        }
-                                      />
-                                      <Input
-                                        placeholder="Value"
-                                        value={header.value}
-                                        onChange={(e) =>
-                                          updateSelectedComponentApiHeader(
-                                            header.id,
-                                            { value: e.target.value },
-                                          )
-                                        }
-                                      />
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() =>
-                                          removeSelectedComponentApiHeader(
-                                            header.id,
-                                          )
-                                        }
-                                        className="text-destructive hover:text-destructive"
-                                      >
-                                        <Trash2 size={16} />
-                                      </Button>
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="api-request-body">Body</Label>
-                            <textarea
-                              id="api-request-body"
-                              className="min-h-[110px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
-                              placeholder='{"name":"Example"}'
-                              value={apiRequestBodyDraft}
-                              onChange={(e) =>
-                                setApiRequestBodyDraft(e.target.value)
-                              }
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 rounded-md border border-border bg-card p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-semibold">Response</p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={populateSelectedComponentFromApiResponse}
-                            >
-                              Populate
-                            </Button>
-                          </div>
-                          <textarea
-                            key={`api-response-${selectedComponent.id}`}
-                            ref={apiResponseJsonInputRef}
-                            id="api-response-test-json"
-                            className={`min-h-[140px] w-full rounded-md border bg-background px-3 py-2 text-sm font-mono ${selectedComponentApiResponseValidation.isValid ? "border-border" : "border-destructive"}`}
-                            placeholder='{"user":{"name":"Ada"}}'
-                            defaultValue={apiResponseJsonDraft}
-                            onChange={(e) =>
-                              scheduleApiResponseJsonDraftUpdate(e.target.value)
-                            }
-                            onBlur={(e) => {
-                              const value = e.target.value;
-                              setApiResponseJsonDraft(value);
-                              updateSelectedComponentApiResponseJson(value);
-                            }}
-                          />
-                          {!selectedComponentApiResponseValidation.isValid && (
-                            <p className="text-xs text-destructive">
-                              Invalid JSON:{" "}
-                              {selectedComponentApiResponseValidation.error}
-                            </p>
-                          )}
-
-                          {selectedComponentApiBindingStatus.missingList
-                            .length > 0 && (
-                            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-                              <p className="text-xs font-semibold text-destructive">
-                                Missing data items:
-                              </p>
-                              <p className="mt-1 text-xs text-destructive">
-                                {selectedComponentApiBindingStatus.missingList.join(
-                                  ", ",
-                                )}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        deleteCustomComponent(selectedComponent.id)
+                      }
+                      className="w-full text-destructive hover:text-destructive"
+                    >
+                      Delete Component
+                    </Button>
 
                     {isSelectedComponentUsedInPages && (
                       <p className="text-xs text-muted-foreground">
@@ -10476,7 +10286,7 @@ ${items}
                         <Card className="p-4">
                           <div className="flex items-center justify-between gap-3 mb-4">
                             <h2 className="text-lg font-semibold font-mono">
-                              Component Items
+                              Component
                             </h2>
                             <div className="flex items-center gap-2">
                               <Dialog>
@@ -10530,6 +10340,235 @@ ${items}
                             </div>
                           </div>
                           <div className="space-y-4">
+                            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                              <Label htmlFor="selected-component-api-enabled">
+                                API Component
+                              </Label>
+                              <Switch
+                                id="selected-component-api-enabled"
+                                checked={selectedComponentApi.isApitComponent}
+                                disabled={isComponentEditorReadOnly}
+                                onCheckedChange={
+                                  updateSelectedComponentApiEnabled
+                                }
+                              />
+                            </div>
+
+                            {selectedComponentApi.isApitComponent && (
+                              <div className="space-y-4 rounded-md border border-border bg-secondary/30 p-3">
+                                <div className="space-y-2">
+                                  <p className="text-sm font-semibold">
+                                    Data Items
+                                  </p>
+                                  {selectedComponentDataBindings.length ===
+                                  0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      No data bindings found. Use values
+                                      starting with data. in component elements.
+                                    </p>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                      {selectedComponentDataBindings.map(
+                                        (binding) => (
+                                          <span
+                                            key={binding}
+                                            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-mono"
+                                          >
+                                            {binding}
+                                          </span>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                                  <p className="text-sm font-semibold">
+                                    Request
+                                  </p>
+                                  <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
+                                    <Select
+                                      value={
+                                        selectedComponentApi.request.method
+                                      }
+                                      onValueChange={(
+                                        value: ApiRequestMethod,
+                                      ) =>
+                                        updateSelectedComponentApiRequest({
+                                          method: value,
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger id="api-request-method">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {API_REQUEST_METHODS.map((method) => (
+                                          <SelectItem
+                                            key={method}
+                                            value={method}
+                                          >
+                                            {method}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Input
+                                      id="api-request-url"
+                                      placeholder="https://api.example.com/resource"
+                                      value={apiRequestUrlDraft}
+                                      onChange={(e) =>
+                                        setApiRequestUrlDraft(e.target.value)
+                                      }
+                                    />
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                                        Headers
+                                      </Label>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addSelectedComponentApiHeader}
+                                      >
+                                        <Plus size={14} />
+                                        Add Header
+                                      </Button>
+                                    </div>
+
+                                    {selectedComponentApi.request.headers
+                                      .length === 0 ? (
+                                      <p className="text-xs text-muted-foreground">
+                                        No headers configured.
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {selectedComponentApi.request.headers.map(
+                                          (header) => (
+                                            <div
+                                              key={header.id}
+                                              className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                                            >
+                                              <Input
+                                                placeholder="Header"
+                                                value={header.key}
+                                                onChange={(e) =>
+                                                  updateSelectedComponentApiHeader(
+                                                    header.id,
+                                                    { key: e.target.value },
+                                                  )
+                                                }
+                                              />
+                                              <Input
+                                                placeholder="Value"
+                                                value={header.value}
+                                                onChange={(e) =>
+                                                  updateSelectedComponentApiHeader(
+                                                    header.id,
+                                                    { value: e.target.value },
+                                                  )
+                                                }
+                                              />
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() =>
+                                                  removeSelectedComponentApiHeader(
+                                                    header.id,
+                                                  )
+                                                }
+                                                className="text-destructive hover:text-destructive"
+                                              >
+                                                <Trash2 size={16} />
+                                              </Button>
+                                            </div>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <Label htmlFor="api-request-body">
+                                      Body
+                                    </Label>
+                                    <textarea
+                                      id="api-request-body"
+                                      className="min-h-[110px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+                                      placeholder='{"name":"Example"}'
+                                      value={apiRequestBodyDraft}
+                                      onChange={(e) =>
+                                        setApiRequestBodyDraft(e.target.value)
+                                      }
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold">
+                                      Response
+                                    </p>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={
+                                        populateSelectedComponentFromApiResponse
+                                      }
+                                    >
+                                      Populate
+                                    </Button>
+                                  </div>
+                                  <textarea
+                                    key={`api-response-${selectedComponent.id}`}
+                                    ref={apiResponseJsonInputRef}
+                                    id="api-response-test-json"
+                                    className={`min-h-[140px] w-full rounded-md border bg-background px-3 py-2 text-sm font-mono ${selectedComponentApiResponseValidation.isValid ? "border-border" : "border-destructive"}`}
+                                    placeholder='{"user":{"name":"Ada"}}'
+                                    defaultValue={apiResponseJsonDraft}
+                                    onChange={(e) =>
+                                      scheduleApiResponseJsonDraftUpdate(
+                                        e.target.value,
+                                      )
+                                    }
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      setApiResponseJsonDraft(value);
+                                      updateSelectedComponentApiResponseJson(
+                                        value,
+                                      );
+                                    }}
+                                  />
+                                  {!selectedComponentApiResponseValidation.isValid && (
+                                    <p className="text-xs text-destructive">
+                                      Invalid JSON:{" "}
+                                      {
+                                        selectedComponentApiResponseValidation.error
+                                      }
+                                    </p>
+                                  )}
+
+                                  {selectedComponentApiBindingStatus.missingList
+                                    .length > 0 && (
+                                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+                                      <p className="text-xs font-semibold text-destructive">
+                                        Missing data items:
+                                      </p>
+                                      <p className="mt-1 text-xs text-destructive">
+                                        {selectedComponentApiBindingStatus.missingList.join(
+                                          ", ",
+                                        )}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="grid gap-4 sm:grid-cols-2">
                               <div className="space-y-2">
                                 <Label htmlFor="component-element-type">

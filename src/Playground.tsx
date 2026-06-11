@@ -40,25 +40,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Home } from "lucide-react";
 
-// ── Detect which kind of JSON was pasted ─────────────────────────────────────
+// ── Detect JSON shape ─────────────────────────────────────────────────────────
 
-type ParsedKind =
-  | { kind: "element"; data: PrebuiltElement }
-  | { kind: "component"; data: AppComponent }
-  | { kind: "error"; message: string }
-  | { kind: "empty" };
+type ParsedInput =
+  | { status: "element"; data: PrebuiltElement }
+  | { status: "component"; data: AppComponent }
+  | { status: "error"; message: string }
+  | { status: "empty" };
 
-function parseInput(raw: string): ParsedKind {
-  if (!raw.trim()) return { kind: "empty" };
+function parseInput(raw: string): ParsedInput {
+  if (!raw.trim()) return { status: "empty" };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { kind: "error", message: "Invalid JSON" };
+    return { status: "error", message: "Invalid JSON" };
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { kind: "error", message: "Expected a JSON object" };
+    return { status: "error", message: "Expected a JSON object" };
   }
 
   const obj = parsed as Record<string, unknown>;
@@ -66,13 +66,13 @@ function parseInput(raw: string): ParsedKind {
   // Component: has 'elements' array at top level and no 'elementTypeId'
   if (Array.isArray(obj.elements) && !obj.elementTypeId) {
     const comp = normalizeComponentFromRaw(obj);
-    if (comp) return { kind: "component", data: comp };
-    return { kind: "error", message: "Could not parse as component" };
+    if (comp) return { status: "component", data: comp };
+    return { status: "error", message: "Could not parse as component" };
   }
 
   // Prebuilt element: has 'id' starting with 'element-'
   if (typeof obj.id === "string" && obj.id.startsWith("element-")) {
-    return { kind: "element", data: obj as unknown as PrebuiltElement };
+    return { status: "element", data: obj as unknown as PrebuiltElement };
   }
 
   // ComponentElement: has 'elementTypeId'
@@ -83,12 +83,12 @@ function parseInput(raw: string): ParsedKind {
       elements: [obj],
       styles: {},
     });
-    if (comp) return { kind: "component", data: comp };
-    return { kind: "error", message: "Could not wrap element for preview" };
+    if (comp) return { status: "component", data: comp };
+    return { status: "error", message: "Could not wrap element for preview" };
   }
 
   return {
-    kind: "error",
+    status: "error",
     message:
       "Unrecognized JSON shape — expected a prebuilt element (id: 'element-*'), a component element (elementTypeId: '...'), or a component (elements: [...])",
   };
@@ -494,14 +494,14 @@ export default function Playground() {
   const parsed = useMemo(() => parseInput(jsonText), [jsonText]);
 
   const reactCode = useMemo(() => {
-    if (parsed.kind === "element") return renderElementCode(parsed.data);
-    if (parsed.kind === "component") return codeForComponent(parsed.data);
+    if (parsed.status === "element") return renderElementCode(parsed.data);
+    if (parsed.status === "component") return codeForComponent(parsed.data);
     return null;
   }, [parsed]);
 
   const preview = useMemo((): ReactNode => {
-    if (parsed.kind === "element") return renderPrebuiltElement(parsed.data);
-    if (parsed.kind === "component") {
+    if (parsed.status === "element") return renderPrebuiltElement(parsed.data);
+    if (parsed.status === "component") {
       const comp = parsed.data;
       const dir =
         comp.styles.direction === "vertical" ? "flex-col" : "flex-row";
@@ -623,16 +623,16 @@ export default function Playground() {
               outline: "none",
             }}
           />
-          {parsed.kind === "error" && (
+          {parsed.status === "error" && (
             <p style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626" }}>
               {parsed.message}
             </p>
           )}
-          {parsed.kind !== "empty" && parsed.kind !== "error" && (
+          {parsed.status !== "empty" && parsed.status !== "error" && (
             <p style={{ marginTop: "6px", fontSize: "12px", color: "#71717a" }}>
               Detected:{" "}
               <strong>
-                {parsed.kind === "element"
+                {parsed.status === "element"
                   ? `prebuilt element (${parsed.data.id})`
                   : `component (${parsed.data.elements.length} element${parsed.data.elements.length !== 1 ? "s" : ""})`}
               </strong>
