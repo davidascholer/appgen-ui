@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import * as LucideIcons from "lucide-react";
 
+import prebuiltSourceConfig from "./appgen-config.json";
 import {
   normalizeComponentFromRaw,
   isContainerElement,
@@ -76,17 +77,32 @@ const SUMMARY_THEME_KEYS: SummaryThemeKey[] = [
   "textHint",
 ];
 
-const DEFAULT_SUMMARY_COLOR_THEME: SummaryColorTheme = {
-  primary: { light: "#6366f1", dark: "#818cf8" },
-  secondary: { light: "#64748b", dark: "#94a3b8" },
-  tertiary: { light: "#a855f7", dark: "#c084fc" },
-  highlight: { light: "#f59e0b", dark: "#fbbf24" },
-  background: { light: "#ffffff", dark: "#0f172a" },
-  border: { light: "#e2e8f0", dark: "#334155" },
-  text: { light: "#111827", dark: "#e2e8f0" },
-  button: { light: "#2563eb", dark: "#3b82f6" },
-  textHint: { light: "#71717a", dark: "#94a3b8" },
-};
+const DEFAULT_SUMMARY_COLOR_THEME: SummaryColorTheme = (() => {
+  const raw = (prebuiltSourceConfig as Record<string, unknown>).colorTheme;
+  if (!raw || typeof raw !== "object") {
+    return SUMMARY_THEME_KEYS.reduce((acc, key) => {
+      acc[key] = { light: "#000000", dark: "#ffffff" };
+      return acc;
+    }, {} as SummaryColorTheme);
+  }
+  const parsed = raw as Record<string, unknown>;
+  return SUMMARY_THEME_KEYS.reduce((acc, key) => {
+    const candidate = parsed[key] as
+      | { light?: unknown; dark?: unknown }
+      | undefined;
+    acc[key] = {
+      light:
+        candidate && typeof candidate.light === "string"
+          ? candidate.light
+          : "#000000",
+      dark:
+        candidate && typeof candidate.dark === "string"
+          ? candidate.dark
+          : "#ffffff",
+    };
+    return acc;
+  }, {} as SummaryColorTheme);
+})();
 
 const normalizeSummaryColorTheme = (raw: unknown): SummaryColorTheme => {
   const candidate =

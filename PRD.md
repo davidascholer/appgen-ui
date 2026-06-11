@@ -123,3 +123,42 @@ Animations should reinforce the builder metaphor - features "appear" in the prev
   - Export dialog fills more of screen on mobile
   - Navigation management section stacks vertically
   - Touch targets remain minimum 44px height
+
+## Data Architecture
+
+### Source of Truth
+
+- `src/appgen-config.json` is the source of all default and prebuilt data. No static/hardcoded data should exist in the application code.
+- Runtime persistence target is browser localStorage (`app-config`).
+
+### Initial Data (from `appgen-config.json`)
+
+- **Navigation**: The `navigation` object provides initial Navigation data.
+- **Theme**: The `colorTheme` object provides initial Theme data.
+- **Prebuilt Components**: `prebuilt.components` — read-only prebuilt components available in the editor.
+- **Prebuilt Pages**: `prebuilt.pages` — read-only prebuilt pages available in the editor.
+- **Prebuilt Elements**: `prebuilt.elements` — element type definitions (text, button, container, etc.) with default styles and values.
+
+### Signatures (from `appgen-config.json`)
+
+- `signatures.components` — defines the shape/default properties for a new component (label, api, elements).
+- `signatures.pages` — defines the shape/default properties for a new page (label, components).
+- All new components and pages must be created using these signatures as their template.
+
+### Export / Local Storage Structure
+
+The exported JSON and the localStorage object must share an identical structure. This structure mirrors the top-level keys of `appgen-config.json` **except** for the `prebuilt` and `signatures` objects, which are config-only and never exported.
+
+Exported/stored keys:
+
+- `navigation` — current navigation configuration
+- `colorTheme` — current theme color values
+- `components` — array of user-created components
+- `pages` — array of user-created pages
+
+Additional keys may be added as features grow, but `prebuilt` and `signatures` are never included in the export.
+
+### Uniqueness Constraints
+
+- All new component labels must be unique across both prebuilt components (`prebuilt.components`) and user-created components (localStorage).
+- All new page labels must be unique across both prebuilt pages (`prebuilt.pages`) and user-created pages (localStorage).

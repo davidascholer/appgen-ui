@@ -116,8 +116,8 @@ type AppPage = CustomPage;
 interface AppConfig {
   id: string;
   appName: string;
-  components: SettingComponentDefinition[];
-  customComponents: AppComponent[];
+  components: AppComponent[];
+  colorTheme: ColorTheme;
   navigation: {
     shown: boolean;
     navigationLabel: string;
@@ -163,15 +163,22 @@ interface ExportConfig {
 }
 
 interface ExportPrebuiltConfig {
-  components: ExportedComponentDefinition[];
   pages: ExportedPrebuiltPage[];
   elements: PrebuiltElementDef[];
 }
 
-interface AppgenPrebuiltSourceConfig {
-  components?: unknown;
-  pages?: unknown;
-  elements?: unknown;
+interface AppgenConfigFile {
+  navigation?: unknown;
+  colorTheme?: unknown;
+  prebuilt?: {
+    components?: unknown;
+    pages?: unknown;
+    elements?: unknown;
+  };
+  signatures?: {
+    components?: unknown;
+    pages?: unknown;
+  };
 }
 
 type ElementTypeId =
@@ -182,8 +189,7 @@ type ElementTypeId =
   | "element-text-input"
   | "element-icon"
   | "element-image"
-  | "element-horizontal-container"
-  | "element-vertical-container";
+  | "element-container";
 
 interface BaseComponentElement {
   instanceId: string;
@@ -252,6 +258,7 @@ type FlexJustifyContent =
 type FlexAlignItems = "start" | "center" | "end" | "stretch";
 
 interface ContainerElementStyles {
+  flexDirection: "row" | "column";
   justifyContent: FlexJustifyContent;
   alignItems: FlexAlignItems;
   overflowScroll: boolean;
@@ -321,7 +328,7 @@ interface ImageComponentElement extends BaseComponentElement {
 }
 
 interface ContainerComponentElement extends BaseComponentElement {
-  elementTypeId: "element-horizontal-container" | "element-vertical-container";
+  elementTypeId: "element-container";
   elements: ComponentElement[];
   styles: ContainerElementStyles;
 }
@@ -444,6 +451,7 @@ interface PrebuiltElementDef {
     position?: "left" | "center" | "right";
     justifyContent?: FlexJustifyContent;
     alignItems?: FlexAlignItems;
+    flexDirection?: "row" | "column";
     backgroundColor?: string;
     borderColor?: string;
     borderRadius?: number;
@@ -501,18 +509,6 @@ type NewCustomComponentMode =
   | "project-components"
   | "component-library";
 
-const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = {
-  primary: "Primary",
-  secondary: "Secondary",
-  tertiary: "Tertiary",
-  highlight: "Highlight",
-  background: "Background",
-  border: "Border",
-  text: "Text",
-  button: "Button",
-  textHint: "Text Hint",
-};
-
 const THEME_VARIABLE_KEYS: ThemeVariableKey[] = [
   "primary",
   "secondary",
@@ -525,17 +521,50 @@ const THEME_VARIABLE_KEYS: ThemeVariableKey[] = [
   "textHint",
 ];
 
-const DEFAULT_COLOR_THEME: ColorTheme = {
-  primary: { light: "#6366f1", dark: "#818cf8" },
-  secondary: { light: "#64748b", dark: "#94a3b8" },
-  tertiary: { light: "#a855f7", dark: "#c084fc" },
-  highlight: { light: "#f59e0b", dark: "#fbbf24" },
-  background: { light: "#ffffff", dark: "#0f172a" },
-  border: { light: "#e2e8f0", dark: "#334155" },
-  text: { light: "#111827", dark: "#e2e8f0" },
-  button: { light: "#2563eb", dark: "#3b82f6" },
-  textHint: { light: "#71717a", dark: "#94a3b8" },
-};
+const THEME_VARIABLE_LABELS: Record<ThemeVariableKey, string> = (() => {
+  const raw = (prebuiltSourceConfig as Record<string, unknown>).colorTheme;
+  const parsed =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return THEME_VARIABLE_KEYS.reduce(
+    (acc, key) => {
+      const entry = parsed[key] as { label?: unknown } | undefined;
+      acc[key] =
+        typeof entry?.label === "string" && entry.label.trim().length > 0
+          ? entry.label
+          : key;
+      return acc;
+    },
+    {} as Record<ThemeVariableKey, string>,
+  );
+})();
+
+const DEFAULT_COLOR_THEME: ColorTheme = (() => {
+  const raw = (prebuiltSourceConfig as Record<string, unknown>).colorTheme;
+  if (!raw || typeof raw !== "object") {
+    return THEME_VARIABLE_KEYS.reduce((acc, key) => {
+      acc[key] = { light: "#000000", dark: "#ffffff" };
+      return acc;
+    }, {} as ColorTheme);
+  }
+  const parsed = raw as Record<string, unknown>;
+
+  return THEME_VARIABLE_KEYS.reduce((acc, key) => {
+    const candidate = parsed[key] as
+      | { light?: unknown; dark?: unknown; label?: unknown }
+      | undefined;
+    acc[key] = {
+      light:
+        candidate && typeof candidate.light === "string"
+          ? candidate.light
+          : "#000000",
+      dark:
+        candidate && typeof candidate.dark === "string"
+          ? candidate.dark
+          : "#ffffff",
+    };
+    return acc;
+  }, {} as ColorTheme);
+})();
 
 const normalizeColorTheme = (raw: unknown): ColorTheme => {
   const parsed =
@@ -572,10 +601,35 @@ type NavigationStyle =
       variant: BottomVariant;
     };
 
-const DEFAULT_NAVIGATION_STYLE: NavigationStyle = {
-  type: "drawer",
-  variant: "all",
-};
+const DEFAULT_NAVIGATION_STYLE: NavigationStyle = (() => {
+  const raw = (prebuiltSourceConfig as Record<string, unknown>).navigation;
+  if (!raw || typeof raw !== "object")
+    return { type: "drawer" as const, variant: "all" as const };
+  const nav = raw as Record<string, unknown>;
+  const style = nav.navigationStyle;
+  if (!style || typeof style !== "object")
+    return { type: "drawer" as const, variant: "all" as const };
+  const s = style as Record<string, unknown>;
+  if (s.type === "drawer") {
+    return {
+      type: "drawer" as const,
+      variant:
+        s.variant === "short" || s.variant === "long" || s.variant === "all"
+          ? s.variant
+          : ("all" as const),
+    };
+  }
+  if (s.type === "bottom") {
+    return {
+      type: "bottom" as const,
+      variant:
+        s.variant === "short" || s.variant === "long"
+          ? s.variant
+          : ("short" as const),
+    };
+  }
+  return { type: "drawer" as const, variant: "all" as const };
+})();
 
 const API_REQUEST_METHODS: ApiRequestMethod[] = [
   "GET",
@@ -635,12 +689,12 @@ const getSafeApiComponentConfig = (
       }
     : createDefaultApiComponentConfig();
 
-const PREBUILT_SOURCE = prebuiltSourceConfig as AppgenPrebuiltSourceConfig;
+const APP_CONFIG = prebuiltSourceConfig as AppgenConfigFile;
 
 const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = Array.isArray(
-  PREBUILT_SOURCE.components,
+  APP_CONFIG.prebuilt?.components,
 )
-  ? PREBUILT_SOURCE.components
+  ? (APP_CONFIG.prebuilt?.components as unknown[])
       .map((component, index) => {
         if (!component || typeof component !== "object") return null;
         const entry = component as Record<string, unknown>;
@@ -673,9 +727,9 @@ const DEFAULT_SETTING_COMPONENTS: SettingComponentDefinition[] = Array.isArray(
   : [];
 
 const PREBUILT_SOURCE_PAGES: ExportedPrebuiltPage[] = Array.isArray(
-  PREBUILT_SOURCE.pages,
+  APP_CONFIG.prebuilt?.pages,
 )
-  ? PREBUILT_SOURCE.pages
+  ? (APP_CONFIG.prebuilt?.pages as unknown[])
       .map((page) => {
         if (!page || typeof page !== "object") return null;
         const entry = page as Record<string, unknown>;
@@ -696,15 +750,6 @@ const PREBUILT_SOURCE_PAGES: ExportedPrebuiltPage[] = Array.isArray(
 
 const PREBUILT_PAGES_FROM_SOURCE: AppPage[] = [];
 
-const getFallbackSettingComponent = (
-  type: SettingComponentType,
-): SettingComponentDefinition => ({
-  id: `component-type-${type}`,
-  type,
-  label: type.charAt(0).toUpperCase() + type.slice(1),
-  kind: "prebuilt",
-});
-
 export type {
   ComponentElement,
   ComponentStyles,
@@ -713,26 +758,30 @@ export type {
 };
 
 export const PREBUILT_ELEMENTS: PrebuiltElementDef[] = Array.isArray(
-  PREBUILT_SOURCE.elements,
+  APP_CONFIG.prebuilt?.elements,
 )
-  ? PREBUILT_SOURCE.elements
+  ? (APP_CONFIG.prebuilt?.elements as PrebuiltElementDef[])
       .filter((element): element is PrebuiltElementDef =>
         Boolean(
           element &&
           typeof element === "object" &&
-          typeof (element as { id?: unknown }).id === "string",
+          (typeof (element as { id?: unknown }).id === "string" ||
+            typeof (element as { elementTypeId?: unknown }).elementTypeId ===
+              "string"),
         ),
       )
-      .map((element) => ({ ...element }))
+      .map((element) => ({
+        ...element,
+        id:
+          (element as { id?: string }).id ??
+          ((element as { elementTypeId?: string })
+            .elementTypeId as ElementTypeId),
+      }))
   : [];
 
 const ELEMENT_TYPE_IDS = new Set<string>([
   ...PREBUILT_ELEMENTS.map((e) => e.id),
-  "element-horizontal-container",
-  "element-vertical-container",
 ]);
-
-const DEFAULT_IMAGE_SRC = "https://placehold.co/600x400";
 
 const clampComponentSpacing = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
@@ -792,14 +841,12 @@ const getDefaultToggleStyles = (): ToggleElementStyles => {
 
 const getDefaultButtonLabel = (): string => {
   const label = getPrebuiltElementDef("element-button")?.buttonLabel;
-  return typeof label === "string" && label.trim().length > 0
-    ? label
-    : "Button";
+  return typeof label === "string" ? label : "";
 };
 
 const getDefaultButtonHighlightOnHover = (): boolean => {
   const value = getPrebuiltElementDef("element-button")?.highlightOnHover;
-  return typeof value === "boolean" ? value : true;
+  return Boolean(value);
 };
 
 const getDefaultButtonIsGhost = (): boolean => {
@@ -865,14 +912,10 @@ const getDefaultSelectStyles = (): SelectElementStyles => ({
 
 const getDefaultSelectValues = (): string[] => {
   const values = getPrebuiltElementDef("element-select")?.values;
-  if (!Array.isArray(values) || values.length === 0) {
-    return ["Value One", "Value Two"];
-  }
-
-  return values.map((value, index) =>
-    typeof value === "string" && value.trim().length > 0
-      ? value
-      : `Value ${index + 1}`,
+  if (!Array.isArray(values)) return [];
+  return values.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
   );
 };
 
@@ -897,7 +940,7 @@ const getDefaultTextInputStyles = (): TextInputElementStyles => {
 
 const getDefaultIconValue = (): string => {
   const value = getPrebuiltElementDef("element-icon")?.value;
-  return typeof value === "string" && value.trim().length > 0 ? value : "Home";
+  return typeof value === "string" ? value : "";
 };
 
 const getDefaultIconStyles = (): IconElementStyles => {
@@ -978,7 +1021,12 @@ const normalizeElementFlex = (value: unknown): number | null => {
   return null;
 };
 
-const DEFAULT_CONTAINER_MAX_DIMENSION = 4096;
+const DEFAULT_CONTAINER_MAX_DIMENSION = (() => {
+  const styles = getPrebuiltElementDef("element-container")?.styles;
+  const raw = (styles as Record<string, unknown> | undefined)?.maxWidth;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  return 4096;
+})();
 
 function getDefaultElementSpacingStyles(): ElementSpacingStyles {
   return {
@@ -1171,7 +1219,7 @@ const getExplicitElementSpacingJson = (
 
 const clampContainerBorderRadius = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return 8;
+  if (!Number.isFinite(parsed)) return 0;
   return Math.max(0, Math.min(64, Math.round(parsed)));
 };
 
@@ -1273,7 +1321,7 @@ export const resolveThemeColor = (
 
 const suggestDarkFromLight = (lightHex: string): string => {
   const rgba = hexToRgba(lightHex);
-  if (!rgba) return "#1a1a2e";
+  if (!rgba) return lightHex;
   const r = Math.min(255, Math.round(rgba.r * 0.35 + 10));
   const g = Math.min(255, Math.round(rgba.g * 0.35 + 10));
   const b = Math.min(255, Math.round(rgba.b * 0.35 + 20));
@@ -1282,7 +1330,7 @@ const suggestDarkFromLight = (lightHex: string): string => {
 
 const suggestLightFromDark = (darkHex: string): string => {
   const rgba = hexToRgba(darkHex);
-  if (!rgba) return "#f0f4ff";
+  if (!rgba) return darkHex;
   const r = Math.min(255, Math.round(rgba.r + (255 - rgba.r) * 0.72));
   const g = Math.min(255, Math.round(rgba.g + (255 - rgba.g) * 0.72));
   const b = Math.min(255, Math.round(rgba.b + (255 - rgba.b) * 0.72));
@@ -1323,56 +1371,84 @@ const normalizeFlexAlignItems = (
   return fallback;
 };
 
-const getDefaultComponentStyles = (): ComponentStyles => ({
-  direction: "horizontal",
-  justifyContent: "space-between",
-  alignItems: "start",
-  overflowScroll: false,
-  overflowXScroll: false,
-  overflowYScroll: false,
-  gap: 0,
-  minWidth: 0,
-  maxWidth: DEFAULT_CONTAINER_MAX_DIMENSION,
-  minHeight: 0,
-  maxHeight: DEFAULT_CONTAINER_MAX_DIMENSION,
-  paddingX: 0,
-  paddingY: 0,
-  marginX: 0,
-  marginY: 0,
-  paddingTop: 0,
-  paddingBottom: 0,
-  paddingLeft: 0,
-  paddingRight: 0,
-  marginTop: 0,
-  marginBottom: 0,
-  marginLeft: 0,
-  marginRight: 0,
-  backgroundColor: "$background",
-  borderColor: "$border",
-  borderRadius: 8,
-  borderWidth: 0,
-});
+const getDefaultComponentStyles = (): ComponentStyles => {
+  const raw = getPrebuiltElementDef("element-container")?.styles;
+  const styles = raw as Record<string, unknown> | undefined;
+  const flexDir =
+    styles?.flexDirection === "row" || styles?.flexDirection === "column"
+      ? styles.flexDirection
+      : "row";
+  return {
+    direction: flexDir === "row" ? "horizontal" : "vertical",
+    justifyContent: normalizeFlexJustifyContent(
+      styles?.justifyContent,
+      "start",
+    ),
+    alignItems: normalizeFlexAlignItems(
+      styles?.alignItems,
+      styles?.alignment === "start" ||
+        styles?.alignment === "center" ||
+        styles?.alignment === "end"
+        ? styles.alignment
+        : "start",
+    ),
+    overflowScroll: Boolean(styles?.overflowScroll),
+    overflowXScroll: false,
+    overflowYScroll: false,
+    gap: clampFlexGap(styles?.gap),
+    minWidth: clampContainerDimension(styles?.minWidth),
+    maxWidth:
+      clampContainerDimension(styles?.maxWidth) ||
+      DEFAULT_CONTAINER_MAX_DIMENSION,
+    minHeight: clampContainerDimension(styles?.minHeight),
+    maxHeight:
+      clampContainerDimension(styles?.maxHeight) ||
+      DEFAULT_CONTAINER_MAX_DIMENSION,
+    paddingX: clampComponentSpacing(
+      styles?.paddingX ?? styles?.paddingLeft ?? 0,
+    ),
+    paddingY: clampComponentSpacing(
+      styles?.paddingY ?? styles?.paddingTop ?? 0,
+    ),
+    marginX: clampComponentSpacing(styles?.marginX ?? styles?.marginLeft ?? 0),
+    marginY: clampComponentSpacing(styles?.marginY ?? styles?.marginTop ?? 0),
+    paddingTop: clampComponentSpacing(
+      styles?.paddingTop ?? styles?.paddingY ?? 0,
+    ),
+    paddingBottom: clampComponentSpacing(
+      styles?.paddingBottom ?? styles?.paddingY ?? 0,
+    ),
+    paddingLeft: clampComponentSpacing(
+      styles?.paddingLeft ?? styles?.paddingX ?? 0,
+    ),
+    paddingRight: clampComponentSpacing(
+      styles?.paddingRight ?? styles?.paddingX ?? 0,
+    ),
+    marginTop: clampComponentSpacing(styles?.marginTop ?? styles?.marginY ?? 0),
+    marginBottom: clampComponentSpacing(
+      styles?.marginBottom ?? styles?.marginY ?? 0,
+    ),
+    marginLeft: clampComponentSpacing(
+      styles?.marginLeft ?? styles?.marginX ?? 0,
+    ),
+    marginRight: clampComponentSpacing(
+      styles?.marginRight ?? styles?.marginX ?? 0,
+    ),
+    backgroundColor: normalizeThemeAwareColor(
+      styles?.backgroundColor,
+      "$background",
+    ),
+    borderColor: normalizeThemeAwareColor(styles?.borderColor, "$border"),
+    borderRadius: clampContainerBorderRadius(styles?.borderRadius),
+    borderWidth: clampContainerBorderWidth(styles?.borderWidth),
+  };
+};
 
 const getDefaultPageStyles = (): ComponentStyles => ({
   ...getDefaultComponentStyles(),
   direction: "vertical",
   justifyContent: "start",
   alignItems: "center",
-  overflowXScroll: false,
-  overflowYScroll: true,
-  gap: 8,
-  paddingX: 20,
-  paddingY: 20,
-  paddingTop: 20,
-  paddingBottom: 20,
-  paddingLeft: 20,
-  paddingRight: 20,
-  marginX: 0,
-  marginY: 0,
-  marginTop: 0,
-  marginBottom: 0,
-  marginLeft: 0,
-  marginRight: 0,
 });
 
 const toUrlSlug = (value: string): string =>
@@ -1398,8 +1474,13 @@ const getDefaultPageUrl = (title: string, id: string): string => {
 };
 
 const getDefaultContainerStyles = (): ContainerElementStyles => {
-  const styles = getPrebuiltElementDef("element-vertical-container")?.styles;
+  const raw = getPrebuiltElementDef("element-container")?.styles;
+  const styles = raw as Record<string, unknown> | undefined;
   return {
+    flexDirection:
+      styles?.flexDirection === "row" || styles?.flexDirection === "column"
+        ? styles.flexDirection
+        : "column",
     justifyContent: normalizeFlexJustifyContent(
       styles?.justifyContent,
       "start",
@@ -1412,22 +1493,29 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
         ? styles.alignment
         : "start",
     ),
-    overflowScroll: false,
+    overflowScroll: Boolean(styles?.overflowScroll),
     gap: clampFlexGap(styles?.gap),
-    minWidth: 0,
-    maxWidth: DEFAULT_CONTAINER_MAX_DIMENSION,
-    minHeight: 0,
-    maxHeight: DEFAULT_CONTAINER_MAX_DIMENSION,
-    paddingTop: 0,
-    paddingBottom: 0,
-    paddingLeft: 0,
-    paddingRight: 0,
-    marginTop: 0,
-    marginBottom: 0,
-    marginLeft: 0,
-    marginRight: 0,
-    backgroundColor: normalizeHexColor(styles?.backgroundColor, "#ffffff00"),
-    borderColor: normalizeHexColor(styles?.borderColor, "#d4d4d8"),
+    minWidth: clampContainerDimension(styles?.minWidth),
+    maxWidth:
+      clampContainerDimension(styles?.maxWidth) ||
+      DEFAULT_CONTAINER_MAX_DIMENSION,
+    minHeight: clampContainerDimension(styles?.minHeight),
+    maxHeight:
+      clampContainerDimension(styles?.maxHeight) ||
+      DEFAULT_CONTAINER_MAX_DIMENSION,
+    paddingTop: clampComponentSpacing(styles?.paddingTop ?? 0),
+    paddingBottom: clampComponentSpacing(styles?.paddingBottom ?? 0),
+    paddingLeft: clampComponentSpacing(styles?.paddingLeft ?? 0),
+    paddingRight: clampComponentSpacing(styles?.paddingRight ?? 0),
+    marginTop: clampComponentSpacing(styles?.marginTop ?? 0),
+    marginBottom: clampComponentSpacing(styles?.marginBottom ?? 0),
+    marginLeft: clampComponentSpacing(styles?.marginLeft ?? 0),
+    marginRight: clampComponentSpacing(styles?.marginRight ?? 0),
+    backgroundColor: normalizeThemeAwareColor(
+      styles?.backgroundColor,
+      "$background",
+    ),
+    borderColor: normalizeThemeAwareColor(styles?.borderColor, "$border"),
     borderRadius: clampContainerBorderRadius(styles?.borderRadius),
     borderWidth: clampContainerBorderWidth(styles?.borderWidth),
   };
@@ -1435,21 +1523,17 @@ const getDefaultContainerStyles = (): ContainerElementStyles => {
 
 const getDefaultImageSrc = (): string => {
   const src = getPrebuiltElementDef("element-image")?.src;
-  return typeof src === "string" && src.trim().length > 0
-    ? src
-    : DEFAULT_IMAGE_SRC;
+  return typeof src === "string" ? src : "";
 };
 
 const normalizeSelectValues = (rawValues: unknown): string[] => {
-  const fallbackValues = getDefaultSelectValues();
   if (!Array.isArray(rawValues)) {
-    return fallbackValues;
+    return getDefaultSelectValues();
   }
 
-  return rawValues.map((value, index) =>
-    typeof value === "string" && value.trim().length > 0
-      ? value
-      : (fallbackValues[index] ?? `Value ${index + 1}`),
+  return rawValues.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
   );
 };
 
@@ -1459,10 +1543,7 @@ export const normalizeElementFromRaw = (
   if (!raw || typeof raw !== "object") return null;
 
   const entry = raw as Record<string, unknown>;
-  const elementTypeId =
-    entry.elementTypeId === "element-container"
-      ? "element-vertical-container"
-      : entry.elementTypeId;
+  const elementTypeId = entry.elementTypeId;
   if (
     typeof elementTypeId !== "string" ||
     !ELEMENT_TYPE_IDS.has(elementTypeId)
@@ -1700,8 +1781,7 @@ export const normalizeElementFromRaw = (
             : getDefaultImageSrc(),
       };
     }
-    case "element-horizontal-container":
-    case "element-vertical-container": {
+    case "element-container": {
       const rawStyles =
         entry.styles && typeof entry.styles === "object"
           ? (entry.styles as Record<string, unknown>)
@@ -1718,6 +1798,11 @@ export const normalizeElementFromRaw = (
               .filter((child): child is ComponentElement => Boolean(child))
           : [],
         styles: {
+          flexDirection:
+            rawStyles.flexDirection === "row" ||
+            rawStyles.flexDirection === "column"
+              ? rawStyles.flexDirection
+              : defaultStyles.flexDirection,
           justifyContent: normalizeFlexJustifyContent(
             rawStyles.justifyContent ?? entry.justifyContent,
             defaultStyles.justifyContent,
@@ -2022,11 +2107,10 @@ const createDefaultComponentElement = (
         styles: getDefaultImageStyles(),
         src: getDefaultImageSrc(),
       };
-    case "element-horizontal-container":
-    case "element-vertical-container":
+    case "element-container":
       return {
         instanceId,
-        elementTypeId: typeId,
+        elementTypeId: "element-container",
         elements: [],
         styles: getDefaultContainerStyles(),
       };
@@ -2171,22 +2255,19 @@ const formatJsxStyleBlock = (
 export const isTransparentHex = (value: string): boolean =>
   /^#(?:0000|ffffff00)$/i.test(value);
 
-const getDirectionFromContainerType = (
-  typeId: ContainerComponentElement["elementTypeId"],
+const getDirectionFromContainer = (
+  element: ContainerComponentElement,
 ): ComponentDirection =>
-  typeId === "element-horizontal-container" ? "horizontal" : "vertical";
+  element.styles.flexDirection === "row" ? "horizontal" : "vertical";
 
 const getOppositeDirection = (
   direction: ComponentDirection,
 ): ComponentDirection =>
   direction === "horizontal" ? "vertical" : "horizontal";
 
-const getContainerTypeFromDirection = (
+const getFlexDirectionFromComponentDirection = (
   direction: ComponentDirection,
-): ContainerComponentElement["elementTypeId"] =>
-  direction === "horizontal"
-    ? "element-horizontal-container"
-    : "element-vertical-container";
+): "row" | "column" => (direction === "horizontal" ? "row" : "column");
 
 export const elementNeedsFullWidth = (element: ComponentElement): boolean => {
   if (isContainerElement(element)) return false; // containers handle their own sizing
@@ -2209,8 +2290,7 @@ export const elementNeedsFullWidth = (element: ComponentElement): boolean => {
 export const isContainerElement = (
   element: ComponentElement,
 ): element is ContainerComponentElement =>
-  element.elementTypeId === "element-vertical-container" ||
-  element.elementTypeId === "element-horizontal-container";
+  element.elementTypeId === "element-container";
 
 const updateElementTree = (
   elements: ComponentElement[],
@@ -2332,22 +2412,37 @@ const getElementByInstanceId = (
   return null;
 };
 
-const DEFAULT_CONFIG: AppConfig = {
-  id: crypto.randomUUID(),
-  appName: "",
-  components: DEFAULT_SETTING_COMPONENTS,
-  customComponents: [],
-  navigation: {
-    shown: true,
-    navigationLabel: "",
-    showNavigationHeader: true,
-    headerMenuIconName: "Menu",
-    headerBackIconName: "ArrowLeft",
-    navigationStyle: DEFAULT_NAVIGATION_STYLE,
-    navigationPages: [],
-  },
-  pages: [],
-};
+const DEFAULT_CONFIG: AppConfig = (() => {
+  const raw = (prebuiltSourceConfig as Record<string, unknown>).navigation;
+  const nav =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    id: crypto.randomUUID(),
+    appName: "",
+    components: [],
+    colorTheme: DEFAULT_COLOR_THEME,
+    navigation: {
+      shown: typeof nav.shown === "boolean" ? nav.shown : true,
+      navigationLabel:
+        typeof nav.navigationLabel === "string" ? nav.navigationLabel : "",
+      showNavigationHeader:
+        typeof nav.showNavigationHeader === "boolean"
+          ? nav.showNavigationHeader
+          : true,
+      headerMenuIconName:
+        typeof nav.headerMenuIconName === "string"
+          ? nav.headerMenuIconName
+          : "",
+      headerBackIconName:
+        typeof nav.headerBackIconName === "string"
+          ? nav.headerBackIconName
+          : "",
+      navigationStyle: DEFAULT_NAVIGATION_STYLE,
+      navigationPages: [],
+    },
+    pages: [],
+  };
+})();
 
 const normalizeConfig = (input: unknown): AppConfig => {
   if (!input || typeof input !== "object") return DEFAULT_CONFIG;
@@ -2369,7 +2464,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
       items?: unknown;
     };
     components?: unknown;
-    customComponents?: unknown;
+    colorTheme?: unknown;
   };
 
   const componentsRaw = maybeConfig.components;
@@ -2378,7 +2473,6 @@ const normalizeConfig = (input: unknown): AppConfig => {
     typeof componentsRaw === "object" &&
     !Array.isArray(componentsRaw)
       ? (componentsRaw as {
-          settingComponentTypes?: unknown;
           navigation?: {
             shown?: unknown;
             navigationHeader?: unknown;
@@ -2395,116 +2489,8 @@ const normalizeConfig = (input: unknown): AppConfig => {
             pages?: unknown;
             items?: unknown;
           };
-          settings?: {
-            items?: unknown;
-          };
         })
       : undefined;
-
-  const settingComponentTypesRaw =
-    legacyComponentsObject?.settingComponentTypes;
-
-  const defaultComponentByType = (type: SettingComponentType) =>
-    DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type) ??
-    getFallbackSettingComponent(type);
-
-  const parseSettingComponent = (
-    raw: unknown,
-    fallbackType: SettingComponentType,
-  ): SettingComponentDefinition => {
-    const fallback = defaultComponentByType(fallbackType);
-    if (!raw || typeof raw !== "object") {
-      return fallback;
-    }
-
-    const entry = raw as {
-      id?: unknown;
-      type?: unknown;
-      label?: unknown;
-      kind?: unknown;
-    };
-
-    const type =
-      entry.type === "toggle" ||
-      entry.type === "input" ||
-      entry.type === "select" ||
-      entry.type === "header"
-        ? entry.type
-        : fallbackType;
-
-    return {
-      id:
-        typeof entry.id === "string" && entry.id.trim().length > 0
-          ? entry.id
-          : fallback.id,
-      type,
-      label:
-        typeof entry.label === "string" && entry.label.trim().length > 0
-          ? entry.label
-          : defaultComponentByType(type).label,
-      kind: "prebuilt",
-    };
-  };
-
-  const componentsFromArray = Array.isArray(componentsRaw)
-    ? componentsRaw
-        .map((entry) => {
-          if (!entry || typeof entry !== "object") return null;
-
-          const maybeType = (entry as { type?: unknown }).type;
-          if (
-            maybeType !== "toggle" &&
-            maybeType !== "input" &&
-            maybeType !== "select" &&
-            maybeType !== "header"
-          ) {
-            return null;
-          }
-
-          return parseSettingComponent(entry, maybeType);
-        })
-        .filter((entry): entry is SettingComponentDefinition => Boolean(entry))
-    : [];
-
-  const componentsFromLegacyMap =
-    settingComponentTypesRaw && typeof settingComponentTypesRaw === "object"
-      ? (["toggle", "input", "select", "header"] as const).map((type) =>
-          parseSettingComponent(
-            (settingComponentTypesRaw as Record<SettingComponentType, unknown>)[
-              type
-            ],
-            type,
-          ),
-        )
-      : [];
-
-  const dedupeAndEnsureTypes = (
-    components: SettingComponentDefinition[],
-  ): SettingComponentDefinition[] => {
-    const byType = new Map<SettingComponentType, SettingComponentDefinition>();
-    for (const component of components) {
-      if (!byType.has(component.type)) {
-        byType.set(component.type, {
-          ...component,
-          kind: "prebuilt",
-        });
-      }
-    }
-
-    return (["toggle", "input", "select", "header"] as const).map(
-      (type) => byType.get(type) ?? defaultComponentByType(type),
-    );
-  };
-
-  const normalizedComponents = dedupeAndEnsureTypes(
-    componentsFromArray.length > 0
-      ? componentsFromArray
-      : componentsFromLegacyMap,
-  );
-
-  const getComponentIdForType = (type: SettingComponentType) =>
-    normalizedComponents.find((component) => component.type === type)?.id ??
-    defaultComponentByType(type).id;
 
   const navRoot =
     maybeConfig.navigation ??
@@ -2551,7 +2537,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
           icon?: unknown;
         };
 
-        let normalizedIcon: NavPage["icon"] = { name: "Home" };
+        let normalizedIcon: NavPage["icon"] = { name: "" };
         if (typeof page.icon === "string") {
           normalizedIcon = {
             name: normalizeLucideIconName(page.icon),
@@ -2569,13 +2555,13 @@ const normalizeConfig = (input: unknown): AppConfig => {
             name:
               typeof iconObj.name === "string" && iconObj.name.trim().length > 0
                 ? normalizeLucideIconName(iconObj.name)
-                : "Home",
+                : "",
           };
         }
 
         return {
           id: page.id || crypto.randomUUID(),
-          title: typeof page.title === "string" ? page.title : "Untitled",
+          title: typeof page.title === "string" ? page.title : "",
           link: typeof page.link === "string" ? page.link : "#",
           pageId:
             typeof page.pageId === "string" && page.pageId.trim().length > 0
@@ -2628,7 +2614,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
     const pageTitle =
       typeof page.title === "string" && page.title.trim().length > 0
         ? page.title
-        : "Untitled";
+        : "";
     const resolvedUrl =
       typeof page.url === "string"
         ? page.url
@@ -2817,6 +2803,8 @@ const normalizeConfig = (input: unknown): AppConfig => {
       if (!entry || typeof entry !== "object") return [];
       const comp = entry as Record<string, unknown>;
       if (typeof comp.label !== "string" || !comp.label.trim()) return [];
+      // Reject SettingComponentDefinition entries (legacy stored data)
+      if (comp.kind === "prebuilt" || typeof comp.type === "string") return [];
       const rawStyles =
         comp.styles && typeof comp.styles === "object"
           ? (comp.styles as Record<string, unknown>)
@@ -2929,8 +2917,8 @@ const normalizeConfig = (input: unknown): AppConfig => {
   return {
     id: maybeConfig.id || crypto.randomUUID(),
     appName: typeof maybeConfig.appName === "string" ? maybeConfig.appName : "",
-    components: normalizedComponents,
-    customComponents: normalizeCustomComponents(maybeConfig.customComponents),
+    components: normalizeCustomComponents(maybeConfig.components),
+    colorTheme: normalizeColorTheme(maybeConfig.colorTheme),
     navigation: {
       shown: typeof navRoot?.shown === "boolean" ? navRoot.shown : true,
       navigationLabel:
@@ -2957,7 +2945,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
           ? String(
               (navRoot as { headerMenuIconName?: unknown }).headerMenuIconName,
             )
-          : "Menu",
+          : "",
       headerBackIconName:
         typeof (navRoot as { headerBackIconName?: unknown })
           ?.headerBackIconName === "string" &&
@@ -2967,7 +2955,7 @@ const normalizeConfig = (input: unknown): AppConfig => {
           ? String(
               (navRoot as { headerBackIconName?: unknown }).headerBackIconName,
             )
-          : "ArrowLeft",
+          : "",
       navigationStyle: normalizedNavStyle,
       navigationPages: navPages,
     },
@@ -2976,7 +2964,6 @@ const normalizeConfig = (input: unknown): AppConfig => {
 };
 
 function App() {
-  const NAVIGATION_RESET_STORAGE_KEY = "app-navigation-pages-reset-v1";
   const [config, setConfig] = useState<AppConfig>(() => {
     const persisted = localStorage.getItem("app-config");
     if (!persisted) return DEFAULT_CONFIG;
@@ -2987,32 +2974,6 @@ function App() {
       return DEFAULT_CONFIG;
     }
   });
-
-  useEffect(() => {
-    const hasAppliedReset =
-      localStorage.getItem(NAVIGATION_RESET_STORAGE_KEY) === "1";
-
-    if (hasAppliedReset) {
-      return;
-    }
-
-    setConfig((current) => {
-      const base = current || DEFAULT_CONFIG;
-      if (base.navigation.navigationPages.length === 0) {
-        return base;
-      }
-
-      return {
-        ...base,
-        navigation: {
-          ...base.navigation,
-          navigationPages: [],
-        },
-      };
-    });
-
-    localStorage.setItem(NAVIGATION_RESET_STORAGE_KEY, "1");
-  }, [NAVIGATION_RESET_STORAGE_KEY]);
 
   const [appNameDraft, setAppNameDraft] = useState<string>(
     () => config.appName,
@@ -3036,15 +2997,19 @@ function App() {
   const [colorDraftBlue, setColorDraftBlue] = useState(0);
   const [colorDraftAlpha, setColorDraftAlpha] = useState(255);
   const [activeTab, setActiveTab] = useState<ActiveTab>("navigation");
-  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
-    const persisted = localStorage.getItem("app-color-theme");
-    if (!persisted) return DEFAULT_COLOR_THEME;
-    try {
-      return normalizeColorTheme(JSON.parse(persisted));
-    } catch {
-      return DEFAULT_COLOR_THEME;
-    }
-  });
+  const colorTheme = config.colorTheme;
+  const setColorTheme = (
+    themeOrUpdater: ColorTheme | ((current: ColorTheme) => ColorTheme),
+  ) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const next =
+        typeof themeOrUpdater === "function"
+          ? themeOrUpdater(base.colorTheme)
+          : themeOrUpdater;
+      return { ...base, colorTheme: next };
+    });
+  };
   const [themePreviewMode, setThemePreviewMode] =
     useState<ThemePreviewMode>("light");
   const [selectedPageId, setSelectedPageId] = useState("");
@@ -3119,9 +3084,7 @@ function App() {
   const apiResponseJsonDraftTimeoutRef = useRef<number | null>(null);
   const apiResponsePersistTimeoutRef = useRef<number | null>(null);
   const hasInitializedConfigAutosave = useRef(false);
-  const hasInitializedThemeAutosave = useRef(false);
   const latestConfigRef = useRef(config);
-  const latestThemeRef = useRef(colorTheme);
 
   const getAutosaveErrorMessage = (error: unknown) => {
     if (error instanceof Error && error.message.trim().length > 0) {
@@ -3135,23 +3098,14 @@ function App() {
     localStorage.setItem("app-config", JSON.stringify(value));
   };
 
-  const persistThemeToLocalStorage = (value: ColorTheme) => {
-    localStorage.setItem("app-color-theme", JSON.stringify(value));
-  };
-
   useEffect(() => {
     latestConfigRef.current = config;
   }, [config]);
 
   useEffect(() => {
-    latestThemeRef.current = colorTheme;
-  }, [colorTheme]);
-
-  useEffect(() => {
     const flushPendingAutosave = () => {
       try {
         persistConfigToLocalStorage(latestConfigRef.current);
-        persistThemeToLocalStorage(latestThemeRef.current);
       } catch {
         // Ignore unload-time persistence errors.
       }
@@ -3183,24 +3137,6 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [config]);
-
-  useEffect(() => {
-    if (!hasInitializedThemeAutosave.current) {
-      hasInitializedThemeAutosave.current = true;
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      try {
-        persistThemeToLocalStorage(colorTheme);
-        toast.success("Changes saved");
-      } catch (error) {
-        toast.error(`Changes weren't saved: ${getAutosaveErrorMessage(error)}`);
-      }
-    }, 1000);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [colorTheme]);
 
   const resolveColor = (color: string): string =>
     resolveThemeColor(color, colorTheme, themePreviewMode);
@@ -3260,13 +3196,13 @@ function App() {
       parentPageId: page.parentPageId,
       kind: page.kind,
     }));
-  const customComponents = Array.isArray(safeConfig.customComponents)
-    ? safeConfig.customComponents
+  const customComponents = Array.isArray(safeConfig.components)
+    ? safeConfig.components
     : [];
   const prebuiltLibraryComponents = useMemo(
     () =>
-      Array.isArray(PREBUILT_SOURCE.components)
-        ? PREBUILT_SOURCE.components
+      Array.isArray(APP_CONFIG.prebuilt?.components)
+        ? (APP_CONFIG.prebuilt?.components as unknown[])
             .map((component) => normalizeComponentFromRaw(component))
             .filter(
               (component): component is AppComponent => component !== null,
@@ -3346,10 +3282,6 @@ function App() {
       id: component.id,
       label: component.label,
     }),
-  );
-  const fallbackComponent = useMemo(
-    () => createDefaultComponent("Main Component"),
-    [],
   );
   const selectedComponent =
     customComponents.find(
@@ -3817,20 +3749,13 @@ function App() {
   };
 
   const exportPrebuiltConfig: ExportPrebuiltConfig = {
-    components: DEFAULT_SETTING_COMPONENTS.map((component) => ({
-      id: component.id,
-      type: component.type,
-      label: component.label,
-    })),
     pages: PREBUILT_SOURCE_PAGES,
     elements: PREBUILT_ELEMENTS,
   };
 
   const getComponentTypeId = (type: SettingComponentType) =>
-    safeConfig.components.find((component) => component.type === type)?.id ??
     DEFAULT_SETTING_COMPONENTS.find((component) => component.type === type)
-      ?.id ??
-    getFallbackSettingComponent(type).id;
+      ?.id ?? "";
 
   useEffect(() => {
     if (pageTitleOptions.length === 0) {
@@ -3992,13 +3917,11 @@ function App() {
   ) => {
     setConfig((current) => {
       const base = current || DEFAULT_CONFIG;
-      const existing = Array.isArray(base.customComponents)
-        ? base.customComponents
-        : [];
+      const existing = Array.isArray(base.components) ? base.components : [];
       const transformed = transform(existing);
       const next = {
         ...base,
-        customComponents: transformed,
+        components: transformed,
       };
 
       latestConfigRef.current = next;
@@ -4169,11 +4092,11 @@ function App() {
           : {
               ...comp,
               elements: (() => {
-                let resolvedTypeId = typeId;
+                const newElement = createDefaultComponentElement(typeId);
 
                 if (
-                  typeId === "element-horizontal-container" ||
-                  typeId === "element-vertical-container"
+                  typeId === "element-container" &&
+                  isContainerElement(newElement)
                 ) {
                   const parentDirection: ComponentDirection | null =
                     parentInstanceId
@@ -4183,9 +4106,7 @@ function App() {
                             parentInstanceId,
                           );
                           return parent && isContainerElement(parent)
-                            ? getDirectionFromContainerType(
-                                parent.elementTypeId,
-                              )
+                            ? getDirectionFromContainer(parent)
                             : null;
                         })()
                       : comp.styles.direction;
@@ -4193,12 +4114,12 @@ function App() {
                   const targetDirection = getOppositeDirection(
                     parentDirection ?? "horizontal",
                   );
-                  resolvedTypeId =
-                    getContainerTypeFromDirection(targetDirection);
+                  newElement.styles = {
+                    ...newElement.styles,
+                    flexDirection:
+                      getFlexDirectionFromComponentDirection(targetDirection),
+                  };
                 }
-
-                const newElement =
-                  createDefaultComponentElement(resolvedTypeId);
 
                 return parentInstanceId
                   ? addChildElementToTree(
@@ -5576,7 +5497,7 @@ function App() {
           title: selectedEditablePage.title,
           link: selectedEditablePage.url,
           pageId: selectedEditablePage.id,
-          icon: { name: "Home" },
+          icon: { name: newLinkIconName.trim() || getDefaultIconValue() },
         },
       ];
     });
@@ -6205,7 +6126,7 @@ ${items}
     }
 
     if (element.elementTypeId === "element-icon") {
-      const iconName = toPascalCase(element.value || "Home") || "Home";
+      const iconName = toPascalCase(element.value) || "CircleAlert";
       const styleBlock = formatJsxStyleBlock(
         getElementSpacingStyleEntries(element.styles),
         indent,
@@ -6226,9 +6147,7 @@ ${items}
       return `${indent}<img\n${indent}  src=${JSON.stringify(element.src)}\n${indent}  alt="preview"\n${indent}  className="rounded border border-border bg-muted"${styleBlock}\n${indent}/>`;
     }
 
-    const containerDirection = getDirectionFromContainerType(
-      element.elementTypeId,
-    );
+    const containerDirection = getDirectionFromContainer(element);
     const containerClasses = [
       "flex",
       containerDirection === "horizontal" ? "flex-row" : "flex-col",
@@ -6356,8 +6275,8 @@ ${items}
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
         flex: element.flex ?? "none",
-        label: element.label ?? "Button",
-        highlightOnHover: element.highlightOnHover ?? true,
+        label: element.label ?? "",
+        highlightOnHover: element.highlightOnHover ?? false,
         isGhost: element.isGhost ?? false,
         styles: {
           ...getExplicitElementSpacingJson(element.styles),
@@ -6411,7 +6330,7 @@ ${items}
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
         flex: element.flex ?? "none",
-        value: element.value ?? "Home",
+        value: element.value ?? "",
         styles: {
           ...getExplicitElementSpacingJson(element.styles),
           alignment: "center",
@@ -6447,15 +6366,13 @@ ${items}
       };
     }
 
-    if (
-      element.elementTypeId === "element-vertical-container" ||
-      element.elementTypeId === "element-horizontal-container"
-    ) {
+    if (isContainerElement(element)) {
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
         flex: element.flex ?? "none",
         styles: {
+          flexDirection: element.styles.flexDirection ?? "column",
           justifyContent: element.styles.justifyContent ?? "start",
           alignItems: element.styles.alignItems ?? "start",
           overflowScroll: element.styles.overflowScroll ?? false,
@@ -6966,9 +6883,7 @@ ${items}
     }
 
     if (isContainerElement(element)) {
-      const containerDirection = getDirectionFromContainerType(
-        element.elementTypeId,
-      );
+      const containerDirection = getDirectionFromContainer(element);
       const overflowStyle = getFlexOverflowStyle(
         containerDirection,
         element.styles.overflowScroll,
@@ -7058,35 +6973,14 @@ ${items}
   };
 
   const getComponentElementLabel = (typeId: ElementTypeId) => {
-    if (typeId === "element-horizontal-container") {
-      return "Horizontal Container";
-    }
-    if (typeId === "element-vertical-container") {
-      return "Vertical Container";
-    }
-
     return (
       PREBUILT_ELEMENTS.find((element) => element.id === typeId)?.label ??
       typeId
     );
   };
 
-  const getAllowedElementOptions = (parentDirection: ComponentDirection) => {
-    const oppositeContainerDirection = getOppositeDirection(parentDirection);
-    const oppositeContainerType = getContainerTypeFromDirection(
-      oppositeContainerDirection,
-    );
-
-    return [
-      ...PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label })),
-      {
-        id: oppositeContainerType as ElementTypeId,
-        label:
-          oppositeContainerType === "element-horizontal-container"
-            ? "Horizontal Container"
-            : "Vertical Container",
-      },
-    ];
+  const getAllowedElementOptions = () => {
+    return PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label }));
   };
 
   const renderComponentElementFields = (
@@ -7724,25 +7618,11 @@ ${items}
       );
     }
 
-    const nestedContainerDirection = getOppositeDirection(
-      getDirectionFromContainerType(element.elementTypeId),
-    );
-    const nestedContainerTypeId = getContainerTypeFromDirection(
-      nestedContainerDirection,
-    );
-    const nestedElementOptions: Array<{ id: ElementTypeId; label: string }> = [
-      ...PREBUILT_ELEMENTS.map((prebuiltElement) => ({
+    const nestedElementOptions: Array<{ id: ElementTypeId; label: string }> =
+      PREBUILT_ELEMENTS.map((prebuiltElement) => ({
         id: prebuiltElement.id,
         label: prebuiltElement.label,
-      })),
-      {
-        id: nestedContainerTypeId,
-        label:
-          nestedContainerTypeId === "element-horizontal-container"
-            ? "Horizontal Container"
-            : "Vertical Container",
-      },
-    ];
+      }));
     const nestedDraftType = nestedElementOptions.some(
       (prebuiltElement) =>
         prebuiltElement.id === containerElementTypeDrafts[element.instanceId],
@@ -10273,9 +10153,7 @@ ${items}
                     }
                   >
                     {(() => {
-                      const topLevelElementOptions = getAllowedElementOptions(
-                        selectedComponent.styles.direction,
-                      );
+                      const topLevelElementOptions = getAllowedElementOptions();
                       const selectedElementType = topLevelElementOptions.some(
                         (option) => option.id === newComponentElementTypeId,
                       )
@@ -11318,29 +11196,108 @@ ${items}
                       <h2 className="text-lg font-semibold font-mono">
                         Component Preview
                       </h2>
-                      <div className="flex items-center gap-2 rounded-md bg-muted p-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            themePreviewMode === "light" ? "default" : "ghost"
-                          }
-                          onClick={() => setThemePreviewMode("light")}
-                          className="gap-1 h-7 text-xs"
-                        >
-                          Light
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            themePreviewMode === "dark" ? "default" : "ghost"
-                          }
-                          onClick={() => setThemePreviewMode("dark")}
-                          className="gap-1 h-7 text-xs"
-                        >
-                          Dark
-                        </Button>
+                      <div className="flex items-center gap-2">
+                        {selectedComponent && (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button type="button" variant="outline" size="sm">
+                                JSON
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="w-screen max-w-[100vw] h-screen max-h-screen rounded-none flex flex-col">
+                              <DialogHeader className="shrink-0">
+                                <DialogTitle className="font-mono">
+                                  Component Preview JSON
+                                </DialogTitle>
+                              </DialogHeader>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    navigator.clipboard
+                                      .writeText(
+                                        JSON.stringify(
+                                          getExplicitComponentJson(
+                                            selectedComponent,
+                                          ),
+                                          null,
+                                          2,
+                                        ),
+                                      )
+                                      .then(() =>
+                                        toast.success(
+                                          "JSON copied to clipboard",
+                                        ),
+                                      )
+                                      .catch(() =>
+                                        toast.error("Failed to copy JSON"),
+                                      );
+                                  }}
+                                >
+                                  Copy JSON
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const json = JSON.stringify(
+                                      getExplicitComponentJson(
+                                        selectedComponent,
+                                      ),
+                                      null,
+                                      2,
+                                    );
+                                    const blob = new Blob([json], {
+                                      type: "application/json",
+                                    });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `${selectedComponent.label || "component"}-preview.json`;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                >
+                                  Download JSON
+                                </Button>
+                              </div>
+                              <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 text-sm font-mono whitespace-pre">
+                                {JSON.stringify(
+                                  getExplicitComponentJson(selectedComponent),
+                                  null,
+                                  2,
+                                )}
+                              </pre>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                        <div className="flex items-center gap-2 rounded-md bg-muted p-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={
+                              themePreviewMode === "light" ? "default" : "ghost"
+                            }
+                            onClick={() => setThemePreviewMode("light")}
+                            className="gap-1 h-7 text-xs"
+                          >
+                            Light
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={
+                              themePreviewMode === "dark" ? "default" : "ghost"
+                            }
+                            onClick={() => setThemePreviewMode("dark")}
+                            className="gap-1 h-7 text-xs"
+                          >
+                            Dark
+                          </Button>
+                        </div>
                       </div>
                     </div>
                     {!selectedComponent ? (

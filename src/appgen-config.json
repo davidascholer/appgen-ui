@@ -58,7 +58,7 @@
             "dark": "#94a3b8"
         }
     },
-    "ui": {
+    "prebuilt": {
         "components": [],
         "pages": [],
         "elements": [
@@ -171,6 +171,7 @@
                 "elements": [],
                 "styles": {
                     "flex": 1,
+                    "flexDirection": "row",
                     "justifyContent": "start",
                     "alignItems": "center",
                     "overflowScroll": false,
@@ -192,5 +193,27 @@
                 }
             }
         ]
+    },
+    "signatures": {
+        "components": {
+            "label": "",
+            "api": {
+                "isApiComponent": false,
+                "request": {
+                    "url": "",
+                    "method": "",
+                    "headers": [],
+                    "body": ""
+                },
+                "response": {
+                    "rawTestData": ""
+                }
+            },
+            "elements": []
+        },
+        "pages": {
+            "label": "",
+            "components": []
+        }
     }
 }
