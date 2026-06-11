@@ -6917,6 +6917,59 @@ ${items}
           )
         : [];
 
+    const previewChildCount =
+      componentApi.isApitComponent &&
+      componentApi.isList &&
+      listItemTemplate &&
+      listItemTemplate.id !== component.id
+        ? listItems.length
+        : component.elements.length;
+
+    const justifyClass = getEffectiveFlexJustifyClass(
+      component.styles.justifyContent,
+      previewChildCount,
+    );
+    const overflowStyle = getFlexOverflowStyle(
+      component.styles.direction,
+      component.styles.overflowScroll,
+    );
+
+    const rootClassName = `flex w-full ${component.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${getFlexWrapClass(component.styles.flexWrap)} ${getFlexAlignItemsClass(component.styles.alignItems)} ${justifyClass}`;
+    const rootStyle = {
+      gap: `${component.styles.gap}px`,
+      minWidth:
+        component.styles.minWidth > 0
+          ? `${component.styles.minWidth}px`
+          : undefined,
+      maxWidth:
+        component.styles.maxWidth > 0
+          ? `${component.styles.maxWidth}px`
+          : undefined,
+      minHeight:
+        component.styles.minHeight > 0
+          ? `${component.styles.minHeight}px`
+          : undefined,
+      maxHeight:
+        component.styles.maxHeight > 0
+          ? `${component.styles.maxHeight}px`
+          : undefined,
+      paddingLeft: `${component.styles.paddingLeft}px`,
+      paddingRight: `${component.styles.paddingRight}px`,
+      paddingTop: `${component.styles.paddingTop}px`,
+      paddingBottom: `${component.styles.paddingBottom}px`,
+      marginLeft: `${component.styles.marginLeft}px`,
+      marginRight: `${component.styles.marginRight}px`,
+      marginTop: `${component.styles.marginTop}px`,
+      marginBottom: `${component.styles.marginBottom}px`,
+      overflowX: overflowStyle.overflowX,
+      overflowY: overflowStyle.overflowY,
+      backgroundColor: resolveColor(component.styles.backgroundColor),
+      borderColor: resolveColor(component.styles.borderColor),
+      borderRadius: `${component.styles.borderRadius}px`,
+      borderWidth: `${component.styles.borderWidth}px`,
+      borderStyle: component.styles.borderWidth > 0 ? "solid" : "none",
+    };
+
     if (
       componentApi.isApitComponent &&
       componentApi.isList &&
@@ -6924,11 +6977,11 @@ ${items}
       listItemTemplate.id !== component.id
     ) {
       return (
-        <div className="w-full">
+        <div className={rootClassName} style={rootStyle}>
           {listItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">No list items found</p>
           ) : (
-            <div className="w-full">
+            <div className="w-full min-w-0">
               {listItems.map((item, index) => (
                 <div key={`${component.id}-list-item-${index}`}>
                   {renderAppComponentPreview(
@@ -6947,53 +7000,8 @@ ${items}
       );
     }
 
-    const justifyClass = getEffectiveFlexJustifyClass(
-      component.styles.justifyContent,
-      component.elements.length,
-    );
-    const overflowStyle = getFlexOverflowStyle(
-      component.styles.direction,
-      component.styles.overflowScroll,
-    );
-
     return (
-      <div
-        className={`flex w-full ${component.styles.direction === "vertical" ? "flex-col" : "flex-row"} ${getFlexWrapClass(component.styles.flexWrap)} ${getFlexAlignItemsClass(component.styles.alignItems)} ${justifyClass}`}
-        style={{
-          gap: `${component.styles.gap}px`,
-          minWidth:
-            component.styles.minWidth > 0
-              ? `${component.styles.minWidth}px`
-              : undefined,
-          maxWidth:
-            component.styles.maxWidth > 0
-              ? `${component.styles.maxWidth}px`
-              : undefined,
-          minHeight:
-            component.styles.minHeight > 0
-              ? `${component.styles.minHeight}px`
-              : undefined,
-          maxHeight:
-            component.styles.maxHeight > 0
-              ? `${component.styles.maxHeight}px`
-              : undefined,
-          paddingLeft: `${component.styles.paddingLeft}px`,
-          paddingRight: `${component.styles.paddingRight}px`,
-          paddingTop: `${component.styles.paddingTop}px`,
-          paddingBottom: `${component.styles.paddingBottom}px`,
-          marginLeft: `${component.styles.marginLeft}px`,
-          marginRight: `${component.styles.marginRight}px`,
-          marginTop: `${component.styles.marginTop}px`,
-          marginBottom: `${component.styles.marginBottom}px`,
-          overflowX: overflowStyle.overflowX,
-          overflowY: overflowStyle.overflowY,
-          backgroundColor: resolveColor(component.styles.backgroundColor),
-          borderColor: resolveColor(component.styles.borderColor),
-          borderRadius: `${component.styles.borderRadius}px`,
-          borderWidth: `${component.styles.borderWidth}px`,
-          borderStyle: component.styles.borderWidth > 0 ? "solid" : "none",
-        }}
-      >
+      <div className={rootClassName} style={rootStyle}>
         {component.elements.length === 0 ? (
           <p className="text-sm text-muted-foreground">Empty component</p>
         ) : (
@@ -8139,6 +8147,39 @@ ${items}
           styles
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Flex</Label>
+            <Select
+              value={
+                element.flex === null || element.flex === undefined
+                  ? "none"
+                  : String(element.flex)
+              }
+              onValueChange={(value) =>
+                updateComponentElementField(componentId, element.instanceId, {
+                  flex: value === "none" ? null : Number(value),
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">none</SelectItem>
+                <SelectItem value="0">0</SelectItem>
+                <SelectItem value="1">1</SelectItem>
+                <SelectItem value="2">2</SelectItem>
+                <SelectItem value="3">3</SelectItem>
+                <SelectItem value="4">4</SelectItem>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="7">7</SelectItem>
+                <SelectItem value="8">8</SelectItem>
+                <SelectItem value="9">9</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label>Justify Content</Label>
             <Select

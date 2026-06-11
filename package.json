@@ -10,6 +10,7 @@
         "lint": "eslint .",
         "optimize": "vite optimize",
         "preview": "vite preview",
+        "verify:list-mode-root-styles": "node scripts/verify-list-mode-root-styles.mjs",
         "prebuilt:styles:sync": "node scripts/prebuilt-styles-sync.mjs",
         "prebuilt:styles:hook": "node scripts/prebuilt-styles-hook.mjs"
     },
