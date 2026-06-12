@@ -60,7 +60,13 @@
                 "dark": "#94a3b8"
             }
         },
-        "fonts": [],
+        "fonts": [
+            {
+                "family": "inter",
+                "weight": "400",
+                "style": "normal"
+            }
+        ],
         "components": [],
         "pages": []
     },
@@ -93,6 +99,11 @@
                     "alignment": "center",
                     "size": 3,
                     "fontWeight": 400,
+                    "font": {
+                        "family": "inter",
+                        "weight": "400",
+                        "style": "normal"
+                    },
                     "isBold": false,
                     "isItalic": false,
                     "isLabel": false,
@@ -131,6 +142,11 @@
                     "alignment": "center",
                     "textColor": "$text",
                     "backgroundColor": "$button",
+                    "font": {
+                        "family": "inter",
+                        "weight": "400",
+                        "style": "normal"
+                    },
                     "highlightColor": "$highlight"
                 }
             },
@@ -148,6 +164,11 @@
                 ],
                 "styles": {
                     "flex": 1,
+                    "font": {
+                        "family": "inter",
+                        "weight": "400",
+                        "style": "normal"
+                    },
                     "textColor": "$text",
                     "backgroundColor": "$secondary",
                     "highlightColor": "$highlight",
@@ -167,6 +188,11 @@
                 ],
                 "styles": {
                     "flex": 1,
+                    "font": {
+                        "family": "inter",
+                        "weight": "400",
+                        "style": "normal"
+                    },
                     "textColor": "$text",
                     "borderColor": "$border",
                     "backgroundColor": "$secondary"
@@ -240,11 +266,6 @@
         ]
     },
     "schemas": {
-        "fonts": {
-            "family": "",
-            "weight": "",
-            "style": ""
-        },
         "components": {
             "label": "",
             "api": {
@@ -259,7 +280,6 @@
                     "rawTestData": ""
                 },
                 "isList": false,
-  
                 "isBordered": false
             },
             "elements": []

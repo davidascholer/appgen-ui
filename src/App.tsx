@@ -232,6 +232,7 @@ interface ElementSpacingStyles {
 interface TextElementStyles extends ElementSpacingStyles {
   alignment: "left" | "center" | "right";
   size: number;
+  font?: FontConfigEntry;
   isBold: boolean;
   isItalic: boolean;
   isLabel: boolean;
@@ -250,14 +251,18 @@ type ButtonWidth = string;
 
 interface ButtonElementStyles extends ElementSpacingStyles {
   width: ButtonWidth;
+  font?: FontConfigEntry;
 }
 
 interface TextInputElementStyles extends ElementSpacingStyles {
   alignment: "left" | "center" | "right";
   width: ButtonWidth;
+  font?: FontConfigEntry;
 }
 
-interface SelectElementStyles extends ElementSpacingStyles {}
+interface SelectElementStyles extends ElementSpacingStyles {
+  font?: FontConfigEntry;
+}
 
 interface ImageElementStyles {
   borderWidth: number;
@@ -489,6 +494,11 @@ interface PrebuiltElementDef {
     borderWidth?: number;
     size?: number;
     fontWeight?: number;
+    font?: {
+      family?: unknown;
+      weight?: unknown;
+      style?: unknown;
+    };
     isBold?: boolean;
     isItalic?: boolean;
     isLabel?: boolean;
@@ -966,6 +976,46 @@ const readElementStringArrayProp = (
   );
 };
 
+const normalizeFontStyleEntry = (
+  raw: unknown,
+  fallback?: FontConfigEntry,
+): FontConfigEntry | undefined => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return fallback;
+  }
+
+  const entry = raw as {
+    family?: unknown;
+    weight?: unknown;
+    style?: unknown;
+  };
+  const family =
+    typeof entry.family === "string" && entry.family.trim().length > 0
+      ? entry.family.trim()
+      : fallback?.family;
+  const weight =
+    typeof entry.weight === "string" && entry.weight.trim().length > 0
+      ? entry.weight.trim()
+      : fallback?.weight;
+  const style: FontStyle | undefined =
+    entry.style === "normal" || entry.style === "italic"
+      ? entry.style
+      : fallback?.style;
+
+  if (!family || !weight || !style) {
+    return fallback;
+  }
+
+  return {
+    family,
+    weight,
+    style,
+  };
+};
+
+const getFontEntryValue = (entry: FontConfigEntry): string =>
+  `${entry.family}__${entry.weight}__${entry.style}`;
+
 const getDefaultTextStyles = (): TextElementStyles => {
   const styles = getPrebuiltElementDef("element-text")?.styles;
   return {
@@ -977,6 +1027,7 @@ const getDefaultTextStyles = (): TextElementStyles => {
         ? styles.alignment
         : "center",
     size: clampTextSize(styles?.size),
+    font: normalizeFontStyleEntry(styles?.font),
     isBold: Boolean(styles?.isBold),
     isItalic: Boolean(styles?.isItalic),
     isLabel: Boolean(styles?.isLabel),
@@ -1164,12 +1215,17 @@ const getDefaultButtonStyles = (): ButtonElementStyles => {
   return {
     ...getDefaultElementSpacingStyles(),
     width: normalizeButtonWidth(styles?.width),
+    font: normalizeFontStyleEntry(styles?.font),
   };
 };
 
-const getDefaultSelectStyles = (): SelectElementStyles => ({
-  ...getDefaultElementSpacingStyles(),
-});
+const getDefaultSelectStyles = (): SelectElementStyles => {
+  const styles = getPrebuiltElementDef("element-select")?.styles;
+  return {
+    ...getDefaultElementSpacingStyles(),
+    font: normalizeFontStyleEntry(styles?.font),
+  };
+};
 
 const getDefaultSelectValues = (): string[] => {
   const values =
@@ -1212,6 +1268,7 @@ const getDefaultTextInputStyles = (): TextInputElementStyles => {
         ? styles.alignment
         : "center",
     width: normalizeButtonWidth(styles?.width),
+    font: normalizeFontStyleEntry(styles?.font),
   };
 };
 
@@ -1886,6 +1943,7 @@ export const normalizeElementFromRaw = (
           size: clampTextSize(
             rawStyles.size ?? entry.size ?? defaultStyles.size,
           ),
+          font: normalizeFontStyleEntry(rawStyles.font, defaultStyles.font),
           isBold: Boolean(
             rawStyles.isBold ?? entry.isBold ?? defaultStyles.isBold,
           ),
@@ -1984,6 +2042,7 @@ export const normalizeElementFromRaw = (
           width: normalizeButtonWidth(
             rawStyles.width ?? entry.width ?? defaultStyles.width,
           ),
+          font: normalizeFontStyleEntry(rawStyles.font, defaultStyles.font),
         },
       };
     }
@@ -2016,7 +2075,10 @@ export const normalizeElementFromRaw = (
         ),
         values,
         defaultLabel,
-        styles: normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
+        styles: {
+          ...normalizeElementSpacingStyles(rawStyles, entry, defaultStyles),
+          font: normalizeFontStyleEntry(rawStyles.font, defaultStyles.font),
+        },
       };
     }
     case "element-text-input": {
@@ -2062,6 +2124,7 @@ export const normalizeElementFromRaw = (
           width: normalizeButtonWidth(
             rawStyles.width ?? entry.width ?? defaultStyles.width,
           ),
+          font: normalizeFontStyleEntry(rawStyles.font, defaultStyles.font),
         },
       };
     }
@@ -3490,6 +3553,18 @@ function App() {
   const selectedFonts: FontConfigEntry[] = Array.isArray(config.fonts)
     ? config.fonts
     : [];
+
+  const savedFontOptions = useMemo(() => {
+    const byKey = new Map<string, FontConfigEntry>();
+    for (const entry of selectedFonts) {
+      const normalized = normalizeFontStyleEntry(entry);
+      if (!normalized) {
+        continue;
+      }
+      byKey.set(getFontEntryValue(normalized), normalized);
+    }
+    return Array.from(byKey.values());
+  }, [selectedFonts]);
 
   const [fontDrafts, setFontDrafts] = useState<
     Record<string, { weight: string; style: FontStyle }>
@@ -6769,6 +6844,7 @@ ${items}
   ): string => {
     if (element.elementTypeId === "element-text") {
       const textValue = readElementStringProp(element, "value", element.value);
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const classes = [
         element.styles.alignment === "left"
           ? "text-left"
@@ -6781,8 +6857,18 @@ ${items}
       const styleBlock = formatJsxStyleBlock(
         [
           ["fontSize", `${0.5 + element.styles.size * 0.125}rem`],
-          ["fontWeight", element.styles.isBold ? 700 : 400],
-          ["fontStyle", element.styles.isItalic ? "italic" : "normal"],
+          [
+            "fontFamily",
+            fontEntry ? `\"${fontEntry.family}\", sans-serif` : undefined,
+          ],
+          [
+            "fontWeight",
+            fontEntry?.weight ?? (element.styles.isBold ? 700 : 400),
+          ],
+          [
+            "fontStyle",
+            fontEntry?.style ?? (element.styles.isItalic ? "italic" : "normal"),
+          ],
           ...getElementSpacingStyleEntries(element.styles),
         ],
         indent,
@@ -6813,10 +6899,17 @@ ${items}
         "buttonLabel",
         element.label,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const buttonStyleBlock = formatJsxStyleBlock(
         [
           ["width", cssWidth === "auto" ? undefined : cssWidth],
+          [
+            "fontFamily",
+            fontEntry ? `\"${fontEntry.family}\", sans-serif` : undefined,
+          ],
+          ["fontWeight", fontEntry?.weight],
+          ["fontStyle", fontEntry?.style],
           ...getElementSpacingStyleEntries(element.styles),
         ],
         `${indent}`,
@@ -6840,14 +6933,26 @@ ${items}
         "defaultLabel",
         element.defaultLabel,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const renderedOptions = (
         options.length > 0 ? options : ["No values"]
       ).map(
         (option, index) =>
           `${indent}      <SelectItem value=${JSON.stringify(String(index))}${options.length === 0 ? " disabled" : ""}>${option}</SelectItem>`,
       );
+      const triggerStyleBlock = formatJsxStyleBlock(
+        [
+          [
+            "fontFamily",
+            fontEntry ? `\"${fontEntry.family}\", sans-serif` : undefined,
+          ],
+          ["fontWeight", fontEntry?.weight],
+          ["fontStyle", fontEntry?.style],
+        ],
+        `${indent}  `,
+      );
 
-      return `${indent}<Select defaultValue=${JSON.stringify(options.length > 0 ? "0" : "")}>\n${indent}  <SelectTrigger className="w-44">\n${indent}    <SelectValue placeholder=${JSON.stringify(defaultLabel || "Select...")} />\n${indent}  </SelectTrigger>\n${indent}  <SelectContent>\n${renderedOptions.join("\n")}\n${indent}  </SelectContent>\n${indent}</Select>`;
+      return `${indent}<Select defaultValue=${JSON.stringify(options.length > 0 ? "0" : "")}>\n${indent}  <SelectTrigger className="w-44"${triggerStyleBlock}>\n${indent}    <SelectValue placeholder=${JSON.stringify(defaultLabel || "Select...")} />\n${indent}  </SelectTrigger>\n${indent}  <SelectContent>\n${renderedOptions.join("\n")}\n${indent}  </SelectContent>\n${indent}</Select>`;
     }
 
     if (element.elementTypeId === "element-text-input") {
@@ -6856,6 +6961,7 @@ ${items}
         "textHint",
         element.textHint,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const alignmentClass =
         element.styles.alignment === "left"
           ? "justify-start"
@@ -6864,7 +6970,16 @@ ${items}
             : "justify-center";
       const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const inputStyleBlock = formatJsxStyleBlock(
-        [["width", cssWidth], ...getElementSpacingStyleEntries(element.styles)],
+        [
+          ["width", cssWidth],
+          [
+            "fontFamily",
+            fontEntry ? `\"${fontEntry.family}\", sans-serif` : undefined,
+          ],
+          ["fontWeight", fontEntry?.weight],
+          ["fontStyle", fontEntry?.style],
+          ...getElementSpacingStyleEntries(element.styles),
+        ],
         `${indent}  `,
       );
       const inputClassName = isFullWidthValue(element.styles.width)
@@ -6997,6 +7112,7 @@ ${items}
   ): Record<string, unknown> => {
     if (element.elementTypeId === "element-text") {
       const textValue = readElementStringProp(element, "value", element.value);
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
@@ -7006,6 +7122,7 @@ ${items}
           ...getExplicitElementSpacingJson(element.styles),
           alignment: element.styles.alignment ?? "center",
           size: element.styles.size ?? 3,
+          font: fontEntry,
           fontWeight:
             element.styles.fontWeight ?? (element.styles.isBold ? 700 : 400),
           isBold: element.styles.isBold ?? false,
@@ -7040,6 +7157,7 @@ ${items}
         "buttonLabel",
         element.label,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
@@ -7051,6 +7169,7 @@ ${items}
         styles: {
           flex: element.flex ?? 1,
           alignment: "center",
+          font: fontEntry,
           textColor: "$text",
           backgroundColor: "$button",
           highlightColor: "$highlight",
@@ -7069,6 +7188,7 @@ ${items}
         "defaultLabel",
         element.defaultLabel,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
@@ -7082,6 +7202,7 @@ ${items}
         },
         styles: {
           flex: element.flex ?? 1,
+          font: fontEntry,
           textColor: "$text",
           backgroundColor: "$secondary",
           highlightColor: "$highlight",
@@ -7096,6 +7217,7 @@ ${items}
         "textHint",
         element.textHint,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       return {
         elementTypeId: element.elementTypeId,
         instanceId: element.instanceId,
@@ -7105,6 +7227,7 @@ ${items}
         },
         styles: {
           flex: element.flex ?? 1,
+          font: fontEntry,
           textColor: "$text",
           borderColor: "$border",
           backgroundColor: "$secondary",
@@ -7565,6 +7688,7 @@ ${items}
 
     if (element.elementTypeId === "element-text") {
       const textValue = readElementStringProp(element, "value", element.value);
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const fontSize = `${0.5 + element.styles.size * 0.125}rem`;
       const alignClass =
         element.styles.alignment === "left"
@@ -7584,8 +7708,14 @@ ${items}
             ...getBoxSpacingStyle(element.styles),
             fontSize,
             ...getBoxSpacingStyle(element.styles),
-            fontWeight: element.styles.isBold ? 700 : 400,
-            fontStyle: element.styles.isItalic ? "italic" : "normal",
+            fontFamily: fontEntry
+              ? `"${fontEntry.family}", sans-serif`
+              : undefined,
+            fontWeight:
+              fontEntry?.weight ?? (element.styles.isBold ? 700 : 400),
+            fontStyle:
+              fontEntry?.style ??
+              (element.styles.isItalic ? "italic" : "normal"),
             color: textColor,
           }}
         >
@@ -7644,6 +7774,7 @@ ${items}
         "buttonLabel",
         element.label,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const cssWidth = normalizeCssWidthAlias(element.styles.width);
       const widthStyle =
         cssWidth === "auto" ? undefined : { width: toCssDimension(cssWidth) };
@@ -7659,6 +7790,11 @@ ${items}
           style={{
             ...getBoxSpacingStyle(element.styles),
             ...widthStyle,
+            fontFamily: fontEntry
+              ? `"${fontEntry.family}", sans-serif`
+              : undefined,
+            fontWeight: fontEntry?.weight,
+            fontStyle: fontEntry?.style,
             backgroundColor,
             color: textColor,
             borderColor,
@@ -7687,6 +7823,7 @@ ${items}
         "defaultLabel",
         element.defaultLabel,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const selectTextColor = resolveColor("$text");
       const selectBackgroundColor = resolveColor("$secondary");
       const selectBorderColor = resolveColor("$border");
@@ -7696,6 +7833,11 @@ ${items}
             className="w-44"
             style={{
               ...getBoxSpacingStyle(element.styles),
+              fontFamily: fontEntry
+                ? `"${fontEntry.family}", sans-serif`
+                : undefined,
+              fontWeight: fontEntry?.weight,
+              fontStyle: fontEntry?.style,
               color: selectTextColor,
               backgroundColor: selectBackgroundColor,
               borderColor: selectBorderColor,
@@ -7729,6 +7871,7 @@ ${items}
         "textHint",
         element.textHint,
       );
+      const fontEntry = normalizeFontStyleEntry(element.styles.font);
       const alignmentClass =
         element.styles.alignment === "left"
           ? "justify-start"
@@ -7753,6 +7896,11 @@ ${items}
             }
             style={{
               ...widthStyle,
+              fontFamily: fontEntry
+                ? `"${fontEntry.family}", sans-serif`
+                : undefined,
+              fontWeight: fontEntry?.weight,
+              fontStyle: fontEntry?.style,
               color: inputTextColor,
               backgroundColor: inputBackgroundColor,
               borderColor: inputBorderColor,
@@ -7903,6 +8051,74 @@ ${items}
     return PREBUILT_ELEMENTS.map((el) => ({ id: el.id, label: el.label }));
   };
 
+  const renderElementFontField = (
+    componentId: string,
+    element: ComponentElement,
+    currentFont: FontConfigEntry | undefined,
+    nextStyles: (font: FontConfigEntry) => Record<string, unknown>,
+  ) => {
+    const options = [...savedFontOptions];
+    if (currentFont) {
+      const currentValue = getFontEntryValue(currentFont);
+      if (!options.some((entry) => getFontEntryValue(entry) === currentValue)) {
+        options.unshift(currentFont);
+      }
+    }
+
+    const hasOptions = options.length > 0;
+    const selectedValue = currentFont
+      ? getFontEntryValue(currentFont)
+      : hasOptions
+        ? getFontEntryValue(options[0])
+        : "";
+
+    return (
+      <div className="space-y-2">
+        <Label>Font</Label>
+        <Select
+          value={selectedValue}
+          onValueChange={(value) => {
+            const nextFont = options.find(
+              (entry) => getFontEntryValue(entry) === value,
+            );
+            if (!nextFont) {
+              return;
+            }
+
+            updateComponentElementField(componentId, element.instanceId, {
+              styles: nextStyles(nextFont),
+            });
+          }}
+          disabled={!hasOptions}
+        >
+          <SelectTrigger>
+            <SelectValue
+              placeholder={
+                hasOptions ? "Select font" : "Add fonts in Fonts tab first"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {hasOptions ? (
+              options.map((font) => {
+                const value = getFontEntryValue(font);
+                return (
+                  <SelectItem key={value} value={value}>
+                    {font.family} {font.weight} {font.style}
+                  </SelectItem>
+                );
+              })
+            ) : (
+              <SelectItem value="__none__" disabled>
+                No saved fonts available
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
   const renderComponentElementFields = (
     componentId: string,
     element: ComponentElement,
@@ -7910,6 +8126,7 @@ ${items}
   ) => {
     if (element.elementTypeId === "element-text") {
       const textValue = readElementStringProp(element, "value", element.value);
+      const currentFont = normalizeFontStyleEntry(element.styles.font);
       return (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -7935,6 +8152,15 @@ ${items}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
+          {renderElementFontField(
+            componentId,
+            element,
+            currentFont,
+            (font) => ({
+              ...element.styles,
+              font,
+            }),
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Alignment</Label>
@@ -8096,6 +8322,7 @@ ${items}
         "buttonLabel",
         element.label,
       );
+      const currentFont = normalizeFontStyleEntry(element.styles.font);
       return (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -8146,6 +8373,15 @@ ${items}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
+          {renderElementFontField(
+            componentId,
+            element,
+            currentFont,
+            (font) => ({
+              ...element.styles,
+              font,
+            }),
+          )}
           <div className="space-y-2">
             <Label>Width</Label>
             <DebouncedValidatedInput
@@ -8182,6 +8418,7 @@ ${items}
         "defaultLabel",
         element.defaultLabel,
       );
+      const currentFont = normalizeFontStyleEntry(element.styles.font);
       return (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -8288,6 +8525,15 @@ ${items}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
+          {renderElementFontField(
+            componentId,
+            element,
+            currentFont,
+            (font) => ({
+              ...element.styles,
+              font,
+            }),
+          )}
           {renderElementSpacingSection(
             componentId,
             element.instanceId,
@@ -8303,6 +8549,7 @@ ${items}
         "textHint",
         element.textHint,
       );
+      const currentFont = normalizeFontStyleEntry(element.styles.font);
       return (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -8343,6 +8590,15 @@ ${items}
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             styles
           </p>
+          {renderElementFontField(
+            componentId,
+            element,
+            currentFont,
+            (font) => ({
+              ...element.styles,
+              font,
+            }),
+          )}
           <div className="space-y-2">
             <Label>Width</Label>
             <DebouncedValidatedInput
@@ -12549,7 +12805,8 @@ ${items}
                 { id: "geist", label: "Geist" },
               ];
 
-              const LOREM = "Lorem ipsum dolor sit amet";
+              const LOREM =
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim";
 
               return (
                 <div className="space-y-4">
