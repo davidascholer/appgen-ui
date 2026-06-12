@@ -241,8 +241,9 @@
     },
     "schemas": {
         "fonts": {
-            "label": "",
-            "package": ""
+            "family": "",
+            "weight": "",
+            "style": ""
         },
         "components": {
             "label": "",

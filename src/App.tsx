@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus,
   Download,
@@ -41,6 +42,7 @@ import {
   ArrowUp,
   ArrowDown,
   Palette,
+  Type,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { motion } from "framer-motion";
@@ -113,11 +115,20 @@ interface CustomPage {
 
 type AppPage = CustomPage;
 
+type FontStyle = "italic" | "normal";
+
+interface FontConfigEntry {
+  family: string;
+  weight: string;
+  style: FontStyle;
+}
+
 interface AppConfig {
   id: string;
   appName: string;
   components: AppComponent[];
   colorTheme: ColorTheme;
+  fonts: FontConfigEntry[];
   navigation: {
     shown: boolean;
     navigationLabel: string;
@@ -156,6 +167,7 @@ interface ExportedCustomPage {
 interface ExportConfig {
   id: string;
   appName: string;
+  fonts: FontConfigEntry[];
   navigation: AppConfig["navigation"];
   pages: ExportedCustomPage[];
   components: Record<string, unknown>[];
@@ -507,7 +519,7 @@ interface PrebuiltElementDef {
 }
 
 type DrawerState = "closed" | "icons-only" | "open";
-type ActiveTab = "navigation" | "pages" | "components" | "theme";
+type ActiveTab = "navigation" | "pages" | "components" | "theme" | "fonts";
 type ThemeVariableKey =
   | "primary"
   | "secondary"
@@ -2829,6 +2841,7 @@ const DEFAULT_CONFIG: AppConfig = (() => {
     appName,
     components: [],
     colorTheme: DEFAULT_COLOR_THEME,
+    fonts: [],
     navigation: {
       shown: typeof nav.shown === "boolean" ? nav.shown : true,
       navigationLabel:
@@ -3373,6 +3386,39 @@ const normalizeConfig = (input: unknown): AppConfig => {
       navigationStyle: normalizedNavStyle,
       navigationPages: navPages,
     },
+    fonts: Array.isArray((maybeConfig as { fonts?: unknown }).fonts)
+      ? ((maybeConfig as { fonts?: unknown }).fonts as unknown[]).flatMap(
+          (entry) => {
+            if (typeof entry === "string" && entry.trim().length > 0) {
+              return [
+                {
+                  family: entry,
+                  weight: "400",
+                  style: "normal" as const,
+                },
+              ];
+            }
+            if (!entry || typeof entry !== "object") return [];
+            const raw = entry as {
+              family?: unknown;
+              weight?: unknown;
+              style?: unknown;
+            };
+            const family =
+              typeof raw.family === "string" ? raw.family.trim() : "";
+            if (!family) return [];
+            const weight =
+              typeof raw.weight === "string" && raw.weight.trim().length > 0
+                ? raw.weight.trim()
+                : "400";
+            const style: FontStyle =
+              raw.style === "italic" || raw.style === "normal"
+                ? raw.style
+                : "normal";
+            return [{ family, weight, style }];
+          },
+        )
+      : [],
     pages: normalizedPages,
   };
 };
@@ -3440,6 +3486,95 @@ function App() {
   };
   const [themePreviewMode, setThemePreviewMode] =
     useState<ThemePreviewMode>("light");
+
+  const selectedFonts: FontConfigEntry[] = Array.isArray(config.fonts)
+    ? config.fonts
+    : [];
+
+  const [fontDrafts, setFontDrafts] = useState<
+    Record<string, { weight: string; style: FontStyle }>
+  >({});
+
+  const getFontDraft = (family: string) =>
+    fontDrafts[family] ?? { weight: "400", style: "normal" as FontStyle };
+
+  const setFontDraft = (
+    family: string,
+    patch: Partial<Pick<FontConfigEntry, "weight" | "style">>,
+  ) => {
+    setFontDrafts((current) => ({
+      ...current,
+      [family]: {
+        ...getFontDraft(family),
+        ...patch,
+      },
+    }));
+  };
+
+  const isExactFontSelected = (entry: FontConfigEntry) =>
+    selectedFonts.some(
+      (font) =>
+        font.family === entry.family &&
+        font.weight === entry.weight &&
+        font.style === entry.style,
+    );
+
+  const toggleExactFontConfigEntry = (entry: FontConfigEntry) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const existing = Array.isArray(base.fonts) ? base.fonts : [];
+      const hasExact = existing.some(
+        (font) =>
+          font.family === entry.family &&
+          font.weight === entry.weight &&
+          font.style === entry.style,
+      );
+      const updated = {
+        ...base,
+        fonts: hasExact
+          ? existing.filter(
+              (font) =>
+                !(
+                  font.family === entry.family &&
+                  font.weight === entry.weight &&
+                  font.style === entry.style
+                ),
+            )
+          : [...existing, entry],
+      };
+      try {
+        localStorage.setItem("app-config", JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
+  const removeExactFontConfigEntry = (entry: FontConfigEntry) => {
+    setConfig((current) => {
+      const base = current || DEFAULT_CONFIG;
+      const existing = Array.isArray(base.fonts) ? base.fonts : [];
+      const updated = {
+        ...base,
+        fonts: existing.filter(
+          (font) =>
+            !(
+              font.family === entry.family &&
+              font.weight === entry.weight &&
+              font.style === entry.style
+            ),
+        ),
+      };
+      try {
+        localStorage.setItem("app-config", JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
   const [selectedPageId, setSelectedPageId] = useState("");
   const [navigationPreviewPageId, setNavigationPreviewPageId] = useState("");
   const [navigationPreviewHistory, setNavigationPreviewHistory] = useState<
@@ -5699,7 +5834,6 @@ function App() {
   );
 
   const openColorPicker = (target: ColorEditTarget, currentColor: string) => {
-    const normalized = normalizeHexColor(currentColor, "#000000");
     const rgba = hexToRgba(normalized) ?? { r: 0, g: 0, b: 0, a: 255 };
     const includeAlpha = normalized.trim().length === 9 || rgba.a < 255;
     const hex = rgbaToHex(rgba.r, rgba.g, rgba.b, rgba.a, includeAlpha);
@@ -7126,6 +7260,7 @@ ${items}
   const getExportConfig = (): ExportConfig => ({
     id: safeConfig.id,
     appName: safeConfig.appName,
+    fonts: selectedFonts,
     navigation: safeConfig.navigation,
     pages: safePages
       .filter((page): page is CustomPage => page.kind === "custom")
@@ -9345,7 +9480,7 @@ ${items}
         </div>
 
         <div className="space-y-4">
-          <div className="grid w-full grid-cols-4 rounded-md bg-muted p-1">
+          <div className="grid w-full grid-cols-5 rounded-md bg-muted p-1">
             <Button
               type="button"
               variant={activeTab === "navigation" ? "default" : "ghost"}
@@ -9363,6 +9498,15 @@ ${items}
             >
               <Palette size={16} />
               Theme
+            </Button>
+            <Button
+              type="button"
+              variant={activeTab === "fonts" ? "default" : "ghost"}
+              onClick={() => setActiveTab("fonts")}
+              className="gap-2"
+            >
+              <Type size={16} />
+              Fonts
             </Button>
             <Button
               type="button"
@@ -12338,6 +12482,243 @@ ${items}
               )}
             </div>
           )}
+          {activeTab === "fonts" &&
+            (() => {
+              const FONT_WEIGHTS = [
+                "100",
+                "200",
+                "300",
+                "400",
+                "500",
+                "600",
+                "700",
+                "800",
+                "900",
+              ];
+              const FONT_STYLES: FontStyle[] = ["italic", "normal"];
+              const FONTSOURCE_FONTS: Array<{ id: string; label: string }> = [
+                { id: "inter", label: "Inter" },
+                { id: "roboto", label: "Roboto" },
+                { id: "open-sans", label: "Open Sans" },
+                { id: "lato", label: "Lato" },
+                { id: "montserrat", label: "Montserrat" },
+                { id: "poppins", label: "Poppins" },
+                { id: "raleway", label: "Raleway" },
+                { id: "nunito", label: "Nunito" },
+                { id: "ubuntu", label: "Ubuntu" },
+                { id: "playfair-display", label: "Playfair Display" },
+                { id: "source-sans-3", label: "Source Sans 3" },
+                { id: "pt-sans", label: "PT Sans" },
+                { id: "noto-sans", label: "Noto Sans" },
+                { id: "merriweather", label: "Merriweather" },
+                { id: "josefin-sans", label: "Josefin Sans" },
+                { id: "work-sans", label: "Work Sans" },
+                { id: "fira-sans", label: "Fira Sans" },
+                { id: "rubik", label: "Rubik" },
+                { id: "mulish", label: "Mulish" },
+                { id: "barlow", label: "Barlow" },
+                { id: "dm-sans", label: "DM Sans" },
+                { id: "karla", label: "Karla" },
+                { id: "quicksand", label: "Quicksand" },
+                { id: "cabin", label: "Cabin" },
+                { id: "lexend", label: "Lexend" },
+                { id: "ibm-plex-sans", label: "IBM Plex Sans" },
+                { id: "libre-baskerville", label: "Libre Baskerville" },
+                { id: "crimson-text", label: "Crimson Text" },
+                { id: "eb-garamond", label: "EB Garamond" },
+                { id: "cormorant-garamond", label: "Cormorant Garamond" },
+                { id: "pt-serif", label: "PT Serif" },
+                { id: "lora", label: "Lora" },
+                { id: "libre-franklin", label: "Libre Franklin" },
+                { id: "space-grotesk", label: "Space Grotesk" },
+                { id: "outfit", label: "Outfit" },
+                { id: "plus-jakarta-sans", label: "Plus Jakarta Sans" },
+                { id: "figtree", label: "Figtree" },
+                { id: "manrope", label: "Manrope" },
+                { id: "be-vietnam-pro", label: "Be Vietnam Pro" },
+                { id: "sora", label: "Sora" },
+                { id: "jost", label: "Jost" },
+                { id: "nunito-sans", label: "Nunito Sans" },
+                { id: "source-code-pro", label: "Source Code Pro" },
+                { id: "fira-code", label: "Fira Code" },
+                { id: "jetbrains-mono", label: "JetBrains Mono" },
+                { id: "roboto-mono", label: "Roboto Mono" },
+                { id: "dm-mono", label: "DM Mono" },
+                { id: "space-mono", label: "Space Mono" },
+                { id: "inconsolata", label: "Inconsolata" },
+                { id: "geist", label: "Geist" },
+              ];
+
+              const LOREM = "Lorem ipsum dolor sit amet";
+
+              return (
+                <div className="space-y-4">
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-semibold font-mono">
+                          Fonts
+                        </h2>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button type="button" variant="outline" size="sm">
+                              JSON
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl max-h-[80vh]">
+                            <DialogHeader>
+                              <DialogTitle className="font-mono">
+                                Font Objects
+                              </DialogTitle>
+                            </DialogHeader>
+                            <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[60vh]">
+                              {JSON.stringify(selectedFonts, null, 2)}
+                            </pre>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {selectedFonts.length} selected
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Added Fonts
+                      </p>
+                      {selectedFonts.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No font variants selected yet.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {selectedFonts.map((entry, index) => (
+                            <div
+                              key={`${entry.family}-${entry.weight}-${entry.style}-${index}`}
+                              className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs"
+                            >
+                              <span className="font-mono">
+                                {entry.family} {entry.weight} {entry.style}
+                              </span>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-5 w-5 text-destructive hover:text-destructive"
+                                onClick={() =>
+                                  removeExactFontConfigEntry(entry)
+                                }
+                                aria-label={`Remove ${entry.family} ${entry.weight} ${entry.style}`}
+                              >
+                                <Trash2 size={12} />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {FONTSOURCE_FONTS.map((font) => {
+                        const draft = getFontDraft(font.id);
+                        const exactEntry: FontConfigEntry = {
+                          family: font.id,
+                          weight: draft.weight,
+                          style: draft.style,
+                        };
+                        const isChecked = isExactFontSelected(exactEntry);
+                        return (
+                          <div
+                            key={font.id}
+                            className={`w-full rounded-md border px-4 py-3 transition-colors hover:bg-muted/60 ${
+                              isChecked
+                                ? "border-primary bg-primary/5"
+                                : "border-border bg-card"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <div>
+                                  <p className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                                    {font.label}
+                                  </p>
+                                  <p
+                                    className="text-lg truncate"
+                                    style={{
+                                      fontFamily: `"${font.label}", sans-serif`,
+                                      fontWeight: draft.weight,
+                                      fontStyle: draft.style,
+                                    }}
+                                  >
+                                    {LOREM}
+                                  </p>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Weight</Label>
+                                    <Select
+                                      value={draft.weight}
+                                      onValueChange={(value) =>
+                                        setFontDraft(font.id, { weight: value })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {FONT_WEIGHTS.map((weight) => (
+                                          <SelectItem
+                                            key={weight}
+                                            value={weight}
+                                          >
+                                            {weight}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Style</Label>
+                                    <Select
+                                      value={draft.style}
+                                      onValueChange={(value: FontStyle) =>
+                                        setFontDraft(font.id, { style: value })
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {FONT_STYLES.map((style) => (
+                                          <SelectItem key={style} value={style}>
+                                            {style}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-1">
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={() =>
+                                    toggleExactFontConfigEntry(exactEntry)
+                                  }
+                                  aria-label={`Toggle ${font.label} ${draft.weight} ${draft.style}`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                </div>
+              );
+            })()}
           {activeTab === "theme" && (
             <div className="space-y-6">
               <Card className="p-4">
