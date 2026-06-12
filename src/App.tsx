@@ -31,7 +31,6 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus,
-  Download,
   List,
   Menu,
   ArrowLeft,
@@ -151,32 +150,6 @@ interface ExportedPrebuiltPage {
   id: string;
   title: string;
   items: Array<SettingsItem | HeaderPrebuiltItem>;
-}
-
-interface ExportedCustomPage {
-  id: string;
-  title: string;
-  url: string;
-  showNavigationHeader: boolean;
-  navigationHeaderComponentId: string | null;
-  parentPageId: string | null;
-  componentIds: string[];
-  styles: ComponentStyles;
-}
-
-interface ExportConfig {
-  id: string;
-  appName: string;
-  fonts: FontConfigEntry[];
-  navigation: AppConfig["navigation"];
-  pages: ExportedCustomPage[];
-  components: Record<string, unknown>[];
-  colorTheme: ColorTheme;
-}
-
-interface ExportPrebuiltConfig {
-  pages: ExportedPrebuiltPage[];
-  elements: PrebuiltElementDef[];
 }
 
 interface AppgenConfigFile {
@@ -3522,7 +3495,6 @@ function App() {
   const [newSettingType, setNewSettingType] = useState<
     "toggle" | "input" | "select"
   >("toggle");
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [componentCodeDialogOpen, setComponentCodeDialogOpen] = useState(false);
   const [componentJsonDialogOpen, setComponentJsonDialogOpen] = useState(false);
   const [colorPickerDialogOpen, setColorPickerDialogOpen] = useState(false);
@@ -4121,11 +4093,6 @@ function App() {
         valueLength: value.length,
       });
     }
-  };
-
-  const exportPrebuiltConfig: ExportPrebuiltConfig = {
-    pages: PREBUILT_SOURCE_PAGES,
-    elements: PREBUILT_ELEMENTS,
   };
 
   const getComponentTypeId = (type: SettingComponentType) =>
@@ -6792,17 +6759,39 @@ ${items}
     });
   };
 
-  const copyJsonToClipboard = () => {
-    const json = JSON.stringify(
-      {
-        config: getExportConfig(),
-        prebuilt: exportPrebuiltConfig,
+  const getProjectJsonPayload = () => {
+    let storageRaw: unknown = null;
+    let normalizedStored = safeConfig;
+    let storageError: string | null = null;
+
+    try {
+      const persisted = localStorage.getItem("app-config");
+      if (persisted) {
+        storageRaw = JSON.parse(persisted);
+        normalizedStored = normalizeConfig(storageRaw);
+      }
+    } catch (error) {
+      storageError =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "Unable to parse local storage app-config JSON";
+    }
+
+    return {
+      project: {
+        appName: normalizedStored.appName,
       },
-      null,
-      2,
-    );
-    navigator.clipboard.writeText(json);
-    toast.success("JSON copied to clipboard");
+      navigation: normalizedStored.navigation,
+      theme: normalizedStored.colorTheme,
+      fonts: normalizedStored.fonts,
+      pages: normalizedStored.pages,
+      components: normalizedStored.components,
+      localStorage: {
+        key: "app-config",
+        value: storageRaw,
+        error: storageError,
+      },
+    };
   };
 
   const drawerWidth =
@@ -7379,29 +7368,6 @@ ${items}
       },
     };
   };
-
-  const getExportConfig = (): ExportConfig => ({
-    id: safeConfig.id,
-    appName: safeConfig.appName,
-    fonts: selectedFonts,
-    navigation: safeConfig.navigation,
-    pages: safePages
-      .filter((page): page is CustomPage => page.kind === "custom")
-      .map((page) => ({
-        id: page.id,
-        title: page.title,
-        url: page.url,
-        showNavigationHeader: page.showNavigationHeader,
-        navigationHeaderComponentId: page.navigationHeaderComponentId,
-        parentPageId: page.parentPageId,
-        componentIds: page.componentIds,
-        styles: page.styles,
-      })),
-    components: customComponents.map((component) =>
-      getExplicitComponentJson(component),
-    ),
-    colorTheme,
-  });
 
   const getComponentPreviewCode = (component: AppComponent): string => {
     const justifyClass = getEffectiveFlexJustifyClass(
@@ -9532,40 +9498,19 @@ ${items}
             Component Builder
           </h1>
 
-          <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+          <Dialog>
             <DialogTrigger asChild>
-              <Button
-                variant="outline"
-                className="gap-2"
-                disabled={safeConfig.appName.trim().length === 0}
-              >
-                <Download size={18} />
-                Export
+              <Button variant="outline" className="gap-2">
+                JSON
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[80vh]">
               <DialogHeader>
-                <DialogTitle className="font-mono">
-                  Export Configuration
-                </DialogTitle>
+                <DialogTitle className="font-mono">Project JSON</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Config</p>
-                  <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[28vh]">
-                    {JSON.stringify(getExportConfig(), null, 2)}
-                  </pre>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Prebuilt</p>
-                  <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[28vh]">
-                    {JSON.stringify(exportPrebuiltConfig, null, 2)}
-                  </pre>
-                </div>
-                <Button onClick={copyJsonToClipboard} className="w-full">
-                  Copy Both to Clipboard
-                </Button>
-              </div>
+              <pre className="bg-secondary p-4 rounded-lg overflow-auto text-sm font-mono max-h-[60vh]">
+                {JSON.stringify(getProjectJsonPayload(), null, 2)}
+              </pre>
             </DialogContent>
           </Dialog>
 

@@ -158,6 +158,8 @@ Exported/stored keys:
 
 Additional keys may be added as features grow, but `prebuilt` and `signatures` are never included in the export.
 
+The top JSON button shows code for every tab and includes project-level properties, which right now is just the app name.
+
 ### Uniqueness Constraints
 
 - All new component labels must be unique across both prebuilt components (`prebuilt.components`) and user-created components (localStorage).
