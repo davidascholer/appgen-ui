@@ -414,7 +414,7 @@ interface ApiRequestHeader {
 interface ApiComponentConfig {
   isApitComponent: boolean;
   isList: boolean;
-  listItemComponentId: string;
+  listItemElements: ComponentElement[];
   listDataBinding: string;
   isBordered: boolean;
   request: {
@@ -677,7 +677,7 @@ const API_REQUEST_METHODS: ApiRequestMethod[] = [
 const createDefaultApiComponentConfig = (): ApiComponentConfig => ({
   isApitComponent: false,
   isList: false,
-  listItemComponentId: "",
+  listItemElements: [],
   listDataBinding: "",
   isBordered: false,
   request: {
@@ -702,13 +702,12 @@ const getSafeApiComponentConfig = (
           (api as { enabled?: unknown }).enabled,
         ),
         isList: Boolean((api as { isList?: unknown }).isList),
-        listItemComponentId:
-          typeof (api as { listItemComponentId?: unknown })
-            .listItemComponentId === "string"
-            ? String(
-                (api as { listItemComponentId?: unknown }).listItemComponentId,
-              )
-            : "",
+        listItemElements: Array.isArray(
+          (api as { listItemElements?: unknown }).listItemElements,
+        )
+          ? ((api as { listItemElements?: unknown })
+              .listItemElements as ComponentElement[])
+          : [],
         listDataBinding:
           typeof (api as { listDataBinding?: unknown }).listDataBinding ===
             "string" &&
@@ -2394,13 +2393,16 @@ export const normalizeComponentFromRaw = (
         (rawApi as { enabled?: unknown }).enabled,
       ),
       isList: Boolean((rawApi as { isList?: unknown }).isList),
-      listItemComponentId:
-        typeof (rawApi as { listItemComponentId?: unknown })
-          .listItemComponentId === "string"
-          ? String(
-              (rawApi as { listItemComponentId?: unknown }).listItemComponentId,
-            )
-          : "",
+      listItemElements: Array.isArray(
+        (rawApi as { listItemElements?: unknown }).listItemElements,
+      )
+        ? (
+            (rawApi as { listItemElements?: unknown })
+              .listItemElements as unknown[]
+          )
+            .map((item) => normalizeElementFromRaw(item))
+            .filter((item): item is ComponentElement => Boolean(item))
+        : [],
       listDataBinding:
         typeof (rawApi as { listDataBinding?: unknown }).listDataBinding ===
           "string" &&
@@ -4133,6 +4135,9 @@ function App() {
       styles: { ...template.styles },
       api: {
         ...templateApi,
+        listItemElements: cloneComponentElementTree(
+          templateApi.listItemElements,
+        ),
         request: {
           ...templateApi.request,
           headers: templateApi.request.headers.map((header) => ({ ...header })),
@@ -4243,11 +4248,60 @@ function App() {
     toast.success(`${prebuilt.label} component imported`);
   };
 
+  type ElementEditorTarget = "component" | "list-template";
+
+  const updateComponentListTemplateElements = (
+    componentId: string,
+    transform: (elements: ComponentElement[]) => ComponentElement[],
+  ) => {
+    updateComponentApi(componentId, (api) => ({
+      ...api,
+      listItemElements: transform(api.listItemElements),
+    }));
+  };
+
   const addComponentElement = (
     componentId: string,
     typeId: ElementTypeId,
     parentInstanceId?: string,
+    target: ElementEditorTarget = "component",
   ) => {
+    if (target === "list-template") {
+      const selected = customComponents.find((comp) => comp.id === componentId);
+      const selectedDirection = selected?.styles.direction ?? "horizontal";
+      updateComponentListTemplateElements(componentId, (elements) => {
+        const newElement = createDefaultComponentElement(typeId);
+
+        if (typeId === "element-container" && isContainerElement(newElement)) {
+          const parentDirection: ComponentDirection | null = parentInstanceId
+            ? (() => {
+                const parent = getElementByInstanceId(
+                  elements,
+                  parentInstanceId,
+                );
+                return parent && isContainerElement(parent)
+                  ? getDirectionFromContainer(parent)
+                  : null;
+              })()
+            : selectedDirection;
+
+          const targetDirection = getOppositeDirection(
+            parentDirection ?? "horizontal",
+          );
+          newElement.styles = {
+            ...newElement.styles,
+            flexDirection:
+              getFlexDirectionFromComponentDirection(targetDirection),
+          };
+        }
+
+        return parentInstanceId
+          ? addChildElementToTree(elements, parentInstanceId, newElement)
+          : [...elements, newElement];
+      });
+      return;
+    }
+
     updateCustomComponents((components) =>
       components.map((comp) =>
         comp.id !== componentId
@@ -4297,16 +4351,46 @@ function App() {
     );
   };
 
-  const removeComponentElement = (componentId: string, instanceId: string) => {
+  const removeComponentElement = (
+    componentId: string,
+    instanceId: string,
+    target: ElementEditorTarget = "component",
+  ) => {
+    if (target === "list-template") {
+      updateComponentListTemplateElements(componentId, (elements) =>
+        removeElementFromTree(elements, instanceId),
+      );
+      setActiveElementEditorId((current) =>
+        current === instanceId ? "" : current,
+      );
+      toast.success("Element removed");
+      return;
+    }
+
     updateCustomComponents((components) =>
-      components.map((comp) =>
-        comp.id !== componentId
-          ? comp
-          : {
-              ...comp,
-              elements: removeElementFromTree(comp.elements, instanceId),
+      components.map((comp) => {
+        if (comp.id !== componentId) return comp;
+        const safeApi = getSafeApiComponentConfig(comp.api);
+        if (
+          safeApi.isList &&
+          elementTreeHasInstanceId(safeApi.listItemElements, instanceId)
+        ) {
+          return {
+            ...comp,
+            api: {
+              ...safeApi,
+              listItemElements: removeElementFromTree(
+                safeApi.listItemElements,
+                instanceId,
+              ),
             },
-      ),
+          };
+        }
+        return {
+          ...comp,
+          elements: removeElementFromTree(comp.elements, instanceId),
+        };
+      }),
     );
     setActiveElementEditorId((current) =>
       current === instanceId ? "" : current,
@@ -4318,21 +4402,51 @@ function App() {
     componentId: string,
     instanceId: string,
     update: Record<string, unknown>,
+    target: ElementEditorTarget = "component",
   ) => {
+    if (target === "list-template") {
+      updateComponentListTemplateElements(componentId, (elements) =>
+        updateElementTree(
+          elements,
+          instanceId,
+          (element) =>
+            normalizeElementFromRaw({ ...element, ...update }) ?? element,
+        ),
+      );
+      return;
+    }
+
     updateCustomComponents((components) =>
-      components.map((comp) =>
-        comp.id !== componentId
-          ? comp
-          : {
-              ...comp,
-              elements: updateElementTree(
-                comp.elements,
+      components.map((comp) => {
+        if (comp.id !== componentId) return comp;
+        const safeApi = getSafeApiComponentConfig(comp.api);
+        if (
+          safeApi.isList &&
+          elementTreeHasInstanceId(safeApi.listItemElements, instanceId)
+        ) {
+          return {
+            ...comp,
+            api: {
+              ...safeApi,
+              listItemElements: updateElementTree(
+                safeApi.listItemElements,
                 instanceId,
                 (element) =>
                   normalizeElementFromRaw({ ...element, ...update }) ?? element,
               ),
             },
-      ),
+          };
+        }
+        return {
+          ...comp,
+          elements: updateElementTree(
+            comp.elements,
+            instanceId,
+            (element) =>
+              normalizeElementFromRaw({ ...element, ...update }) ?? element,
+          ),
+        };
+      }),
     );
   };
 
@@ -4340,10 +4454,35 @@ function App() {
     componentId: string,
     instanceId: string,
     direction: "up" | "down",
+    target: ElementEditorTarget = "component",
   ) => {
+    if (target === "list-template") {
+      updateComponentListTemplateElements(componentId, (elements) =>
+        reorderElementInTree(elements, instanceId, direction),
+      );
+      return;
+    }
+
     updateCustomComponents((components) =>
       components.map((comp) => {
         if (comp.id !== componentId) return comp;
+        const safeApi = getSafeApiComponentConfig(comp.api);
+        if (
+          safeApi.isList &&
+          elementTreeHasInstanceId(safeApi.listItemElements, instanceId)
+        ) {
+          return {
+            ...comp,
+            api: {
+              ...safeApi,
+              listItemElements: reorderElementInTree(
+                safeApi.listItemElements,
+                instanceId,
+                direction,
+              ),
+            },
+          };
+        }
         return {
           ...comp,
           elements: reorderElementInTree(comp.elements, instanceId, direction),
@@ -4402,7 +4541,7 @@ function App() {
     patch: Partial<
       Pick<
         ApiComponentConfig,
-        "isList" | "listItemComponentId" | "listDataBinding" | "isBordered"
+        "isList" | "listItemElements" | "listDataBinding" | "isBordered"
       >
     >,
   ) => {
@@ -4412,6 +4551,231 @@ function App() {
       ...api,
       ...patch,
     }));
+  };
+
+  const initializeSelectedComponentListTemplate = () => {
+    if (!selectedComponent) return;
+
+    const listItemElements = [
+      createDefaultComponentElement("element-container"),
+    ];
+
+    updateSelectedComponentApiListConfig({
+      isList: true,
+      listItemElements,
+    });
+
+    toast.success("List template initialized with an empty container");
+  };
+
+  const enableSelectedComponentListMode = () => {
+    if (!selectedComponent) return;
+    initializeSelectedComponentListTemplate();
+  };
+
+  const populateListTemplatePropsFromSampleItem = () => {
+    if (!selectedComponent) return;
+
+    const selectedApi = getSafeApiComponentConfig(selectedComponent.api);
+    if (!selectedApi.isList) {
+      toast.error("Enable list mode first");
+      return;
+    }
+
+    if (selectedApi.listDataBinding.trim().length === 0) {
+      toast.error("Set List Data Path before populating props");
+      return;
+    }
+
+    const responseData = selectedComponentApiResponseValidation.isValid
+      ? selectedComponentApiResponseValidation.parsed
+      : undefined;
+    const listItems = getListItemsFromResponseData(
+      responseData,
+      selectedApi.listDataBinding,
+    );
+
+    if (listItems.length === 0) {
+      toast.error("No list items found from current response data and path");
+      return;
+    }
+
+    const sampleItem = listItems[0];
+    const leafPaths = flattenLeafPaths(sampleItem).filter(
+      (path) => path.trim().length > 0,
+    );
+    if (leafPaths.length === 0) {
+      toast.error("No properties found in the sample list item");
+      return;
+    }
+
+    const normalizeKey = (value: string) =>
+      value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    const propAliases: Record<string, string[]> = {
+      value: ["value", "label", "name", "title", "text", "description"],
+      buttonlabel: ["buttonLabel", "label", "name", "title", "text", "value"],
+      texthint: ["textHint", "placeholder", "hint", "label", "name", "title"],
+      imgsrc: [
+        "imgSrc",
+        "image",
+        "imageUrl",
+        "thumbnail",
+        "photo",
+        "avatar",
+        "url",
+        "src",
+      ],
+      defaultlabel: ["defaultLabel", "label", "name", "title", "text", "value"],
+      values: ["values", "options", "items", "list", "results"],
+      selected: [
+        "selected",
+        "isSelected",
+        "enabled",
+        "active",
+        "isActive",
+        "checked",
+      ],
+      defaultvalue: [
+        "defaultValue",
+        "selected",
+        "enabled",
+        "active",
+        "checked",
+      ],
+    };
+
+    const exactPathMap = new Map<string, string>();
+    const leafSegmentMap = new Map<string, string>();
+    for (const path of leafPaths) {
+      const normalizedPath = normalizeKey(path);
+      if (!exactPathMap.has(normalizedPath)) {
+        exactPathMap.set(normalizedPath, path);
+      }
+
+      const lastSegment = path.split(".").at(-1) ?? "";
+      if (/^\d+$/.test(lastSegment)) {
+        continue;
+      }
+
+      const normalizedSegment = normalizeKey(lastSegment);
+      if (!leafSegmentMap.has(normalizedSegment)) {
+        leafSegmentMap.set(normalizedSegment, path);
+      }
+    }
+
+    const resolveBindingPathForProp = (propKey: string): string | null => {
+      const normalizedPropKey = normalizeKey(propKey);
+      const candidates = [
+        normalizedPropKey,
+        ...(propAliases[normalizedPropKey] ?? []).map(normalizeKey),
+      ];
+
+      for (const candidate of candidates) {
+        const byLeafSegment = leafSegmentMap.get(candidate);
+        if (byLeafSegment) return byLeafSegment;
+      }
+
+      const byExactPath = exactPathMap.get(normalizedPropKey);
+      if (byExactPath) return byExactPath;
+
+      return null;
+    };
+
+    const mapElementBindings = (
+      element: ComponentElement,
+    ): { nextElement: ComponentElement; changed: number } => {
+      const currentProps = normalizeElementProps(element.props);
+      let changed = 0;
+      let nextProps = currentProps;
+
+      if (currentProps.length > 0) {
+        const first = { ...currentProps[0] };
+
+        Object.keys(first).forEach((propKey) => {
+          const bindingPath = resolveBindingPathForProp(propKey);
+          if (!bindingPath) {
+            return;
+          }
+
+          if (propKey === "values") {
+            const nextValue = [`data.${bindingPath}`];
+            if (JSON.stringify(first[propKey]) !== JSON.stringify(nextValue)) {
+              first[propKey] = nextValue;
+              changed += 1;
+            }
+            return;
+          }
+
+          if (propKey === "selected" || propKey === "defaultValue") {
+            const rawBoolean = getValueAtPath(sampleItem, bindingPath);
+            if (
+              typeof rawBoolean === "boolean" &&
+              first[propKey] !== rawBoolean
+            ) {
+              first[propKey] = rawBoolean;
+              changed += 1;
+            }
+            return;
+          }
+
+          const nextValue = `data.${bindingPath}`;
+          if (first[propKey] !== nextValue) {
+            first[propKey] = nextValue;
+            changed += 1;
+          }
+        });
+
+        nextProps = [
+          first,
+          ...currentProps.slice(1).map((entry) => ({ ...entry })),
+        ];
+      }
+
+      if (isContainerElement(element)) {
+        const mappedChildren = element.elements.map((child) =>
+          mapElementBindings(child),
+        );
+        const childChanged = mappedChildren.reduce(
+          (sum, item) => sum + item.changed,
+          0,
+        );
+        return {
+          nextElement: {
+            ...element,
+            props: nextProps,
+            elements: mappedChildren.map((item) => item.nextElement),
+          },
+          changed: changed + childChanged,
+        };
+      }
+
+      return {
+        nextElement: {
+          ...element,
+          props: nextProps,
+        },
+        changed,
+      };
+    };
+
+    const mapped = selectedApi.listItemElements.map((element) =>
+      mapElementBindings(element),
+    );
+    const changedCount = mapped.reduce((sum, item) => sum + item.changed, 0);
+
+    if (changedCount === 0) {
+      toast.info("No matching properties were found to populate props");
+      return;
+    }
+
+    updateSelectedComponentApiListConfig({
+      listItemElements: mapped.map((item) => item.nextElement),
+    });
+
+    toast.success(
+      `Populated ${changedCount} prop binding(s) from sample list item`,
+    );
   };
 
   const updateSelectedComponentApiRequest = (
@@ -4640,35 +5004,6 @@ function App() {
     const directData = componentApiResponseDataById[componentId];
     if (typeof directData !== "undefined") {
       return directData;
-    }
-
-    // If this component is used as a list item template, expose one item as
-    // preview context to enable per-item binding mapping (e.g. data.text).
-    for (const parentComponent of customComponents) {
-      const parentApi = getSafeApiComponentConfig(parentComponent.api);
-      if (
-        !parentApi.isApitComponent ||
-        !parentApi.isList ||
-        parentApi.listItemComponentId !== componentId ||
-        parentApi.listDataBinding.trim().length === 0
-      ) {
-        continue;
-      }
-
-      const parentResponseData =
-        selectedComponent && parentComponent.id === selectedComponent.id
-          ? selectedComponentApiResponseValidation.isValid
-            ? selectedComponentApiResponseValidation.parsed
-            : undefined
-          : componentApiResponseDataById[parentComponent.id];
-
-      const listItems = getListItemsFromResponseData(
-        parentResponseData,
-        parentApi.listDataBinding,
-      );
-      if (listItems.length > 0) {
-        return listItems[0];
-      }
     }
 
     return undefined;
@@ -6277,10 +6612,17 @@ ${items}
       return;
     }
 
-    const stillExists = elementTreeHasInstanceId(
-      selectedComponent.elements,
-      activeElementEditorId,
-    );
+    const safeApi = getSafeApiComponentConfig(selectedComponent.api);
+    const stillExists =
+      elementTreeHasInstanceId(
+        selectedComponent.elements,
+        activeElementEditorId,
+      ) ||
+      (safeApi.isList &&
+        elementTreeHasInstanceId(
+          safeApi.listItemElements,
+          activeElementEditorId,
+        ));
 
     if (!stillExists) {
       setActiveElementEditorId("");
@@ -6763,7 +7105,9 @@ ${items}
       api: {
         isApitComponent: componentApi.isApitComponent,
         isList: componentApi.isList,
-        listItemComponentId: componentApi.listItemComponentId,
+        listItemElements: componentApi.listItemElements.map((el) =>
+          getExplicitComponentElementJson(el),
+        ),
         listDataBinding: componentApi.listDataBinding,
         isBordered: componentApi.isBordered,
         request: {
@@ -6900,9 +7244,10 @@ ${items}
 
     const nextRenderStack = [...renderStack, component.id];
     const componentApi = getSafeApiComponentConfig(component.api);
-    const listItemTemplate = customComponents.find(
-      (entry) => entry.id === componentApi.listItemComponentId,
-    );
+    const listTemplateElements =
+      componentApi.isList && componentApi.listItemElements.length > 0
+        ? componentApi.listItemElements
+        : [];
     const componentResponseData =
       typeof responseDataOverride === "undefined"
         ? getPreviewResponseDataForComponent(component.id)
@@ -6920,8 +7265,7 @@ ${items}
     const previewChildCount =
       componentApi.isApitComponent &&
       componentApi.isList &&
-      listItemTemplate &&
-      listItemTemplate.id !== component.id
+      listTemplateElements.length > 0
         ? listItems.length
         : component.elements.length;
 
@@ -6973,8 +7317,7 @@ ${items}
     if (
       componentApi.isApitComponent &&
       componentApi.isList &&
-      listItemTemplate &&
-      listItemTemplate.id !== component.id
+      listTemplateElements.length > 0
     ) {
       return (
         <div className={rootClassName} style={rootStyle}>
@@ -6984,10 +7327,32 @@ ${items}
             <div className="w-full min-w-0">
               {listItems.map((item, index) => (
                 <div key={`${component.id}-list-item-${index}`}>
-                  {renderAppComponentPreview(
-                    listItemTemplate,
-                    item,
-                    nextRenderStack,
+                  {listTemplateElements.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Empty list template
+                    </p>
+                  ) : (
+                    listTemplateElements.map((element) => (
+                      <div
+                        key={`${component.id}-list-item-${index}-${element.instanceId}`}
+                        className={`min-w-0 ${isContainerElement(element) ? "flex self-stretch" : elementNeedsFullWidth(element) ? "w-full" : ""}`}
+                        style={
+                          element.flex === null || element.flex === undefined
+                            ? undefined
+                            : element.flex === 0
+                              ? { flex: "0 0 auto" }
+                              : {
+                                  flex: `${element.flex} ${element.flex} 0%`,
+                                }
+                        }
+                      >
+                        {renderComponentElementPreview(
+                          element,
+                          component.id,
+                          item,
+                        )}
+                      </div>
+                    ))
                   )}
                   {componentApi.isBordered && index < listItems.length - 1 && (
                     <div className="my-2 border-t border-border" />
@@ -7406,6 +7771,7 @@ ${items}
   const renderComponentElementFields = (
     componentId: string,
     element: ComponentElement,
+    target: ElementEditorTarget = "component",
   ) => {
     if (element.elementTypeId === "element-text") {
       const textValue = readElementStringProp(element, "value", element.value);
@@ -8631,6 +8997,7 @@ ${items}
                   componentId,
                   nestedDraftType,
                   element.instanceId,
+                  target,
                 )
               }
             >
@@ -8649,6 +9016,7 @@ ${items}
                 element.elements,
                 true,
                 element.instanceId,
+                target,
               )}
             </div>
           ) : (
@@ -8666,6 +9034,7 @@ ${items}
     elements: ComponentElement[],
     nested = false,
     parentInstanceId?: string,
+    target: ElementEditorTarget = "component",
   ) => (
     <Accordion
       type="single"
@@ -8716,6 +9085,7 @@ ${items}
                       componentId,
                       element.instanceId,
                       "up",
+                      target,
                     )
                   }
                   disabled={elementIndex === 0}
@@ -8731,6 +9101,7 @@ ${items}
                       componentId,
                       element.instanceId,
                       "down",
+                      target,
                     )
                   }
                   disabled={elementIndex === elements.length - 1}
@@ -8742,7 +9113,11 @@ ${items}
                   variant="ghost"
                   size="icon"
                   onClick={() =>
-                    removeComponentElement(componentId, element.instanceId)
+                    removeComponentElement(
+                      componentId,
+                      element.instanceId,
+                      target,
+                    )
                   }
                   className="text-destructive hover:text-destructive"
                 >
@@ -8750,7 +9125,7 @@ ${items}
                 </Button>
               </div>
 
-              {renderComponentElementFields(componentId, element)}
+              {renderComponentElementFields(componentId, element, target)}
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -10701,6 +11076,12 @@ ${items}
                       )
                         ? newComponentElementTypeId
                         : (topLevelElementOptions[0]?.id ?? "element-text");
+                      const isEditingListTemplate =
+                        selectedComponentApi.isApitComponent &&
+                        selectedComponentApi.isList;
+                      const editableElements = isEditingListTemplate
+                        ? selectedComponentApi.listItemElements
+                        : selectedComponent.elements;
 
                       return (
                         <Card className="p-4">
@@ -10788,17 +11169,18 @@ ${items}
                                       <Switch
                                         id="api-list-mode"
                                         checked={selectedComponentApi.isList}
-                                        onCheckedChange={(checked) =>
+                                        onCheckedChange={(checked) => {
+                                          if (checked) {
+                                            enableSelectedComponentListMode();
+                                            return;
+                                          }
+
                                           updateSelectedComponentApiListConfig({
-                                            isList: checked,
-                                            ...(checked
-                                              ? {}
-                                              : {
-                                                  listItemComponentId: "",
-                                                  listDataBinding: "",
-                                                }),
-                                          })
-                                        }
+                                            isList: false,
+                                            listItemElements: [],
+                                            listDataBinding: "",
+                                          });
+                                        }}
                                       />
                                     </div>
                                   </div>
@@ -10806,47 +11188,21 @@ ${items}
                                   {selectedComponentApi.isList && (
                                     <div className="space-y-3">
                                       <div className="space-y-2">
-                                        <Label htmlFor="api-list-item-component">
-                                          List Component
-                                        </Label>
-                                        <Select
-                                          value={
-                                            selectedComponentApi.listItemComponentId
-                                          }
-                                          onValueChange={(value) =>
-                                            updateSelectedComponentApiListConfig(
-                                              {
-                                                listItemComponentId: value,
-                                              },
-                                            )
-                                          }
-                                        >
-                                          <SelectTrigger id="api-list-item-component">
-                                            <SelectValue placeholder="Select a component" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {customComponents
-                                              .filter(
-                                                (component) =>
-                                                  component.id !==
-                                                  selectedComponent.id,
-                                              )
-                                              .map((component) => (
-                                                <SelectItem
-                                                  key={component.id}
-                                                  value={component.id}
-                                                >
-                                                  {component.label}
-                                                </SelectItem>
-                                              ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-
-                                      <div className="space-y-2">
-                                        <Label htmlFor="api-list-data-binding">
-                                          List Data Path
-                                        </Label>
+                                        <div className="flex items-center justify-between gap-2">
+                                          <Label htmlFor="api-list-data-binding">
+                                            List Data Path
+                                          </Label>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={
+                                              populateListTemplatePropsFromSampleItem
+                                            }
+                                          >
+                                            Populate Props From Data
+                                          </Button>
+                                        </div>
                                         <Select
                                           value={
                                             selectedComponentApi.listDataBinding
@@ -11107,20 +11463,39 @@ ${items}
                                 addComponentElement(
                                   selectedComponent.id,
                                   selectedElementType,
+                                  undefined,
+                                  isEditingListTemplate
+                                    ? "list-template"
+                                    : "component",
                                 )
                               }
                               className="w-full gap-2"
                             >
                               <Plus size={18} />
-                              Add Element
+                              {isEditingListTemplate
+                                ? "Add Template Element"
+                                : "Add Element"}
                             </Button>
 
-                            {selectedComponent.elements.length > 0 && (
+                            {isEditingListTemplate && (
+                              <p className="text-xs text-muted-foreground">
+                                Bind response properties by entering values like
+                                data.title or data.user.name in element prop
+                                fields.
+                              </p>
+                            )}
+
+                            {editableElements.length > 0 && (
                               <>
                                 <Separator />
                                 {renderComponentElementEditors(
                                   selectedComponent.id,
-                                  selectedComponent.elements,
+                                  editableElements,
+                                  false,
+                                  undefined,
+                                  isEditingListTemplate
+                                    ? "list-template"
+                                    : "component",
                                 )}
                               </>
                             )}
